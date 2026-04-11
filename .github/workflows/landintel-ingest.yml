@@ -1,0 +1,67 @@
+name: LandIntel Scotland Ingestion
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 2 3,6,9,12 *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: landintel-scotland-ingestion
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}
+      BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
+      ROS_API_BASE_URL: ${{ secrets.ROS_API_BASE_URL }}
+      ROS_CLIENT_ID: ${{ secrets.ROS_CLIENT_ID }}
+      ROS_CLIENT_SECRET: ${{ secrets.ROS_CLIENT_SECRET }}
+      TEMP_STORAGE_PATH: /home/runner/work/_temp/landintel-tmp
+      LOG_LEVEL: INFO
+      LOG_JSON: true
+      LOG_FILE_PATH: /home/runner/work/_temp/landintel-logs/landintel_ingest.log
+      SUPABASE_AUDIT_BUCKET_NAME: landintel-ingest-audit
+      ENABLE_INTERNAL_SCHEDULER: false
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements.txt
+            app/requirements.txt
+
+      - name: Install geospatial system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gdal-bin \
+            libgdal-dev \
+            libgeos-dev \
+            libproj-dev \
+            libspatialindex-dev \
+            proj-bin
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run full refresh
+        working-directory: app
+        run: python -m src.main full-refresh

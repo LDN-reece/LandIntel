@@ -6,7 +6,7 @@ import logging
 import unittest
 from types import SimpleNamespace
 
-from src.loaders.supabase_loader import SupabaseLoader
+from src.loaders.supabase_loader import SupabaseLoader, SupabaseStorageClient
 from src.models.source_registry import SourceRegistryRecord
 
 
@@ -16,10 +16,16 @@ class _FakeDatabase:
     def __init__(self) -> None:
         self.sql: str | None = None
         self.params_list: list[dict[str, object]] | None = None
+        self.executed_sql: list[str] = []
+        self.executed_params: list[dict[str, object]] = []
 
     def execute_many(self, sql: str, params_list: list[dict[str, object]]) -> None:
         self.sql = sql
         self.params_list = params_list
+
+    def execute(self, sql: str, params: dict[str, object] | None = None) -> None:
+        self.executed_sql.append(sql)
+        self.executed_params.append(params or {})
 
     def dispose(self) -> None:
         pass
@@ -63,6 +69,29 @@ class SupabaseLoaderTest(unittest.TestCase):
         self.assertIn("cast(:geographic_extent_wkb as text) is null", self.database.sql)
         self.assertIn("null::geometry(multipolygon, 4326)", self.database.sql)
         self.assertIsNone(self.database.params_list[0]["geographic_extent_wkb"])
+
+    def test_storage_bucket_is_created_via_sql(self) -> None:
+        storage = SupabaseStorageClient(
+            SimpleNamespace(
+                http_timeout_seconds=5,
+                supabase_service_role_key="service-role",
+                supabase_url="https://example.supabase.co",
+                supabase_audit_bucket_name="landintel-ingest-audit",
+            ),
+            logging.getLogger("test.storage"),
+            self.database,
+        )
+        try:
+            storage._ensure_bucket()
+        finally:
+            storage.close()
+
+        self.assertTrue(self.database.executed_sql)
+        self.assertIn("insert into storage.buckets", self.database.executed_sql[0])
+        self.assertEqual(
+            self.database.executed_params[0],
+            {"bucket_name": "landintel-ingest-audit"},
+        )
 
 
 if __name__ == "__main__":

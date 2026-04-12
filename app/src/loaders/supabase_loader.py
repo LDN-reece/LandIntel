@@ -22,8 +22,9 @@ from src.models.source_registry import SourceRegistryRecord
 class SupabaseStorageClient:
     """Upload raw source artifacts into Supabase Storage."""
 
-    def __init__(self, settings: Settings, logger: logging.Logger) -> None:
+    def __init__(self, settings: Settings, logger: logging.Logger, database: Database) -> None:
         self.settings = settings
+        self.database = database
         self.logger = logger.getChild("storage")
         self.enabled = bool(settings.supabase_service_role_key)
         self._bucket_ready = False
@@ -71,22 +72,14 @@ class SupabaseStorageClient:
             return
 
         bucket_name = self.settings.supabase_audit_bucket_name
-        headers = {
-            "apikey": self.settings.supabase_service_role_key or "",
-            "Authorization": f"Bearer {self.settings.supabase_service_role_key}",
-        }
-        lookup_url = f"{self.settings.supabase_url.rstrip('/')}/storage/v1/bucket/{bucket_name}"
-        lookup = self.client.get(lookup_url, headers=headers)
-        if lookup.status_code == 404:
-            create_url = f"{self.settings.supabase_url.rstrip('/')}/storage/v1/bucket"
-            create = self.client.post(
-                create_url,
-                headers={**headers, "Content-Type": "application/json"},
-                json={"id": bucket_name, "name": bucket_name, "public": False},
-            )
-            create.raise_for_status()
-        elif lookup.status_code >= 400:
-            lookup.raise_for_status()
+        self.database.execute(
+            """
+                insert into storage.buckets (id, name, public)
+                values (:bucket_name, :bucket_name, false)
+                on conflict (id) do nothing
+            """,
+            {"bucket_name": bucket_name},
+        )
         self._bucket_ready = True
 
 
@@ -97,7 +90,7 @@ class SupabaseLoader:
         self.settings = settings
         self.database = database
         self.logger = logger.getChild("loader")
-        self.storage = SupabaseStorageClient(settings, logger)
+        self.storage = SupabaseStorageClient(settings, logger, database)
 
     def close(self) -> None:
         """Release any client resources."""

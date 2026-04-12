@@ -9,6 +9,7 @@ on:
         type: choice
         default: discover-sources
         options:
+          - run-migrations
           - discover-sources
           - load-boundaries
           - ingest-ros-cadastral
@@ -37,6 +38,9 @@ jobs:
       BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
       ROS_CLIENT_ID: ${{ secrets.ROS_CLIENT_ID }}
       ROS_CLIENT_SECRET: ${{ secrets.ROS_CLIENT_SECRET }}
+      AUDIT_ARTIFACT_BACKEND: none
+      PERSIST_STAGING_ROWS: "false"
+      STAGING_RETENTION_DAYS: "14"
 
     steps:
       - name: Check out repository

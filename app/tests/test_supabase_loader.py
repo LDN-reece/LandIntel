@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+import geopandas as gpd
 import httpx
 
 from src.loaders.supabase_loader import SupabaseLoader, SupabaseStorageClient
@@ -22,6 +23,7 @@ class _FakeDatabase:
         self.params_list: list[dict[str, object]] | None = None
         self.executed_sql: list[str] = []
         self.executed_params: list[dict[str, object]] = []
+        self.fetch_one_result: dict[str, object] | None = None
 
     def execute_many(self, sql: str, params_list: list[dict[str, object]]) -> None:
         self.sql = sql
@@ -30,6 +32,11 @@ class _FakeDatabase:
     def execute(self, sql: str, params: dict[str, object] | None = None) -> None:
         self.executed_sql.append(sql)
         self.executed_params.append(params or {})
+
+    def fetch_one(self, sql: str, params: dict[str, object] | None = None) -> dict[str, object] | None:
+        self.executed_sql.append(sql)
+        self.executed_params.append(params or {})
+        return self.fetch_one_result
 
     def dispose(self) -> None:
         pass
@@ -75,7 +82,10 @@ class SupabaseLoaderTest(unittest.TestCase):
             http_timeout_seconds=5,
             supabase_service_role_key=None,
             supabase_url="https://example.supabase.co",
+            audit_artifact_backend="none",
             supabase_audit_bucket_name="landintel-ingest-audit",
+            persist_staging_rows=False,
+            staging_retention_days=14,
             batch_size=1000,
         )
         self.database = _FakeDatabase()
@@ -112,6 +122,7 @@ class SupabaseLoaderTest(unittest.TestCase):
                 http_timeout_seconds=5,
                 supabase_service_role_key="service-role",
                 supabase_url="https://example.supabase.co",
+                audit_artifact_backend="supabase",
                 supabase_audit_bucket_name="landintel-ingest-audit",
             ),
             logging.getLogger("test.storage"),
@@ -135,6 +146,7 @@ class SupabaseLoaderTest(unittest.TestCase):
                 http_timeout_seconds=5,
                 supabase_service_role_key="service-role",
                 supabase_url="https://example.supabase.co",
+                audit_artifact_backend="supabase",
                 supabase_audit_bucket_name="landintel-ingest-audit",
             ),
             logging.getLogger("test.storage"),
@@ -169,6 +181,7 @@ class SupabaseLoaderTest(unittest.TestCase):
                 http_timeout_seconds=5,
                 supabase_service_role_key="service-role",
                 supabase_url="https://example.supabase.co",
+                audit_artifact_backend="supabase",
                 supabase_audit_bucket_name="landintel-ingest-audit",
             ),
             logging.getLogger("test.storage"),
@@ -188,6 +201,72 @@ class SupabaseLoaderTest(unittest.TestCase):
 
         self.assertIsNone(uploaded_path)
         self.assertEqual(len(fake_client.calls), 1)
+
+    def test_storage_upload_is_disabled_when_backend_is_none(self) -> None:
+        storage = SupabaseStorageClient(
+            SimpleNamespace(
+                http_timeout_seconds=5,
+                supabase_service_role_key="service-role",
+                supabase_url="https://example.supabase.co",
+                audit_artifact_backend="none",
+                supabase_audit_bucket_name="landintel-ingest-audit",
+            ),
+            logging.getLogger("test.storage"),
+            self.database,
+        )
+        fake_client = _FakeStorageHttpClient()
+        storage.client = fake_client
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_path = Path(tmp_dir) / "artifact.zip"
+            local_path.write_bytes(b"PK\x03\x04test")
+
+            try:
+                uploaded_path = storage.upload_file(local_path, "ignored/path.zip")
+            finally:
+                storage.close()
+
+        self.assertIsNone(uploaded_path)
+        self.assertEqual(len(fake_client.calls), 0)
+        self.assertFalse(self.database.executed_sql)
+
+    def test_refresh_cached_outputs_calls_analytics_function(self) -> None:
+        self.loader.refresh_cached_outputs()
+
+        self.assertTrue(self.database.executed_sql)
+        self.assertIn("select analytics.refresh_cached_outputs()", self.database.executed_sql[0])
+
+    def test_prune_staging_data_returns_deleted_counts(self) -> None:
+        self.database.fetch_one_result = {"raw_deleted": 3, "clean_deleted": 5}
+
+        result = self.loader.prune_staging_data()
+
+        self.assertEqual(result, {"raw_deleted": 3, "clean_deleted": 5})
+        self.assertTrue(self.database.executed_sql)
+        self.assertIn("delete from staging.ros_cadastral_parcels_raw", self.database.executed_sql[0])
+        self.assertEqual(self.database.executed_params[0], {"retention_days": 14})
+
+    def test_raw_staging_insert_is_disabled_by_default(self) -> None:
+        gdf = gpd.GeoDataFrame(
+            [
+                {
+                    "run_id": "run-1",
+                    "source_name": "RoS",
+                    "source_file": "county.zip",
+                    "source_county": "Aberdeen",
+                    "ros_inspire_id": "id-1",
+                    "raw_attributes": {"ok": True},
+                    "geometry": None,
+                }
+            ],
+            geometry="geometry",
+            crs="EPSG:27700",
+        )
+
+        count = self.loader.insert_raw_parcels(gdf)
+
+        self.assertEqual(count, 0)
+        self.assertFalse(self.database.sql)
 
 
 if __name__ == "__main__":

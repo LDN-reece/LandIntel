@@ -113,6 +113,7 @@ class LandIntelPipeline:
             )
             loaded = self.loader.upsert_authority_aoi(authority_gdf)
             self.loader.upsert_source_registry([download.source_record])
+            self.loader.refresh_cached_outputs()
 
             self.loader.update_ingest_run(
                 run_id,
@@ -121,7 +122,10 @@ class LandIntelPipeline:
                     records_fetched=len(authority_gdf),
                     records_loaded=loaded,
                     records_retained=loaded,
-                    metadata={"download_url": download.download_url},
+                    metadata={
+                        "download_url": download.download_url,
+                        "cache_refreshed": True,
+                    },
                     finished=True,
                 ),
             )
@@ -159,6 +163,8 @@ class LandIntelPipeline:
         records_loaded = 0
         records_retained = 0
         county_failures: list[dict[str, str]] = []
+        cache_refreshed = False
+        staging_pruned = {"raw_deleted": 0, "clean_deleted": 0}
 
         try:
             self.loader.upsert_source_registry([self.ros.build_source_registry_record()])
@@ -250,6 +256,13 @@ class LandIntelPipeline:
                 status = "success"
                 error_message = None
 
+            if records_retained > 0:
+                self.loader.refresh_cached_outputs()
+                cache_refreshed = True
+
+            if self.settings.staging_retention_days > 0:
+                staging_pruned = self.loader.prune_staging_data()
+
             self.loader.update_ingest_run(
                 run_id,
                 IngestRunUpdate(
@@ -258,7 +271,12 @@ class LandIntelPipeline:
                     records_loaded=records_loaded,
                     records_retained=records_retained,
                     error_message=error_message,
-                    metadata={"county_failures": county_failures},
+                    metadata={
+                        "county_failures": county_failures,
+                        "cache_refreshed": cache_refreshed,
+                        "staging_pruned": staging_pruned,
+                        "persist_staging_rows": self.settings.persist_staging_rows,
+                    },
                     finished=True,
                 ),
             )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import Field
@@ -73,14 +73,21 @@ class Settings(BaseSettings):
     log_json: bool = Field(default=True, alias="LOG_JSON")
     log_file_path: Path = Field(default=APP_DIR / "logs" / "landintel_ingest.log", alias="LOG_FILE_PATH")
 
+    audit_artifact_backend: Literal["none", "supabase"] = Field(
+        default="none",
+        alias="AUDIT_ARTIFACT_BACKEND",
+    )
     supabase_audit_bucket_name: str = Field(
         default="landintel-ingest-audit",
         alias="SUPABASE_AUDIT_BUCKET_NAME",
     )
+    persist_staging_rows: bool = Field(default=False, alias="PERSIST_STAGING_ROWS")
+    staging_retention_days: int = Field(default=14, alias="STAGING_RETENTION_DAYS")
     batch_size: int = Field(default=1_000, alias="BATCH_SIZE")
     http_timeout_seconds: int = Field(default=120, alias="HTTP_TIMEOUT_SECONDS")
 
     enable_internal_scheduler: bool = Field(default=False, alias="ENABLE_INTERNAL_SCHEDULER")
+    startup_command: str = Field(default="none", alias="STARTUP_COMMAND")
     quarterly_cron: str = Field(default="0 6 2 3,6,9,12 *", alias="QUARTERLY_CRON")
 
     councils_config_path: Path = Field(

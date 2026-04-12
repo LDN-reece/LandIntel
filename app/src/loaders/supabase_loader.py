@@ -26,7 +26,10 @@ class SupabaseStorageClient:
         self.settings = settings
         self.database = database
         self.logger = logger.getChild("storage")
-        self.enabled = bool(settings.supabase_service_role_key)
+        self.enabled = (
+            settings.audit_artifact_backend == "supabase"
+            and bool(settings.supabase_service_role_key)
+        )
         self._bucket_ready = False
         self.client = httpx.Client(timeout=settings.http_timeout_seconds, follow_redirects=True)
 
@@ -39,9 +42,14 @@ class SupabaseStorageClient:
         """Upload a local artifact into the audit bucket."""
 
         if not self.enabled:
+            reason = (
+                "backend_disabled"
+                if self.settings.audit_artifact_backend != "supabase"
+                else "missing_service_role_key"
+            )
             self.logger.warning(
                 "storage_upload_skipped",
-                extra={"reason": "missing_service_role_key", "local_path": str(local_path)},
+                extra={"reason": reason, "local_path": str(local_path)},
             )
             return None
 
@@ -182,6 +190,37 @@ class SupabaseLoader:
 
         return self.storage.upload_file(local_path, remote_path)
 
+    def refresh_cached_outputs(self) -> None:
+        """Refresh the precomputed analytics surfaces the frontend should read from."""
+
+        self.database.execute("select analytics.refresh_cached_outputs();")
+
+    def prune_staging_data(self) -> None:
+        """Delete old staging rows so debug tables do not grow forever."""
+
+        row = self.database.fetch_one(
+            """
+                with deleted_raw as (
+                    delete from staging.ros_cadastral_parcels_raw
+                    where loaded_at < now() - make_interval(days => :retention_days)
+                    returning 1
+                ),
+                deleted_clean as (
+                    delete from staging.ros_cadastral_parcels_clean
+                    where cleaned_at < now() - make_interval(days => :retention_days)
+                    returning 1
+                )
+                select
+                    (select count(*) from deleted_raw) as raw_deleted,
+                    (select count(*) from deleted_clean) as clean_deleted
+            """,
+            {"retention_days": self.settings.staging_retention_days},
+        )
+        return {
+            "raw_deleted": int((row or {}).get("raw_deleted", 0)),
+            "clean_deleted": int((row or {}).get("clean_deleted", 0)),
+        }
+
     def upsert_source_registry(self, records: list[SourceRegistryRecord]) -> int:
         """Upsert discovered source registry entries."""
 
@@ -284,6 +323,10 @@ class SupabaseLoader:
     def insert_raw_parcels(self, gdf: gpd.GeoDataFrame) -> int:
         """Append raw staging parcels."""
 
+        if not self.settings.persist_staging_rows:
+            self.logger.info("staging_insert_skipped", extra={"table": "staging.ros_cadastral_parcels_raw"})
+            return 0
+
         sql = """
             insert into staging.ros_cadastral_parcels_raw (
                 run_id,
@@ -326,6 +369,13 @@ class SupabaseLoader:
 
     def insert_clean_parcels(self, gdf: gpd.GeoDataFrame) -> int:
         """Append clean staging parcels."""
+
+        if not self.settings.persist_staging_rows:
+            self.logger.info(
+                "staging_insert_skipped",
+                extra={"table": "staging.ros_cadastral_parcels_clean"},
+            )
+            return 0
 
         sql = """
             insert into staging.ros_cadastral_parcels_clean (

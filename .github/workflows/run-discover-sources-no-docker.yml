@@ -1,0 +1,145 @@
+name: Run Discover Sources No Docker
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: landintel-discover-sources-no-docker
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      SUPABASE_URL: https://icmgcxujqoiyzxqonwca.supabase.co
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate required secrets
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "Missing GitHub secret: SUPABASE_DB_URL"
+            exit 1
+          fi
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Missing GitHub secret: SUPABASE_SERVICE_ROLE_KEY"
+            exit 1
+          fi
+          case "$SUPABASE_DB_URL" in
+            postgresql://*|postgresql+psycopg://*|postgres://*)
+              echo "SUPABASE_DB_URL format looks valid"
+              ;;
+            https://*)
+              echo "SUPABASE_DB_URL is wrong. Use the Postgres connection string from Supabase Connect, not the project URL."
+              exit 1
+              ;;
+            *)
+              echo "SUPABASE_DB_URL must start with postgresql://, postgresql+psycopg://, or postgres://"
+              exit 1
+              ;;
+          esac
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev proj-bin
+
+      - name: Patch worker code
+        working-directory: app
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = [
+              (
+                  Path('src/processors/classify_size.py'),
+                  'lambda value: "bucket_1_under_5_acres" if float(value) < 5 else "bucket_2_5plus_acres"',
+                  'lambda value: "bucket_1_under_4_acres" if float(value) < 4 else "bucket_2_4plus_acres"',
+                  'python size bucket code',
+              ),
+              (
+                  Path('src/processors/classify_size.py'),
+                  'lambda value: "Under 5 acres" if float(value) < 5 else "5+ acres"',
+                  'lambda value: "Under 4 acres" if float(value) < 4 else "4+ acres"',
+                  'python size bucket label',
+              ),
+              (
+                  Path('sql/005_functions.sql'),
+                  "when coalesce(area_acres, 0) < 5 then 'bucket_1_under_5_acres'",
+                  "when coalesce(area_acres, 0) < 4 then 'bucket_1_under_4_acres'",
+                  'sql size bucket code',
+              ),
+              (
+                  Path('sql/005_functions.sql'),
+                  "else 'bucket_2_5plus_acres'",
+                  "else 'bucket_2_4plus_acres'",
+                  'sql size bucket code upper bucket',
+              ),
+              (
+                  Path('sql/005_functions.sql'),
+                  "when coalesce(area_acres, 0) < 5 then 'Under 5 acres'",
+                  "when coalesce(area_acres, 0) < 4 then 'Under 4 acres'",
+                  'sql size bucket label',
+              ),
+              (
+                  Path('sql/005_functions.sql'),
+                  "else '5+ acres'",
+                  "else '4+ acres'",
+                  'sql size bucket label upper bucket',
+              ),
+              (
+                  Path('src/loaders/supabase_loader.py'),
+                  """                case
+                    when :geographic_extent_wkb is null then null
+                    else ST_Multi(ST_GeomFromWKB(decode(:geographic_extent_wkb, 'hex'), 4326))
+                end,""",
+                  """                case
+                    when cast(:geographic_extent_wkb as text) is null then null::geometry(multipolygon, 4326)
+                    else ST_Multi(ST_GeomFromWKB(decode(cast(:geographic_extent_wkb as text), 'hex'), 4326))
+                end,""",
+                  'source registry null geometry handling',
+              ),
+          ]
+
+          for path, old, new, label in replacements:
+              text = path.read_text(encoding='utf-8')
+              if old in text:
+                  text = text.replace(old, new)
+                  path.write_text(text, encoding='utf-8')
+                  print(f'Patched {label} in {path}')
+              elif new in text:
+                  print(f'{label} already applied in {path}')
+              else:
+                  raise SystemExit(f'{path}: expected text not found for {label}')
+          PY
+
+      - name: Verify patch
+        working-directory: app
+        run: |
+          grep -n "bucket_1_under_4_acres" src/processors/classify_size.py
+          grep -n "Under 4 acres" src/processors/classify_size.py
+          grep -n "cast(:geographic_extent_wkb as text)" src/loaders/supabase_loader.py
+
+      - name: Install Python dependencies
+        working-directory: app
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run discover-sources
+        working-directory: app
+        run: python -m src.main discover-sources

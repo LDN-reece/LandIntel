@@ -71,13 +71,6 @@ jobs:
               ;;
           esac
 
-          if [ "${{ inputs.command }}" = "load-boundaries" ] || [ "${{ inputs.command }}" = "full-refresh" ]; then
-            if [ -z "$BOUNDARY_AUTHKEY" ] && [ -z "$BOUNDARY_GEOJSON_URL" ]; then
-              echo "Missing GitHub secret: set BOUNDARY_AUTHKEY or BOUNDARY_GEOJSON_URL before running ${{ inputs.command }}"
-              exit 1
-            fi
-          fi
-
       - name: Install system packages
         run: |
           sudo apt-get update

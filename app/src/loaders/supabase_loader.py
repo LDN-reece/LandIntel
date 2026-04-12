@@ -51,18 +51,39 @@ class SupabaseStorageClient:
             f"{self.settings.supabase_url.rstrip('/')}/storage/v1/object/"
             f"{self.settings.supabase_audit_bucket_name}/{remote_path.lstrip('/')}"
         )
-        with local_path.open("rb") as handle:
-            response = self.client.post(
-                object_url,
-                headers={
-                    "apikey": self.settings.supabase_service_role_key or "",
-                    "Authorization": f"Bearer {self.settings.supabase_service_role_key}",
-                    "Content-Type": content_type,
-                    "x-upsert": "true",
+        try:
+            with local_path.open("rb") as handle:
+                response = self.client.post(
+                    object_url,
+                    headers={
+                        "apikey": self.settings.supabase_service_role_key or "",
+                        "Authorization": f"Bearer {self.settings.supabase_service_role_key}",
+                        "x-upsert": "true",
+                    },
+                    files={"file": (local_path.name, handle, content_type)},
+                )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            self.logger.warning(
+                "storage_upload_failed",
+                extra={
+                    "local_path": str(local_path),
+                    "remote_path": remote_path,
+                    "status_code": exc.response.status_code,
+                    "response_text": exc.response.text[:500],
                 },
-                content=handle.read(),
             )
-        response.raise_for_status()
+            return None
+        except (httpx.HTTPError, OSError) as exc:
+            self.logger.warning(
+                "storage_upload_failed",
+                extra={
+                    "local_path": str(local_path),
+                    "remote_path": remote_path,
+                    "error": str(exc),
+                },
+            )
+            return None
         return remote_path
 
     def _ensure_bucket(self) -> None:

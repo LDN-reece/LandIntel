@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import logging
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
+
+import httpx
 
 from src.loaders.supabase_loader import SupabaseLoader, SupabaseStorageClient
 from src.models.source_registry import SourceRegistryRecord
@@ -28,6 +32,38 @@ class _FakeDatabase:
         self.executed_params.append(params or {})
 
     def dispose(self) -> None:
+        pass
+
+
+class _FakeResponse:
+    """Minimal response stub for upload tests."""
+
+    def __init__(self, status_code: int = 200, text: str = "") -> None:
+        self.status_code = status_code
+        self.text = text
+        self.request = httpx.Request("POST", "https://example.supabase.co/storage/v1/object")
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                "upload failed",
+                request=self.request,
+                response=httpx.Response(self.status_code, text=self.text, request=self.request),
+            )
+
+
+class _FakeStorageHttpClient:
+    """Capture outgoing storage upload requests."""
+
+    def __init__(self, response: _FakeResponse | None = None) -> None:
+        self.response = response or _FakeResponse()
+        self.calls: list[dict[str, object]] = []
+
+    def post(self, url: str, **kwargs: object) -> _FakeResponse:
+        self.calls.append({"url": url, **kwargs})
+        return self.response
+
+    def close(self) -> None:
         pass
 
 
@@ -92,6 +128,66 @@ class SupabaseLoaderTest(unittest.TestCase):
             self.database.executed_params[0],
             {"bucket_name": "landintel-ingest-audit"},
         )
+
+    def test_storage_upload_uses_multipart_form_data(self) -> None:
+        storage = SupabaseStorageClient(
+            SimpleNamespace(
+                http_timeout_seconds=5,
+                supabase_service_role_key="service-role",
+                supabase_url="https://example.supabase.co",
+                supabase_audit_bucket_name="landintel-ingest-audit",
+            ),
+            logging.getLogger("test.storage"),
+            self.database,
+        )
+        fake_client = _FakeStorageHttpClient()
+        storage.client = fake_client
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_path = Path(tmp_dir) / "artifact.zip"
+            local_path.write_bytes(b"PK\x03\x04test")
+
+            try:
+                uploaded_path = storage.upload_file(local_path, "ros_cadastral/run-123/downloads/artifact.zip")
+            finally:
+                storage.close()
+
+        self.assertEqual(uploaded_path, "ros_cadastral/run-123/downloads/artifact.zip")
+        self.assertEqual(len(fake_client.calls), 1)
+        call = fake_client.calls[0]
+        self.assertIn("/storage/v1/object/landintel-ingest-audit/ros_cadastral/run-123/downloads/artifact.zip", call["url"])
+        self.assertIn("files", call)
+        self.assertNotIn("content", call)
+        headers = call["headers"]
+        assert isinstance(headers, dict)
+        self.assertEqual(headers["x-upsert"], "true")
+        self.assertNotIn("Content-Type", headers)
+
+    def test_storage_upload_failure_is_non_fatal(self) -> None:
+        storage = SupabaseStorageClient(
+            SimpleNamespace(
+                http_timeout_seconds=5,
+                supabase_service_role_key="service-role",
+                supabase_url="https://example.supabase.co",
+                supabase_audit_bucket_name="landintel-ingest-audit",
+            ),
+            logging.getLogger("test.storage"),
+            self.database,
+        )
+        fake_client = _FakeStorageHttpClient(_FakeResponse(status_code=400, text="Asset Already Exists"))
+        storage.client = fake_client
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_path = Path(tmp_dir) / "artifact.zip"
+            local_path.write_bytes(b"PK\x03\x04test")
+
+            try:
+                uploaded_path = storage.upload_file(local_path, "ros_cadastral/run-123/downloads/artifact.zip")
+            finally:
+                storage.close()
+
+        self.assertIsNone(uploaded_path)
+        self.assertEqual(len(fake_client.calls), 1)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,95 @@
+name: Run LandIntel
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: Which stage to run on GitHub
+        required: true
+        type: choice
+        default: discover-sources
+        options:
+          - discover-sources
+          - load-boundaries
+          - ingest-ros-cadastral
+          - full-refresh
+
+concurrency:
+  group: landintel-${{ inputs.command }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: app
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      PYTHONUNBUFFERED: "1"
+      SUPABASE_URL: https://icmgcxujqoiyzxqonwca.supabase.co
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}
+      BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
+      ROS_CLIENT_ID: ${{ secrets.ROS_CLIENT_ID }}
+      ROS_CLIENT_SECRET: ${{ secrets.ROS_CLIENT_SECRET }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate workflow configuration
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "Missing GitHub secret: SUPABASE_DB_URL"
+            exit 1
+          fi
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Missing GitHub secret: SUPABASE_SERVICE_ROLE_KEY"
+            exit 1
+          fi
+          case "$SUPABASE_DB_URL" in
+            postgresql://*|postgresql+psycopg://*|postgres://*)
+              echo "SUPABASE_DB_URL format looks valid"
+              ;;
+            https://*)
+              echo "SUPABASE_DB_URL is wrong. Use the Postgres connection string from Supabase Connect, not the project URL."
+              exit 1
+              ;;
+            *)
+              echo "SUPABASE_DB_URL must start with postgresql://, postgresql+psycopg://, or postgres://"
+              exit 1
+              ;;
+          esac
+
+          if [ "${{ inputs.command }}" = "load-boundaries" ] || [ "${{ inputs.command }}" = "full-refresh" ]; then
+            if [ -z "$BOUNDARY_AUTHKEY" ] && [ -z "$BOUNDARY_GEOJSON_URL" ]; then
+              echo "Missing GitHub secret: set BOUNDARY_AUTHKEY or BOUNDARY_GEOJSON_URL before running ${{ inputs.command }}"
+              exit 1
+            fi
+          fi
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev proj-bin
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run regression checks
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Run selected stage
+        run: python -m src.main "${{ inputs.command }}"

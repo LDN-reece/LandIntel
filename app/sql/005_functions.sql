@@ -2,6 +2,7 @@ create or replace function public.calculate_area_ha(area_sqm numeric)
 returns numeric
 language sql
 immutable
+set search_path = pg_catalog
 as $$
     select round(coalesce(area_sqm, 0) / 10000.0, 6);
 $$;
@@ -10,6 +11,7 @@ create or replace function public.calculate_area_acres(area_sqm numeric)
 returns numeric
 language sql
 immutable
+set search_path = pg_catalog
 as $$
     select round(coalesce(area_sqm, 0) / 4046.8564224, 6);
 $$;
@@ -18,10 +20,11 @@ create or replace function public.classify_size_bucket(area_acres numeric)
 returns text
 language sql
 immutable
+set search_path = pg_catalog
 as $$
     select case
-        when coalesce(area_acres, 0) < 5 then 'bucket_1_under_5_acres'
-        else 'bucket_2_5plus_acres'
+        when coalesce(area_acres, 0) < 4 then 'bucket_1_under_4_acres'
+        else 'bucket_2_4plus_acres'
     end;
 $$;
 
@@ -29,16 +32,18 @@ create or replace function public.classify_size_bucket_label(area_acres numeric)
 returns text
 language sql
 immutable
+set search_path = pg_catalog
 as $$
     select case
-        when coalesce(area_acres, 0) < 5 then 'Under 5 acres'
-        else '5+ acres'
+        when coalesce(area_acres, 0) < 4 then 'Under 4 acres'
+        else '4+ acres'
     end;
 $$;
 
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
+set search_path = pg_catalog
 as $$
 begin
     new.updated_at = now();

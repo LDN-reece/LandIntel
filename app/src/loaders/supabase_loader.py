@@ -192,8 +192,8 @@ class SupabaseLoader:
                 :download_url,
                 cast(:record_json as jsonb),
                 case
-                    when :geographic_extent_wkb is null then null
-                    else ST_Multi(ST_GeomFromWKB(decode(:geographic_extent_wkb, 'hex'), 4326))
+                    when cast(:geographic_extent_wkb as text) is null then null::geometry(multipolygon, 4326)
+                    else ST_Multi(ST_GeomFromWKB(decode(cast(:geographic_extent_wkb as text), 'hex'), 4326))
                 end,
                 :last_seen_at
             )
@@ -243,8 +243,8 @@ class SupabaseLoader:
                 :active,
                 ST_Multi(ST_GeomFromWKB(decode(:geometry_wkb, 'hex'), 27700)),
                 case
-                    when :geometry_simplified_wkb is null then null
-                    else ST_Multi(ST_GeomFromWKB(decode(:geometry_simplified_wkb, 'hex'), 27700))
+                    when cast(:geometry_simplified_wkb as text) is null then null::geometry(multipolygon, 27700)
+                    else ST_Multi(ST_GeomFromWKB(decode(cast(:geometry_simplified_wkb as text), 'hex'), 27700))
                 end
             )
             on conflict (authority_name)
@@ -288,8 +288,8 @@ class SupabaseLoader:
                 :ros_inspire_id,
                 cast(:raw_attributes as jsonb),
                 case
-                    when :geometry_wkb is null then null
-                    else ST_Multi(ST_GeomFromWKB(decode(:geometry_wkb, 'hex'), 27700))
+                    when cast(:geometry_wkb as text) is null then null::geometry(multipolygon, 27700)
+                    else ST_Multi(ST_GeomFromWKB(decode(cast(:geometry_wkb as text), 'hex'), 27700))
                 end
             )
         """
@@ -331,8 +331,8 @@ class SupabaseLoader:
                 :ros_inspire_id,
                 cast(:raw_attributes as jsonb),
                 case
-                    when :geometry_wkb is null then null
-                    else ST_Multi(ST_GeomFromWKB(decode(:geometry_wkb, 'hex'), 27700))
+                    when cast(:geometry_wkb as text) is null then null::geometry(multipolygon, 27700)
+                    else ST_Multi(ST_GeomFromWKB(decode(cast(:geometry_wkb as text), 'hex'), 27700))
                 end
             )
         """
@@ -378,8 +378,8 @@ class SupabaseLoader:
                 :source_county,
                 ST_Multi(ST_GeomFromWKB(decode(:geometry_wkb, 'hex'), 27700)),
                 case
-                    when :centroid_wkb is null then null
-                    else ST_GeomFromWKB(decode(:centroid_wkb, 'hex'), 27700)
+                    when cast(:centroid_wkb as text) is null then null::geometry(point, 27700)
+                    else ST_GeomFromWKB(decode(cast(:centroid_wkb as text), 'hex'), 27700)
                 end,
                 :area_sqm,
                 :area_ha,

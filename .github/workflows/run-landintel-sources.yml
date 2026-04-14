@@ -1,0 +1,99 @@
+name: Run LandIntel Sources
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: Which source phase command to run on GitHub
+        required: true
+        type: choice
+        default: audit-source-footprint
+        options:
+          - run-migrations
+          - audit-source-footprint
+          - ingest-planning-history
+          - ingest-hla
+          - reconcile-canonical-sites
+          - ingest-bgs
+          - full-refresh-core-sources
+
+concurrency:
+  group: landintel-sources-${{ inputs.command }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: app
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}/app
+      SUPABASE_URL: https://icmgcxujqoiyzxqonwca.supabase.co
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}
+      BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
+      OS_API_KEY: ${{ secrets.OS_API_KEY }}
+      ROS_CLIENT_ID: ${{ secrets.ROS_CLIENT_ID }}
+      ROS_CLIENT_SECRET: ${{ secrets.ROS_CLIENT_SECRET }}
+      AUDIT_ARTIFACT_BACKEND: none
+      PERSIST_STAGING_ROWS: "false"
+      MIN_OPERATIONAL_AREA_ACRES: "4"
+      MIRROR_LAND_OBJECTS: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+
+      - name: Validate workflow configuration
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "Missing GitHub secret: SUPABASE_DB_URL"
+            exit 1
+          fi
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Missing GitHub secret: SUPABASE_SERVICE_ROLE_KEY"
+            exit 1
+          fi
+          if [ -z "$BOUNDARY_AUTHKEY" ]; then
+            echo "Missing GitHub secret: BOUNDARY_AUTHKEY"
+            exit 1
+          fi
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev proj-bin postgresql-client
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run regression checks
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Show selected command
+        run: |
+          echo "Command: ${{ inputs.command }}"
+
+      - name: Run source phase command
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.command }}" != "run-migrations" ]; then
+            python -m src.source_phase_runner run-migrations
+          fi
+          python -m src.source_phase_runner "${{ inputs.command }}"

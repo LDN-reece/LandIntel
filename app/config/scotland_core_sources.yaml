@@ -3,8 +3,8 @@ spatial_hub:
   authkey_env: BOUNDARY_AUTHKEY
   sources:
     planning_history:
-      source_name: Planning Applications: Official - Scotland
-      publisher: Improvement Service
+      source_name: "Planning Applications: Official - Scotland"
+      publisher: "Improvement Service"
       dataset_id: planning_applications_official-is
       metadata_uuid: spatialhub:planning_applications_official-is
       resource_name_contains: Polygons
@@ -61,8 +61,8 @@ spatial_hub:
           - decision_comment
           - comments
     hla:
-      source_name: Housing Land Supply - Scotland
-      publisher: Improvement Service
+      source_name: "Housing Land Supply - Scotland"
+      publisher: "Improvement Service"
       dataset_id: housing_land_supply-is
       metadata_uuid: spatialhub:housing_land_supply-is
       authority_field_candidates:
@@ -125,19 +125,19 @@ bgs:
   base_url: https://ogcapi.bgs.ac.uk
   collections:
     boreholes:
-      source_name: BGS Borehole Records
+      source_name: "BGS Borehole Records"
       metadata_uuid: bgs:onshoreboreholeindex
       collection_id: onshoreboreholeindex
       record_type: borehole_records_within_500m
       bbox_buffer_m: 500
     site_investigations:
-      source_name: BGS AGS Borehole Records
+      source_name: "BGS AGS Borehole Records"
       metadata_uuid: bgs:agsboreholeindex
       collection_id: agsboreholeindex
       record_type: ags_site_investigation_records_within_250m
       bbox_buffer_m: 250
     mine_plans:
-      source_name: BGS Mine Plans
+      source_name: "BGS Mine Plans"
       metadata_uuid: bgs:mine_plans
       collection_id: mine_plans
       record_type: mine_plan_records_on_or_near_site

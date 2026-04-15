@@ -14,6 +14,7 @@ import httpx
 
 from config.settings import Settings
 from src.models.source_registry import SourceRegistryRecord
+from src.url_safety import redact_sensitive_query_params
 
 
 BOUNDARY_NAME_MAP = {
@@ -102,7 +103,7 @@ class BoundaryFetcher:
 
         self.logger.info(
             "boundary_downloaded",
-            extra={"download_url": download_url, "local_path": str(local_path)},
+            extra={"download_url": redact_sensitive_query_params(download_url), "local_path": str(local_path)},
         )
         return BoundaryDownload(
             source_record=source_record,

@@ -4,6 +4,7 @@ This workflow is the next live source phase for the Scottish MVP.
 
 It does **not** replace the lean parcel workflow.
 It sits on top of the lean parcel base and populates the private `landintel` schema.
+It is the only source-intelligence workflow now. There is no separate runtime variant.
 
 ## Workflow to use
 
@@ -19,6 +20,8 @@ This first source phase is intentionally focused on the highest-value live input
 2. `Housing Land Supply - Scotland`
 3. `BGS OpenGeoscience API` enrichment
 4. canonical site reconciliation across those records
+
+The runner resolves Spatial Hub downloads from the published resource pages and WFS capabilities, rather than trusting brittle CKAN `typeName` hints directly.
 
 This means the workflow now starts to build:
 

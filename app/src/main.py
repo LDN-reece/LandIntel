@@ -20,6 +20,7 @@ from src.processors.classify_size import classify_size_buckets
 from src.processors.clip_to_authorities import clip_parcels_to_authorities
 from src.processors.extract import choose_preferred_candidate, extract_archive
 from src.processors.normalise import load_preferred_spatial_frame, normalise_ros_cadastral_frame
+from src.url_safety import redact_sensitive_query_params
 from src.processors.validate_geometry import repair_invalid_geometries
 
 
@@ -123,7 +124,7 @@ class LandIntelPipeline:
                     records_loaded=loaded,
                     records_retained=loaded,
                     metadata={
-                        "download_url": download.download_url,
+                        "download_url": redact_sensitive_query_params(download.download_url),
                         "cache_refreshed": True,
                     },
                     finished=True,

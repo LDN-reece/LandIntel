@@ -25,7 +25,15 @@ These defaults make the GitHub workflow avoid raw-file uploads to Supabase Stora
 - `public.source_registry`
 - `public.ingest_runs`
 - `public.ros_cadastral_parcels`
-- `public.land_objects`
+- `landintel.canonical_sites`
+- `landintel.site_reference_aliases`
+- `landintel.site_source_links`
+- `landintel.evidence_references`
+- `landintel.planning_application_records`
+- `landintel.hla_site_records`
+- `landintel.bgs_records`
+- `landintel.v_source_ingest_summary`
+- `landintel.v_site_traceability`
 - `analytics.v_frontend_authority_summary`
 - `analytics.v_frontend_authority_size_summary`
 - `analytics.v_ingest_run_summary`

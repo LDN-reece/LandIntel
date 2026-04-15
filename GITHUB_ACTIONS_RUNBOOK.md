@@ -1,144 +1,75 @@
 # GitHub Actions Runbook
 
-This project is set up to run the Scotland land ingestion worker in GitHub Actions.
+This repository now has three GitHub Actions workflows only.
 
-## What To Use
+## Workflows
 
-Use this workflow:
+### `LandIntel CI`
 
-- `.github/workflows/landintel-ingest.yml`
+Runs automatically on pushes and pull requests to `main`.
 
-It supports:
+Use it to confirm:
 
-- manual runs from the GitHub website
-- automatic quarterly runs
+- the app installs cleanly
+- the source runner still parses manifests and resource metadata correctly
+- unit tests pass before manual ingestion runs
 
-## Secrets To Add In GitHub
+### `Run LandIntel Lean`
 
-In GitHub, open your repository, then go to:
+This is the lean parcel-and-boundary foundation workflow.
 
-- `Settings`
-- `Secrets and variables`
-- `Actions`
-- `New repository secret`
+Use it for:
 
-Create these secrets:
+- `audit-operational-footprint`
+- `cleanup-operational-footprint`
+- `ingest-ros-cadastral-lean`
+- `full-refresh-lean`
 
-### Required
+### `Run LandIntel Sources`
+
+This is the source-intelligence workflow that populates the private `landintel` schema.
+
+Use it for:
+
+- `audit-source-footprint`
+- `ingest-planning-history`
+- `ingest-hla`
+- `reconcile-canonical-sites`
+- `ingest-bgs`
+- `full-refresh-core-sources`
+
+## Required GitHub secrets
 
 - `SUPABASE_DB_URL`
-- `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-
-### Optional
-
 - `BOUNDARY_AUTHKEY`
+
+## Additional secrets already supported
+
 - `BOUNDARY_GEOJSON_URL`
-- `ROS_API_BASE_URL`
+- `OS_API_KEY`
 - `ROS_CLIENT_ID`
 - `ROS_CLIENT_SECRET`
 
-## Where To Find The Supabase Values
+## Recommended run order for MVP
 
-### SUPABASE_DB_URL
+### Foundation
 
-In Supabase:
+1. `Run LandIntel Lean` -> `audit-operational-footprint`
+2. `Run LandIntel Lean` -> `full-refresh-lean`
+3. `Run LandIntel Lean` -> `audit-operational-footprint`
 
-- `Project Settings`
-- `Database`
-- `Connection string`
+### Source intelligence
 
-Use the Postgres connection string.
+1. `Run LandIntel Sources` -> `audit-source-footprint`
+2. `Run LandIntel Sources` -> `ingest-planning-history`
+3. `Run LandIntel Sources` -> `ingest-hla`
+4. `Run LandIntel Sources` -> `reconcile-canonical-sites`
+5. `Run LandIntel Sources` -> `ingest-bgs`
+6. `Run LandIntel Sources` -> `audit-source-footprint`
 
-### SUPABASE_URL
+## Current design rule
 
-In Supabase:
-
-- `Settings`
-- `API`
-- `Project URL`
-
-### SUPABASE_SERVICE_ROLE_KEY
-
-In Supabase:
-
-- `Settings`
-- `API`
-- `service_role`
-
-Use the service role key, not the anon key.
-
-## How To Run It Manually
-
-1. Open the repo in GitHub.
-2. Click `Actions`.
-3. Click `LandIntel Scotland Ingestion`.
-4. Click `Run workflow`.
-5. Choose branch `main`.
-6. Click the green `Run workflow` button.
-
-## How The Schedule Works
-
-The workflow is already set to run automatically on this UTC schedule:
-
-- `0 6 2 3,6,9,12 *`
-
-That means:
-
-- 06:00 UTC
-- on the 2nd day of March, June, September, and December
-
-## How To Check If It Worked
-
-After the workflow finishes, go to Supabase SQL Editor and run:
-
-```sql
-select *
-from analytics.v_ingest_run_summary
-order by started_at desc
-limit 10;
-```
-
-```sql
-select count(*) as authority_count
-from public.authority_aoi;
-```
-
-```sql
-select count(*) as ros_parcel_count
-from public.ros_cadastral_parcels;
-```
-
-## What Success Looks Like
-
-- `authority_count = 20`
-- `ros_parcel_count > 0`
-- latest runs show success for:
-  - `discover_sources`
-  - `load_boundaries`
-  - `ingest_ros_cadastral`
-
-## If The Workflow Fails
-
-### Database connection error
-
-Update `SUPABASE_DB_URL` in GitHub Secrets.
-If direct connection fails, use the Supabase pooler connection string instead.
-
-### Boundary download error
-
-Add one of these secrets:
-
-- `BOUNDARY_AUTHKEY`
-- `BOUNDARY_GEOJSON_URL`
-
-### Storage upload error
-
-Check that `SUPABASE_SERVICE_ROLE_KEY` is the real service role key.
-
-### Old Python workflow still shows warnings
-
-The older default workflow file in this repo is separate from the ingestion workflow.
-The ingestion workflow to use is:
-
-- `LandIntel Scotland Ingestion`
+GitHub Actions is the execution surface.
+Supabase is the operational data store.
+The app should not depend on Docker or manual local execution to run the MVP path.

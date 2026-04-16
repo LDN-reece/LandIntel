@@ -87,6 +87,9 @@ jobs:
       - name: Run regression checks
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
+      - name: Compile critical runners
+        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py
+
       - name: Show selected command
         run: |
           echo "Command: ${{ inputs.command }}"
@@ -94,14 +97,12 @@ jobs:
       - name: Run source phase command
         run: |
           set -euo pipefail
-          if [ "${{ inputs.command }}" != "run-migrations" ]; then
-            python -m src.source_phase_runner run-migrations
-          fi
-          if [ "${{ inputs.command }}" != "run-migrations" ] && [ "${{ inputs.command }}" != "sync-source-catalog" ]; then
-            python -m src.source_catalog_sync sync-source-catalog
-          fi
           if [ "${{ inputs.command }}" = "sync-source-catalog" ]; then
+            python -m src.source_phase_runner run-migrations
             python -m src.source_catalog_sync sync-source-catalog
+          elif [ "${{ inputs.command }}" = "run-migrations" ]; then
+            python -m src.source_phase_runner run-migrations
           else
+            python -m src.source_phase_runner run-migrations
             python -m src.source_phase_runner "${{ inputs.command }}"
           fi

@@ -105,6 +105,9 @@ jobs:
       - name: Run regression checks
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
+      - name: Compile critical runners
+        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py
+
       - name: Show selected command
         run: |
           echo "Command: ${{ inputs.command }}"

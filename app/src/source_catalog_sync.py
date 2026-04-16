@@ -20,6 +20,12 @@ SOURCE_ENDPOINT_PATH = CONFIG_DIR / "scotland_source_endpoints.json"
 ENTITY_BLUEPRINT_PATH = CONFIG_DIR / "scotland_entity_blueprint.json"
 
 
+def _normalize_ref(value: Any) -> str:
+    import re
+
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower()) or "unknown"
+
+
 class SourceCatalogSync:
     """Persist the workbook-derived master source register into Supabase."""
 
@@ -61,62 +67,47 @@ class SourceCatalogSync:
 
             source_key_lookup: dict[str, str] = {}
             for source in sources:
+                metadata = {
+                    "register_name": self.source_catalog.get("register_name"),
+                    "generated_at": self.source_catalog.get("generated_at"),
+                }
                 self.database.execute(
                     """
-                        insert into landintel.source_catalog (
-                            source_key,
-                            domain,
-                            source_name,
-                            source_role,
-                            scope,
-                            actionable_endpoint,
-                            developer_page,
-                            access_pattern,
-                            auth_type,
-                            primary_landintel_use,
-                            why_it_matters,
-                            primary_output_object,
-                            primary_join_method,
-                            secondary_join_method,
-                            interacts_with,
-                            suggested_raw_table,
-                            suggested_normalized_table,
-                            refresh_cadence,
-                            existing_drive_asset,
-                            existing_asset_note,
-                            schema_minimum_fields,
-                            critical_notes,
-                            workflow_stage,
-                            workflow_ready,
-                            metadata
-                        )
-                        values (
-                            :source_key,
-                            :domain,
-                            :source_name,
-                            :source_role,
-                            :scope,
-                            :actionable_endpoint,
-                            :developer_page,
-                            :access_pattern,
-                            :auth_type,
-                            :primary_landintel_use,
-                            :why_it_matters,
-                            :primary_output_object,
-                            :primary_join_method,
-                            :secondary_join_method,
-                            :interacts_with,
-                            :suggested_raw_table,
-                            :suggested_normalized_table,
-                            :refresh_cadence,
-                            :existing_drive_asset,
-                            :existing_asset_note,
-                            :schema_minimum_fields,
-                            :critical_notes,
-                            :workflow_stage,
-                            :workflow_ready,
-                            cast(:metadata as jsonb)
-                        )
+                    insert into landintel.source_catalog (
+                        source_key,
+                        domain,
+                        source_name,
+                        source_role,
+                        scope,
+                        actionable_endpoint,
+                        developer_page,
+                        access_pattern,
+                        auth_type,
+                        primary_landintel_use,
+                        why_it_matters,
+                        primary_output_object,
+                        primary_join_method,
+                        secondary_join_method,
+                        interacts_with,
+                        suggested_raw_table,
+                        suggested_normalized_table,
+                        refresh_cadence,
+                        existing_drive_asset,
+                        existing_asset_note,
+                        schema_minimum_fields,
+                        critical_notes,
+                        workflow_stage,
+                        workflow_ready,
+                        metadata
+                    ) values (
+                        :source_key, :domain, :source_name, :source_role, :scope,
+                        :actionable_endpoint, :developer_page, :access_pattern, :auth_type,
+                        :primary_landintel_use, :why_it_matters, :primary_output_object,
+                        :primary_join_method, :secondary_join_method, :interacts_with,
+                        :suggested_raw_table, :suggested_normalized_table, :refresh_cadence,
+                        :existing_drive_asset, :existing_asset_note, :schema_minimum_fields,
+                        :critical_notes, :workflow_stage, :workflow_ready, cast(:metadata as jsonb)
+                    )
                     """,
                     {
                         "source_key": source["source_key"],
@@ -143,17 +134,12 @@ class SourceCatalogSync:
                         "critical_notes": source.get("critical_notes"),
                         "workflow_stage": source.get("workflow_stage"),
                         "workflow_ready": source.get("workflow_ready", False),
-                        "metadata": json.dumps(
-                            {
-                                "register_name": self.source_catalog.get("register_name"),
-                                "generated_at": self.source_catalog.get("generated_at"),
-                            }
-                        ),
+                        "metadata": json.dumps(metadata),
                     },
                 )
                 source_key_lookup[_normalize_ref(source.get("source_name"))] = source["source_key"]
 
-            endpoint_rows = []
+            endpoint_rows: list[dict[str, Any]] = []
             for endpoint in service_endpoints:
                 endpoint_rows.append(
                     {
@@ -186,30 +172,29 @@ class SourceCatalogSync:
             for endpoint in endpoint_rows:
                 self.database.execute(
                     """
-                        insert into landintel.source_endpoint_catalog (
-                            endpoint_key,
-                            source_key,
-                            endpoint_name,
-                            endpoint_url,
-                            endpoint_type,
-                            auth_required,
-                            purpose,
-                            notes,
-                            endpoint_group,
-                            metadata
-                        )
-                        values (
-                            :endpoint_key,
-                            :source_key,
-                            :endpoint_name,
-                            :endpoint_url,
-                            :endpoint_type,
-                            :auth_required,
-                            :purpose,
-                            :notes,
-                            :endpoint_group,
-                            cast(:metadata as jsonb)
-                        )
+                    insert into landintel.source_endpoint_catalog (
+                        endpoint_key,
+                        source_key,
+                        endpoint_name,
+                        endpoint_url,
+                        endpoint_type,
+                        auth_required,
+                        purpose,
+                        notes,
+                        endpoint_group,
+                        metadata
+                    ) values (
+                        :endpoint_key,
+                        :source_key,
+                        :endpoint_name,
+                        :endpoint_url,
+                        :endpoint_type,
+                        :auth_required,
+                        :purpose,
+                        :notes,
+                        :endpoint_group,
+                        cast(:metadata as jsonb)
+                    )
                     """,
                     {
                         "endpoint_key": endpoint["endpoint_key"],
@@ -228,26 +213,25 @@ class SourceCatalogSync:
             for entity in entity_blueprint:
                 self.database.execute(
                     """
-                        insert into landintel.entity_blueprint_catalog (
-                            entity_name,
-                            purpose,
-                            minimum_required_fields,
-                            primary_source,
-                            primary_join_key,
-                            secondary_join_key,
-                            feeds_decision,
-                            metadata
-                        )
-                        values (
-                            :entity_name,
-                            :purpose,
-                            :minimum_required_fields,
-                            :primary_source,
-                            :primary_join_key,
-                            :secondary_join_key,
-                            :feeds_decision,
-                            '{}'::jsonb
-                        )
+                    insert into landintel.entity_blueprint_catalog (
+                        entity_name,
+                        purpose,
+                        minimum_required_fields,
+                        primary_source,
+                        primary_join_key,
+                        secondary_join_key,
+                        feeds_decision,
+                        metadata
+                    ) values (
+                        :entity_name,
+                        :purpose,
+                        :minimum_required_fields,
+                        :primary_source,
+                        :primary_join_key,
+                        :secondary_join_key,
+                        :feeds_decision,
+                        cast(:metadata as jsonb)
+                    )
                     """,
                     {
                         "entity_name": entity.get("entity_name"),
@@ -257,6 +241,7 @@ class SourceCatalogSync:
                         "primary_join_key": entity.get("primary_join_key"),
                         "secondary_join_key": entity.get("secondary_join_key"),
                         "feeds_decision": entity.get("feeds_decision"),
+                        "metadata": json.dumps({"register_name": self.entity_blueprint.get("register_name")}),
                     },
                 )
 
@@ -281,26 +266,39 @@ class SourceCatalogSync:
         except Exception as exc:
             self.loader.update_ingest_run(
                 run_id,
-                IngestRunUpdate(status="failed", error_message=str(exc), metadata={"traceback": traceback.format_exc()}, finished=True),
+                IngestRunUpdate(
+                    status="failed",
+                    error_message=str(exc),
+                    metadata={"traceback": traceback.format_exc()},
+                    finished=True,
+                ),
             )
             raise
 
 
-def _normalize_ref(value: Any) -> str:
-    import re
-
-    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower()) or "unknown"
-
-
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Sync thHØÚÙYØÛÝ[™ÛÝ\˜ÙH™YÚ\Ý\‹ˆŠBˆ\œÙ\‹˜YØ\™Ý[Y[
-˜ÛÛ[X[™‹ÚÚXÙ\ÏJœ[‹[ZYÜ˜][ÛœÈ‹œÞ[˜Ë\ÛÝ\˜ÙKXØ][ÙÈŠJBˆ™]\›ˆ\œÙ\‚‚‚™YˆXZ[Š
-HOˆ[‚ˆ\œÙ\ˆHZ[Ü\œÙ\Š
-Bˆ\™ÜÈH\œÙ\‹œ\œÙWØ\™ÜÊ
-BˆÙ][™ÜÈHÙ]ÜÙ][™ÜÊ
-BˆÞ[˜Ù\ˆHÛÝ\˜ÙPØ][ÙÔÞ[˜ÊÙ][™ÜÊBˆžN‚ˆYˆ\™ÜË˜ÛÛ[X[™OHœ[‹[ZYÜ˜][ÛœÈŽ‚ˆÞ[˜Ù\‹œ[—ÛZYÜ˜][ÛœÊ
-Bˆ[Yˆ\™ÜË˜ÛÛ[X[™OHœÞ[˜Ë\ÛÝ\˜ÙKXØ][ÙÈŽ‚ˆÞ[˜Ù\‹œÞ[˜Ê
-Bˆ™]\›ˆˆ^Ù\^Ù\[ÛŽ‚ˆÞ[˜Ù\‹›ÙÙÙ\‹™^Ù\[ÛŠœÛÝ\˜ÙWØØ][Ù×ÜÞ[˜×Ù˜Z[Y‹^˜O^È˜ÛÛ[X[™Žˆ\™ÜË˜ÛÛ[X[™JBˆ™]\›ˆBˆš[˜[N‚ˆÞ[˜Ù\‹˜ÛÜÙJ
-B‚‚šYˆ×Û˜[YW×ÈOH—×ÛXZ[—×ÈŽ‚ˆ˜Z\ÙHÞ\Ý[Q^]
-XZ[Š
-JB
+    parser = argparse.ArgumentParser(description="Sync the locked Scotland source register.")
+    parser.add_argument("command", choices=("run-migrations", "sync-source-catalog"))
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    settings = get_settings()
+    syncer = SourceCatalogSync(settings)
+    try:
+        if args.command == "run-migrations":
+            syncer.run_migrations()
+        elif args.command == "sync-source-catalog":
+            syncer.sync()
+        return 0
+    except Exception:
+        syncer.logger.exception("source_catalog_sync_failed", extra={"command": args.command})
+        return 1
+    finally:
+        syncer.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,244 @@
+{
+  "register_name": "LandIntel Scotland Master Source Register",
+  "jurisdiction": "scotland",
+  "generated_at": "2026-04-16",
+  "service_endpoints": [
+    {
+      "endpoint_key": "sobi_full_dataset",
+      "source_name": "SOBI Full Dataset",
+      "endpoint_url": "https://www.bgs.ac.uk/datasets/boreholes-index/",
+      "endpoint_type": "Bulk Download",
+      "auth_required": false,
+      "what_it_gives": "Full GB borehole index (points, IDs, metadata)",
+      "why_use_it": "Base national dataset for all borehole locations",
+      "category": "service_endpoint"
+    },
+    {
+      "endpoint_key": "bgs_ogc_api_borehole_index",
+      "source_name": "BGS OGC API - Borehole Index",
+      "endpoint_url": "https://ogcapi.bgs.ac.uk/collections/boreholeindex/items",
+      "endpoint_type": "API (GeoJSON)",
+      "auth_required": false,
+      "what_it_gives": "Queryable borehole records (SOBI via API)",
+      "why_use_it": "Live querying + spatial filtering instead of full reloads",
+      "category": "service_endpoint"
+    },
+    {
+      "endpoint_key": "bgs_ogc_api_ags_boreholes",
+      "source_name": "BGS OGC API - AGS Boreholes",
+      "endpoint_url": "https://ogcapi.bgs.ac.uk/collections/agsboreholeindex/items",
+      "endpoint_type": "API (GeoJSON)",
+      "auth_required": false,
+      "what_it_gives": "Boreholes with AGS geotechnical data",
+      "why_use_it": "Identify where structured SI data exists",
+      "category": "service_endpoint"
+    },
+    {
+      "endpoint_key": "bgs_ogc_queryables",
+      "source_name": "BGS OGC Queryables",
+      "endpoint_url": "https://ogcapi.bgs.ac.uk/collections/agsboreholeindex/queryables",
+      "endpoint_type": "API Schema",
+      "auth_required": false,
+      "what_it_gives": "Available fields for filtering/querying",
+      "why_use_it": "Build precise queries (depth, type, etc.)",
+      "category": "service_endpoint"
+    },
+    {
+      "endpoint_key": "ags_download_service",
+      "source_name": "AGS Download Service",
+      "endpoint_url": "https://gwbv.bgs.ac.uk/ags_export?loca_ids={ID}",
+      "endpoint_type": "Download (ZIP)",
+      "auth_required": null,
+      "what_it_gives": "Structured AGS files (SI data)",
+      "why_use_it": "Extract real ground conditions (layers, samples, tests)",
+      "category": "service_endpoint"
+    },
+    {
+      "endpoint_key": "borehole_log_viewer",
+      "source_name": "Borehole Log Viewer",
+      "endpoint_url": "https://gwbv.bgs.ac.uk/GWBV/viewborehole?loca_id={ID}",
+      "endpoint_type": "PDF/Viewer",
+      "auth_required": false,
+      "what_it_gives": "Scanned borehole logs",
+      "why_use_it": "Visual ground truth where AGS not available",
+      "category": "service_endpoint"
+    }
+  ],
+  "priority_endpoints": [
+    {
+      "endpoint_key": "priority_ros_inspire_parcels_https_www_ros_gov_uk_services_search_property_information_inspire_index_polygons",
+      "source_name": "RoS INSPIRE parcels",
+      "endpoint_url": "https://www.ros.gov.uk/services/search-property-information/inspire-index-polygons",
+      "purpose": "Base parcel geometry",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_spatial_hub_ckan_api_https_data_spatialhub_scot_api_3_action_package_search",
+      "source_name": "Spatial Hub CKAN API",
+      "endpoint_url": "https://data.spatialhub.scot/api/3/action/package_search",
+      "purpose": "Discover open Scottish datasets and resource URLs",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_sepa_flood_mapserver_https_map_sepa_org_uk_server_rest_services_open_flood_maps_mapserver",
+      "source_name": "SEPA Flood MapServer",
+      "endpoint_url": "https://map.sepa.org.uk/server/rest/services/Open/Flood_Maps/MapServer",
+      "purpose": "Flood constraints",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_bgs_ogc_api_https_ogcapi_bgs_ac_uk_collections",
+      "source_name": "BGS OGC API",
+      "endpoint_url": "https://ogcapi.bgs.ac.uk/collections",
+      "purpose": "Open geoscience features",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_statistics_gov_scot_sparql_https_statistics_gov_scot_sparql",
+      "source_name": "Statistics.gov.scot SPARQL",
+      "endpoint_url": "https://statistics.gov.scot/sparql",
+      "purpose": "Housing and demographic linked data",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_os_places_api_https_api_os_uk_search_places_v1",
+      "source_name": "OS Places API",
+      "endpoint_url": "https://api.os.uk/search/places/v1",
+      "purpose": "Address/UPRN search",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_os_features_api_https_api_os_uk_features_v1_wfs",
+      "source_name": "OS Features API",
+      "endpoint_url": "https://api.os.uk/features/v1/wfs",
+      "purpose": "Topographic features",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_environment_agency_flood_monitoring_https_environment_data_gov_uk_flood_monitoring_id_stations",
+      "source_name": "Environment Agency Flood Monitoring",
+      "endpoint_url": "https://environment.data.gov.uk/flood-monitoring/id/stations",
+      "purpose": "England flood monitoring",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_improvement_service_planning_points_wfs_https_geo_spatialhub_scot_geoserver_sh_plnapp_wfs_service_wfs_typename_",
+      "source_name": "Improvement Service Planning Points WFS",
+      "endpoint_url": "https://geo.spatialhub.scot/geoserver/sh_plnapp/wfs?service=wfs&typeName=sh_plnapp:pub_plnapppnt",
+      "purpose": "Daily live planning applications points",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_improvement_service_planning_polygons_wfs_https_geo_spatialhub_scot_geoserver_sh_plnapp_wfs_service_wfs_typenam",
+      "source_name": "Improvement Service Planning Polygons WFS",
+      "endpoint_url": "https://geo.spatialhub.scot/geoserver/sh_plnapp/wfs?service=wfs&typeName=sh_plnapp:pub_plnapppol",
+      "purpose": "Daily live planning application polygons",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_scotlis_land_register_api_https_api_ros_gov_uk_v1",
+      "source_name": "ScotLIS Land Register API",
+      "endpoint_url": "https://api.ros.gov.uk/v1/",
+      "purpose": "Scottish title, pending application and plan enrichment",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_ros_oauth_token_https_api_ros_gov_uk_v1_oauth_token",
+      "source_name": "RoS OAuth Token",
+      "endpoint_url": "https://api.ros.gov.uk/v1/oauth/token",
+      "purpose": "Authentication for RoS ScotLIS and RLP APIs",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_naturescot_open_data_hub_https_opendata_nature_scot",
+      "source_name": "NatureScot Open Data Hub",
+      "endpoint_url": "https://opendata.nature.scot/",
+      "purpose": "Protected areas and ecology downloads",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_naturescot_sitelink_https_sitelink_nature_scot",
+      "source_name": "NatureScot SiteLink",
+      "endpoint_url": "https://sitelink.nature.scot/",
+      "purpose": "Protected area features, agreements and site condition context",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_historic_environment_scotland_designations_https_inspire_hes_scot_arcgis_rest_services_hes_hes_designations_map",
+      "source_name": "Historic Environment Scotland Designations",
+      "endpoint_url": "https://inspire.hes.scot/arcgis/rest/services/HES/HES_Designations/MapServer",
+      "purpose": "Scottish heritage and designation constraints",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_scottish_water_overflow_map_api_https_api_scottishwater_co_uk_overflow_event_monitoring_v1_near_real_time",
+      "source_name": "Scottish Water Overflow Map API",
+      "endpoint_url": "https://api.scottishwater.co.uk/overflow-event-monitoring/v1/near-real-time",
+      "purpose": "Wastewater overflow and drainage stress proxy",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_sgn_open_data_sharing_portal_https_www_sgn_co_uk_open_data_sharing_portal",
+      "source_name": "SGN Open Data Sharing Portal",
+      "endpoint_url": "https://www.sgn.co.uk/open-data-sharing-portal",
+      "purpose": "Underground gas main constraint context",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_ssen_generation_availability_and_network_capacity_https_data_ssen_co_uk_dataset_93f6890a_4bd4_4b75_9955_6deace5",
+      "source_name": "SSEN Generation Availability and Network Capacity",
+      "endpoint_url": "https://data.ssen.co.uk/dataset/93f6890a-4bd4-4b75-9955-6deace56decb",
+      "purpose": "Major electricity capacity context",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_sp_energy_networks_open_data_portal_https_www_spenergynetworks_co_uk_pages_data_information_sharing_aspx",
+      "source_name": "SP Energy Networks Open Data Portal",
+      "endpoint_url": "https://www.spenergynetworks.co.uk/pages/data_information_sharing.aspx",
+      "purpose": "Electricity asset and capacity portal",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_ofcom_open_data_https_www_ofcom_org_uk_about_ofcom_our_research_opendata",
+      "source_name": "Ofcom Open Data",
+      "endpoint_url": "https://www.ofcom.org.uk/about-ofcom/our-research/opendata/",
+      "purpose": "Broadband and digital connectivity context",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_gp_practices_scotland_https_data_spatialhub_scot_api_3_action_package_show_id_gp_practices_is",
+      "source_name": "GP Practices - Scotland",
+      "endpoint_url": "https://data.spatialhub.scot/api/3/action/package_show?id=gp_practices-is",
+      "purpose": "GP proximity and health-service context",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_nhs_hospitals_scotland_https_data_spatialhub_scot_api_3_action_package_show_id_nhs_hospitals_is",
+      "source_name": "NHS Hospitals - Scotland",
+      "endpoint_url": "https://data.spatialhub.scot/api/3/action/package_show?id=nhs_hospitals-is",
+      "purpose": "Hospital proximity and settlement service context",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_openstreetmap_overpass_api_https_overpass_api_de_api_interpreter",
+      "source_name": "OpenStreetMap Overpass API",
+      "endpoint_url": "https://overpass-api.de/api/interpreter",
+      "purpose": "Local amenities, schools, doctors, leisure and POI context",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_ship_local_authority_publications_https_www_gov_scot_publications_strategic_housing_investment_plan_guidance_20",
+      "source_name": "SHIP local authority publications",
+      "endpoint_url": "https://www.gov.scot/publications/strategic-housing-investment-plan-guidance-2025-mhdgn-2025-01/",
+      "purpose": "Affordable housing priority and public capital intent",
+      "category": "priority_endpoint"
+    },
+    {
+      "endpoint_key": "priority_local_authority_planning_gain_s75_guidance_authority_websites_supplementary_guidance",
+      "source_name": "Local Authority Planning Gain / S75 Guidance",
+      "endpoint_url": "Authority websites / supplementary guidance",
+      "purpose": "Developer contributions and burden modelling",
+      "category": "priority_endpoint"
+    }
+  ]
+}

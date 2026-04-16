@@ -10,6 +10,7 @@ on:
         default: audit-source-footprint
         options:
           - run-migrations
+          - sync-source-catalog
           - audit-source-footprint
           - ingest-planning-history
           - ingest-hla
@@ -96,4 +97,11 @@ jobs:
           if [ "${{ inputs.command }}" != "run-migrations" ]; then
             python -m src.source_phase_runner run-migrations
           fi
-          python -m src.source_phase_runner "${{ inputs.command }}"
+          if [ "${{ inputs.command }}" != "run-migrations" ] && [ "${{ inputs.command }}" != "sync-source-catalog" ]; then
+            python -m src.source_catalog_sync sync-source-catalog
+          fi
+          if [ "${{ inputs.command }}" = "sync-source-catalog" ]; then
+            python -m src.source_catalog_sync sync-source-catalog
+          else
+            python -m src.source_phase_runner "${{ inputs.command }}"
+          fi

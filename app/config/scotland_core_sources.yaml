@@ -10,8 +10,6 @@ spatial_hub:
       resource_name_contains: Polygons
       authority_field_candidates:
         - local_auth
-        - local_authority
-        - authority_name
       field_mappings:
         source_record:
           - reference
@@ -67,8 +65,6 @@ spatial_hub:
       metadata_uuid: spatialhub:housing_land_supply-is
       authority_field_candidates:
         - local_auth
-        - local_authority
-        - authority_name
       field_mappings:
         source_record:
           - site_reference

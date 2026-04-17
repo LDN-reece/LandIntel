@@ -15,12 +15,19 @@ from src.source_phase_runner import (
 class SourcePhaseRunnerTests(unittest.TestCase):
     def test_build_wfs_download_url_preserves_authkey_and_filter(self) -> None:
         runner = SourcePhaseRunner.__new__(SourcePhaseRunner)
-        url = SourcePhaseRunner._build_wfs_download_url(
+        runner.spatial_hub_authkey = "test-auth-key"
+        authority_fields = ["local_auth", "authority_name"]
+        url = SourcePhaseRunner._with_authkey(
             runner,
             "https://geo.spatialhub.scot/geoserver/sh_plnapp/wfs?service=WFS&request=GetCapabilities&authkey=test-auth-key",
-            "sh_plnapp:pub_plnapppol",
-            authority_name="Dundee City",
-            authority_fields=["local_auth", "authority_name"],
+            {
+                "service": "WFS",
+                "version": "1.0.0",
+                "request": "GetFeature",
+                "typeName": "sh_plnapp:pub_plnapppol",
+                "outputFormat": "application/json",
+                "cql_filter": SourcePhaseRunner._build_authority_filter(runner, authority_fields, "Dundee City"),
+            },
         )
 
         self.assertIn("authkey=test-auth-key", url)

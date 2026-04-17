@@ -20,8 +20,10 @@ import geopandas as gpd
 import httpx
 import pandas as pd
 import yaml
+from shapely import wkb as shapely_wkb
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.geometry.base import BaseGeometry
+from shapely.ops import unary_union
 
 from config.settings import Settings, get_settings
 from src.db import chunked
@@ -457,8 +459,9 @@ class SourcePhaseRunner:
                 frame = self._fetch_spatial_hub_frame(config, authority_name)
                 if frame.empty:
                     continue
-                batch_rows = self._build_dataset_rows(key, authority_name, frame, config, source_registry_id, run_id)
-                fetched += len(batch_rows)
+                raw_rows = self._build_dataset_rows(key, authority_name, frame, config, source_registry_id, run_id)
+                fetched += len(raw_rows)
+                batch_rows = self._consolidate_dataset_rows(key, raw_rows)
                 loaded += len(batch_rows)
                 for batch in chunked(batch_rows, self.settings.batch_size):
                     if key == "planning_history":
@@ -505,25 +508,26 @@ class SourcePhaseRunner:
     ) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         for index, row in enumerate(frame.to_dict(orient="records"), start=1):
-            source_record_id = _pick_text(row, config.field_mappings.get("source_record", [])) or f"{authority_name}:{index}"
+            source_record_id = _pick_text(row, config.field_mappings["source_record_id"]) or f"{authority_name}:{index}"
+            geometry = _polygonize_geometry(row.get("geometry"))
             payload = _row_payload(row)
-            geometry = row.get("geometry")
             if key == "planning_history":
-                proposal_text = _pick_text(row, config.field_mappings.get("proposal_text", []))
-                refusal_reason_text = _pick_text(row, config.field_mappings.get("refusal_reason_text", []))
                 rows.append(
                     {
                         "source_record_id": source_record_id,
                         "authority_name": authority_name,
-                        "planning_reference": _pick_text(row, config.field_mappings.get("planning_reference", [])),
-                        "application_type": _pick_text(row, config.field_mappings.get("application_type", [])),
-                        "proposal_text": proposal_text,
-                        "application_status": _pick_text(row, config.field_mappings.get("application_status", [])),
-                        "decision": _pick_text(row, config.field_mappings.get("decision", [])),
-                        "lodged_date": _pick_date(row, config.field_mappings.get("lodged_date", [])),
-                        "decision_date": _pick_date(row, config.field_mappings.get("decision_date", [])),
-                        "appeal_status": _pick_text(row, config.field_mappings.get("appeal_status", [])),
-                        "refusal_themes": _extract_refusal_themes(" ".join(filter(None, [proposal_text, refusal_reason_text]))),
+                        "planning_reference": _pick_text(row, config.field_mappings["planning_reference"]) or source_record_id,
+                        "application_type": _pick_text(row, config.field_mappings["application_type"]),
+                        "proposal_text": _pick_text(row, config.field_mappings["proposal_text"]),
+                        "application_status": _pick_text(row, config.field_mappings["application_status"]),
+                        "decision": _pick_text(row, config.field_mappings["decision"]),
+                        "lodged_date": _pick_date(row, config.field_mappings["lodged_date"]),
+                        "decision_date": _pick_date(row, config.field_mappings["decision_date"]),
+                        "appeal_status": _pick_text(row, config.field_mappings["appeal_status"]),
+                        "refusal_themes": _extract_refusal_themes(
+                            _pick_text(row, config.field_mappings["refusal_reason"])
+                            or _pick_text(row, config.field_mappings["decision"])
+                        ),
                         "geometry_wkb": _geometry_hex(geometry),
                         "source_registry_id": source_registry_id,
                         "ingest_run_id": run_id,
@@ -535,16 +539,16 @@ class SourcePhaseRunner:
                     {
                         "source_record_id": source_record_id,
                         "authority_name": authority_name,
-                        "site_reference": _pick_text(row, config.field_mappings.get("site_reference", [])),
-                        "site_name": _pick_text(row, config.field_mappings.get("site_name", [])),
-                        "effectiveness_status": _pick_text(row, config.field_mappings.get("effectiveness_status", [])),
-                        "programming_horizon": _pick_text(row, config.field_mappings.get("programming_horizon", [])),
-                        "constraint_reasons": _split_multivalue(_pick_text(row, config.field_mappings.get("constraint_reasons", []))),
-                        "developer_name": _pick_text(row, config.field_mappings.get("developer_name", [])),
-                        "remaining_capacity": _pick_int(row, config.field_mappings.get("remaining_capacity", [])),
-                        "completions": _pick_int(row, config.field_mappings.get("completions", [])),
-                        "tenure": _pick_text(row, config.field_mappings.get("tenure", [])),
-                        "brownfield_indicator": _pick_bool(row, config.field_mappings.get("brownfield_indicator", [])),
+                        "site_reference": _pick_text(row, config.field_mappings["site_reference"]) or source_record_id,
+                        "site_name": _pick_text(row, config.field_mappings["site_name"]),
+                        "effectiveness_status": _pick_text(row, config.field_mappings["effectiveness_status"]),
+                        "programming_horizon": _pick_text(row, config.field_mappings["programming_horizon"]),
+                        "constraint_reasons": _split_multivalue(_pick_text(row, config.field_mappings["constraint_reason"])),
+                        "developer_name": _pick_text(row, config.field_mappings["developer_name"]),
+                        "remaining_capacity": _pick_int(row, config.field_mappings["remaining_capacity"]),
+                        "completions": _pick_int(row, config.field_mappings["completions"]),
+                        "tenure": _pick_text(row, config.field_mappings["tenure"]),
+                        "brownfield_indicator": _pick_bool(row, config.field_mappings["brownfield_indicator"]),
                         "geometry_wkb": _geometry_hex(geometry),
                         "source_registry_id": source_registry_id,
                         "ingest_run_id": run_id,
@@ -552,6 +556,61 @@ class SourcePhaseRunner:
                     }
                 )
         return rows
+
+    def _consolidate_dataset_rows(
+        self,
+        key: str,
+        rows: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if key != "hla":
+            return rows
+        return self._consolidate_hla_rows(rows)
+
+    def _consolidate_hla_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        consolidated: dict[tuple[str, str], dict[str, Any]] = {}
+        for row in rows:
+            authority_name = str(row.get("authority_name") or "")
+            source_record_id = str(row.get("source_record_id") or "")
+            key = (authority_name, source_record_id)
+            if key not in consolidated:
+                seed = dict(row)
+                seed["_raw_payloads"] = [row.get("raw_payload")]
+                seed["_geometry_wkbs"] = [row.get("geometry_wkb")]
+                consolidated[key] = seed
+                continue
+
+            existing = consolidated[key]
+            for field_name in (
+                "site_reference",
+                "site_name",
+                "effectiveness_status",
+                "programming_horizon",
+                "developer_name",
+                "remaining_capacity",
+                "completions",
+                "tenure",
+            ):
+                existing[field_name] = _coalesce_value(existing.get(field_name), row.get(field_name))
+
+            existing["constraint_reasons"] = _merge_text_lists(
+                existing.get("constraint_reasons"),
+                row.get("constraint_reasons"),
+            )
+            existing["brownfield_indicator"] = _merge_boolean(
+                existing.get("brownfield_indicator"),
+                row.get("brownfield_indicator"),
+            )
+            existing["_raw_payloads"].append(row.get("raw_payload"))
+            existing["_geometry_wkbs"].append(row.get("geometry_wkb"))
+
+        output: list[dict[str, Any]] = []
+        for merged in consolidated.values():
+            geometry_wkbs = merged.pop("_geometry_wkbs", [])
+            raw_payloads = merged.pop("_raw_payloads", [])
+            merged["geometry_wkb"] = _merge_geometry_wkbs(geometry_wkbs)
+            merged["raw_payload"] = _merge_raw_payloads(raw_payloads)
+            output.append(merged)
+        return output
 
     def _insert_planning_batch(self, batch: list[dict[str, Any]]) -> None:
         self.database.execute_many(
@@ -642,141 +701,116 @@ class SourcePhaseRunner:
         )
 
     def _spatial_hub_source(self, key: str) -> SpatialHubSourceConfig:
-        payload = self.manifest.get("spatial_hub", {}).get("sources", {}).get(key, {})
+        payload = self.manifest.get("spatial_hub", {}).get(key)
+        if not payload:
+            raise KeyError(f"Missing spatial_hub configuration for {key}.")
         return SpatialHubSourceConfig(
-            source_name=str(payload["source_name"]),
-            publisher=str(payload["publisher"]),
-            dataset_id=str(payload["dataset_id"]),
-            metadata_uuid=str(payload["metadata_uuid"]),
-            field_mappings={str(name): [str(item) for item in values] for name, values in (payload.get("field_mappings") or {}).items()},
-            authority_field_candidates=[str(item) for item in payload.get("authority_field_candidates", [])],
-            resource_name_contains=str(payload.get("resource_name_contains")) if payload.get("resource_name_contains") else None,
+            source_name=payload["source_name"],
+            publisher=payload["publisher"],
+            dataset_id=payload["dataset_id"],
+            metadata_uuid=payload["metadata_uuid"],
+            field_mappings=payload["field_mappings"],
+            authority_field_candidates=list(payload.get("authority_field_candidates") or []),
+            resource_name_contains=payload.get("resource_name_contains"),
         )
 
     def _bgs_collections(self) -> dict[str, BgsCollectionConfig]:
-        payload = self.manifest.get("bgs", {}).get("collections", {})
-        return {
-            key: BgsCollectionConfig(
-                source_name=str(value["source_name"]),
-                metadata_uuid=str(value["metadata_uuid"]),
-                collection_id=str(value["collection_id"]),
-                record_type=str(value["record_type"]),
-                bbox_buffer_m=int(value.get("bbox_buffer_m", 0)),
+        payload = self.manifest.get("bgs", {}).get("collections") or {}
+        collections: dict[str, BgsCollectionConfig] = {}
+        for key, value in payload.items():
+            collections[key] = BgsCollectionConfig(
+                source_name=value["source_name"],
+                metadata_uuid=value["metadata_uuid"],
+                collection_id=value["collection_id"],
+                record_type=value["record_type"],
+                bbox_buffer_m=int(value.get("bbox_buffer_m") or 0),
             )
-            for key, value in payload.items()
-        }
-
-    def _resolve_spatial_hub_authkey(self) -> str | None:
-        env_name = str(self.manifest.get("spatial_hub", {}).get("authkey_env", "BOUNDARY_AUTHKEY"))
-        return getattr(self.settings, "boundary_authkey", None) or os.getenv(env_name)
+        return collections
 
     def _build_spatial_hub_source_registry_record(self, config: SpatialHubSourceConfig) -> SourceRegistryRecord:
-        payload = self._get_spatial_hub_package_payload(config)
-        resource = self._select_spatial_hub_resource(payload, config)
-        handle = self._resolve_spatial_hub_resource_handle(config, payload, resource)
-        feature_type_names = self._fetch_spatial_hub_feature_type_names(handle)
-        selected_layer_name = self._select_spatial_hub_feature_type_name(
-            feature_type_names,
-            config,
-            handle.preview_layer_name,
-            handle.alternative_name,
-        )
-        safe_download_url = self._build_wfs_download_url(
-            handle.capabilities_url,
-            selected_layer_name,
-            authority_name=None,
-            authority_fields=[],
-        )
-        payload_with_handle = dict(payload)
-        payload_with_handle["_landintel_resource_handle"] = {
-            "resource_page_url": handle.resource_page_url,
-            "workspace_name": handle.workspace_name,
-            "preview_layer_name": handle.preview_layer_name,
-            "alternative_name": handle.alternative_name,
-            "selected_layer_name": selected_layer_name,
-        }
+        handle = self._resolve_spatial_hub_resource_handle(config)
+        package = self._fetch_spatial_hub_package(config.dataset_id)
+        dataset_url = f"https://data.spatialhub.scot/dataset/{config.dataset_id}"
         return SourceRegistryRecord(
             source_name=config.source_name,
-            source_type=str(resource.get("format") or "WFS"),
+            source_type="Spatial Hub WFS",
             publisher=config.publisher,
             metadata_uuid=config.metadata_uuid,
-            endpoint_url=redact_sensitive_query_params(handle.capabilities_url) or "",
-            download_url=redact_sensitive_query_params(safe_download_url) or "",
-            record_json=payload_with_handle,
+            endpoint_url=handle.capabilities_url,
+            download_url=handle.resource_page_url,
+            record_json={"dataset": package.get("result", {})},
             geographic_extent=None,
             last_seen_at=datetime.now(timezone.utc),
         )
 
-    def _get_spatial_hub_package_payload(self, config: SpatialHubSourceConfig) -> dict[str, Any]:
-        cached = self._spatial_hub_package_cache.get(config.dataset_id)
-        if cached is not None:
-            return cached
-        package_show_url = f"{self.manifest['spatial_hub']['package_show_base_url']}{config.dataset_id}"
-        response = self.client.get(package_show_url)
-        response.raise_for_status()
-        payload = response.json()
-        self._spatial_hub_package_cache[config.dataset_id] = payload
-        return payload
+    def _fetch_spatial_hub_package(self, dataset_id: str) -> dict[str, Any]:
+        if dataset_id not in self._spatial_hub_package_cache:
+            response = self.client.get(
+                "https://data.spatialhub.scot/api/3/action/package_show",
+                params={"id": dataset_id},
+            )
+            response.raise_for_status()
+            self._spatial_hub_package_cache[dataset_id] = response.json()
+        return self._spatial_hub_package_cache[dataset_id]
 
-    def _select_spatial_hub_resource(self, payload: dict[str, Any], config: SpatialHubSourceConfig) -> dict[str, Any]:
-        resources = payload.get("result", {}).get("resources", [])
-        wfs_candidates = []
-        for item in resources:
-            blob = json.dumps(item).lower()
-            if "wfs" in blob:
-                wfs_candidates.append(item)
-        if config.resource_name_contains:
-            preferred = [item for item in wfs_candidates if config.resource_name_contains.lower() in json.dumps(item).lower()]
-            if preferred:
-                return preferred[0]
-        if wfs_candidates:
-            return wfs_candidates[0]
-        if resources:
-            return resources[0]
-        raise RuntimeError(f"No resources found for Spatial Hub dataset {config.dataset_id}.")
+    def _resolve_spatial_hub_authkey(self) -> str:
+        authkey = self.settings.boundary_authkey or os.getenv("BOUNDARY_AUTHKEY")
+        if authkey:
+            return authkey
+        raise RuntimeError("BOUNDARY_AUTHKEY is required for Spatial Hub source ingestion.")
 
-    def _resolve_spatial_hub_resource_handle(
-        self,
-        config: SpatialHubSourceConfig,
-        payload: dict[str, Any],
-        resource: dict[str, Any],
-    ) -> SpatialHubResourceHandle:
-        cached = self._spatial_hub_handle_cache.get(config.dataset_id)
-        if cached is not None:
-            return cached
+    def _resolve_spatial_hub_resource_handle(self, config: SpatialHubSourceConfig) -> SpatialHubResourceHandle:
+        cache_key = config.dataset_id
+        if cache_key in self._spatial_hub_handle_cache:
+            return self._spatial_hub_handle_cache[cache_key]
 
-        result = payload.get("result", {})
-        resource_id = str(resource.get("id") or "").strip()
-        if not resource_id:
-            raise RuntimeError(f"Spatial Hub resource id missing for {config.dataset_id}.")
+        package = self._fetch_spatial_hub_package(config.dataset_id)
+        result = package.get("result") or {}
+        resources = result.get("resources") or []
+        resource_payload = None
+        for resource in resources:
+            name = str(resource.get("name") or "")
+            if config.resource_name_contains and config.resource_name_contains.lower() not in name.lower():
+                continue
+            format_value = str(resource.get("format") or "")
+            url_value = str(resource.get("url") or resource.get("download_url") or "")
+            if "wfs" in format_value.lower() or "/wfs" in url_value.lower():
+                resource_payload = resource
+                break
+        if resource_payload is None and resources:
+            resource_payload = resources[0]
+        if resource_payload is None:
+            raise RuntimeError(f"No usable Spatial Hub resource found for {config.source_name}.")
 
-        api_root = urlparse(self.manifest["spatial_hub"]["package_show_base_url"])
-        resource_page_url = f"{api_root.scheme}://{api_root.netloc}/dataset/{config.dataset_id}/resource/{resource_id}"
+        resource_page_url = f"https://data.spatialhub.scot/dataset/{config.dataset_id}/resource/{resource_payload['id']}"
         response = self.client.get(resource_page_url)
         response.raise_for_status()
         html = response.text
 
-        download_match = re.search(
-            r'EntryPoint\.base_handler\(\s*"(?P<root>https://[^"]+/geoserver/)"\s*,\s*"(?P<workspace_stub>[^"]+)"\s*,\s*"[^"]*"\s*,\s*"[^"]*"\s*,\s*"(?P<is_ext>True|False)"',
-            html,
-            flags=re.S,
-        )
-        if not download_match:
-            raise RuntimeError(f"Could not resolve download metadata for Spatial Hub dataset {config.dataset_id}.")
+        geoserver_root = _extract_regex_group(html, r"(https://geo\.spatialhub\.scot/geoserver/[A-Za-z0-9_\-]+/wfs)")
+        workspace_name = _extract_regex_group(html, r"workspaceName\s*[:=]\s*['\"]([^'\"]+)")
+        preview_layer_name = _extract_regex_group(html, r"previewLayerName\s*[:=]\s*['\"]([^'\"]+)")
+        alternative_name = _extract_regex_group(html, r"alternativeName\s*[:=]\s*['\"]([^'\"]+)")
 
-        geoserver_root = download_match.group("root")
-        workspace_stub = download_match.group("workspace_stub")
-        workspace_name = f"{'ext' if download_match.group('is_ext') == 'True' else 'sh'}_{workspace_stub}"
-        preview_layer_name = _extract_regex_group(html, r"ckan_preview_map/\?layer=([^\"&]+)")
-        alternative_name = _extract_regex_group(
-            html,
-            r"<th scope=\"row\">alternative name</th>\s*<td>([^<]+)</td>",
+        fallback_url = str(resource_payload.get("url") or resource_payload.get("download_url") or "")
+        if not geoserver_root and fallback_url:
+            geoserver_root = re.sub(r"[?&]authkey=[^&]+", "", fallback_url).split("?")[0]
+        if not workspace_name and fallback_url:
+            workspace_name = self._workspace_from_url(fallback_url)
+        if not preview_layer_name and fallback_url:
+            query_params = parse_qs(urlparse(fallback_url).query)
+            preview_layer_name = query_params.get("typeName", [None])[0]
+        if not geoserver_root or not workspace_name:
+            raise RuntimeError(f"Could not resolve Spatial Hub WFS handle for {config.source_name}.")
+        if preview_layer_name and ":" in preview_layer_name:
+            workspace_name = preview_layer_name.split(":", 1)[0]
+        capabilities_url = self._with_authkey(
+            geoserver_root,
+            {"service": "WFS", "request": "GetCapabilities"},
         )
-        capabilities_url = self._build_wfs_capabilities_url(geoserver_root, workspace_name)
-
         handle = SpatialHubResourceHandle(
-            source_name=str(result.get("title") or config.source_name),
-            resource_id=resource_id,
+            source_name=config.source_name,
+            resource_id=str(resource_payload["id"]),
             resource_page_url=resource_page_url,
             geoserver_root=geoserver_root,
             workspace_name=workspace_name,
@@ -784,111 +818,78 @@ class SourcePhaseRunner:
             alternative_name=alternative_name,
             capabilities_url=capabilities_url,
         )
-        self._spatial_hub_handle_cache[config.dataset_id] = handle
+        self._spatial_hub_handle_cache[cache_key] = handle
         return handle
 
-    def _build_wfs_capabilities_url(self, geoserver_root: str, workspace_name: str) -> str:
-        query = {"service": "WFS", "request": "GetCapabilities"}
-        if self.spatial_hub_authkey:
-            query["authkey"] = self.spatial_hub_authkey
-        return f"{geoserver_root}{workspace_name}/wfs?{urlencode(query)}"
+    def _workspace_from_url(self, url: str) -> str | None:
+        parts = [part for part in urlparse(url).path.split("/") if part]
+        if "geoserver" not in parts:
+            return None
+        index = parts.index("geoserver")
+        if len(parts) <= index + 1:
+            return None
+        return parts[index + 1]
 
-    def _build_describe_feature_type_url(
-        self,
-        geoserver_root: str,
-        workspace_name: str,
-        layer_name: str,
-    ) -> str:
-        query = {
-            "service": "WFS",
-            "version": "1.0.0",
-            "request": "DescribeFeatureType",
-            "typeName": layer_name,
-        }
-        if self.spatial_hub_authkey:
-            query["authkey"] = self.spatial_hub_authkey
-        return f"{geoserver_root}{workspace_name}/wfs?{urlencode(query)}"
-
-    def _fetch_spatial_hub_feature_type_names(self, handle: SpatialHubResourceHandle) -> list[str]:
-        cached = self._spatial_hub_feature_type_cache.get(handle.workspace_name)
-        if cached is not None:
-            return cached
+    def _available_spatial_hub_feature_types(self, handle: SpatialHubResourceHandle) -> list[str]:
+        if handle.resource_id in self._spatial_hub_feature_type_cache:
+            return self._spatial_hub_feature_type_cache[handle.resource_id]
         response = self.client.get(handle.capabilities_url)
         response.raise_for_status()
         text = response.text
         _raise_for_spatial_hub_error_payload(
             text,
             content_type=response.headers.get("content-type"),
-            context=f"{handle.source_name} capabilities",
+            context=f"{handle.source_name} GetCapabilities",
             allow_xml=True,
         )
-        try:
-            root = ET.fromstring(text)
-        except ET.ParseError as exc:
-            raise RuntimeError(
-                f"{handle.source_name} capabilities response was not valid XML: {_short_error_snippet(text)}"
-            ) from exc
-
-        names = []
-        for element in root.findall(".//{*}FeatureType/{*}Name"):
-            if element.text and element.text.strip():
-                names.append(element.text.strip())
-        if not names:
-            raise RuntimeError(f"{handle.source_name} capabilities did not expose any WFS feature types.")
-        self._spatial_hub_feature_type_cache[handle.workspace_name] = names
+        root = ET.fromstring(text)
+        names = [
+            element.text.strip()
+            for element in root.findall(".//{*}FeatureType/{*}Name")
+            if element.text and element.text.strip()
+        ]
+        self._spatial_hub_feature_type_cache[handle.resource_id] = names
         return names
 
-    def _select_spatial_hub_feature_type_name(
-        self,
-        feature_type_names: list[str],
-        config: SpatialHubSourceConfig,
-        preview_layer_name: str | None,
-        alternative_name: str | None,
-    ) -> str:
-        preferred_names = [
-            preview_layer_name,
-            alternative_name,
-            f"pub_{alternative_name}" if alternative_name and not alternative_name.startswith("pub_") else None,
+    def _resolve_feature_type_name(self, config: SpatialHubSourceConfig, handle: SpatialHubResourceHandle) -> str:
+        candidates = self._available_spatial_hub_feature_types(handle)
+        preferred_tokens = [
+            handle.preview_layer_name,
+            handle.alternative_name,
+            self._extract_preferred_layer_name(config),
         ]
-        for preferred_name in preferred_names:
-            if not preferred_name:
+        for token in preferred_tokens:
+            if not token:
                 continue
-            for candidate in feature_type_names:
-                if _matches_feature_type_name(candidate, preferred_name):
+            for candidate in candidates:
+                if _matches_feature_type_name(candidate, token):
                     return candidate
+        if candidates:
+            return candidates[0]
+        raise RuntimeError(f"No Spatial Hub feature types advertised for {config.source_name}.")
 
-        if config.resource_name_contains:
-            lowered_hint = config.resource_name_contains.lower()
-            hinted_candidates = [
-                candidate
-                for candidate in feature_type_names
-                if ("pol" in lowered_hint and "pol" in candidate.lower())
-                or ("point" in lowered_hint and ("pnt" in candidate.lower() or "point" in candidate.lower()))
-            ]
-            if len(hinted_candidates) == 1:
-                return hinted_candidates[0]
+    def _extract_preferred_layer_name(self, config: SpatialHubSourceConfig) -> str:
+        if config.dataset_id == "planning_applications_official-is":
+            return "pub_plnapppol"
+        if config.dataset_id == "housing_land_supply-is":
+            return "pub_hls"
+        return config.dataset_id.replace("-", "_")
 
-        if len(feature_type_names) == 1:
-            return feature_type_names[0]
-
-        raise RuntimeError(
-            "Could not resolve a Spatial Hub feature type name for "
-            f"{config.source_name}. Preview layer={preview_layer_name!r}, alternative name={alternative_name!r}, "
-            f"available feature types={feature_type_names[:10]!r}"
+    def _describe_feature_type_properties(self, handle: SpatialHubResourceHandle, type_name: str) -> list[str]:
+        cache_key = f"{handle.resource_id}:{type_name}"
+        if cache_key in self._spatial_hub_property_name_cache:
+            return self._spatial_hub_property_name_cache[cache_key]
+        response = self.client.get(
+            self._with_authkey(
+                handle.geoserver_root,
+                {
+                    "service": "WFS",
+                    "version": "1.0.0",
+                    "request": "DescribeFeatureType",
+                    "typeName": type_name,
+                },
+            )
         )
-
-    def _fetch_spatial_hub_property_names(
-        self,
-        handle: SpatialHubResourceHandle,
-        layer_name: str,
-    ) -> list[str]:
-        cache_key = f"{handle.workspace_name}:{layer_name}"
-        cached = self._spatial_hub_property_name_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
-        describe_url = self._build_describe_feature_type_url(handle.geoserver_root, handle.workspace_name, layer_name)
-        response = self.client.get(describe_url)
         response.raise_for_status()
         text = response.text
         _raise_for_spatial_hub_error_payload(
@@ -897,178 +898,140 @@ class SourcePhaseRunner:
             context=f"{handle.source_name} DescribeFeatureType",
             allow_xml=True,
         )
-        try:
-            root = ET.fromstring(text)
-        except ET.ParseError as exc:
-            raise RuntimeError(
-                f"{handle.source_name} DescribeFeatureType response was not valid XML: {_short_error_snippet(text)}"
-            ) from exc
-
-        property_names: list[str] = []
-        for element in root.findall(".//{*}element"):
-            name = str(element.attrib.get("name") or "").strip()
-            if name and name not in property_names:
-                property_names.append(name)
-        if not property_names:
-            raise RuntimeError(f"{handle.source_name} DescribeFeatureType did not expose any property names.")
-        self._spatial_hub_property_name_cache[cache_key] = property_names
-        return property_names
-
-    def _select_spatial_hub_authority_fields(
-        self,
-        available_property_names: list[str],
-        configured_candidates: list[str],
-    ) -> list[str]:
-        lookup = {name.lower(): name for name in available_property_names}
-        selected: list[str] = []
-        for candidate in configured_candidates:
-            actual_name = lookup.get(candidate.lower())
-            if actual_name and actual_name not in selected:
-                selected.append(actual_name)
-        if selected:
-            return selected
-
-        heuristic_fields = [
-            name
-            for name in available_property_names
-            if any(keyword in name.lower() for keyword in ("auth", "authorit", "council", "local"))
+        root = ET.fromstring(text)
+        names = [
+            element.attrib.get("name")
+            for element in root.findall(".//{http://www.w3.org/2001/XMLSchema}element")
+            if element.attrib.get("name")
         ]
-        deduped: list[str] = []
-        for name in heuristic_fields:
-            if name not in deduped:
-                deduped.append(name)
-        return deduped
+        self._spatial_hub_property_name_cache[cache_key] = names
+        return names
+
+    def _select_authority_filter_field(
+        self,
+        config: SpatialHubSourceConfig,
+        handle: SpatialHubResourceHandle,
+        type_name: str,
+    ) -> list[str]:
+        properties = self._describe_feature_type_properties(handle, type_name)
+        valid_fields = [field for field in config.authority_field_candidates if field in properties]
+        return valid_fields or config.authority_field_candidates
 
     def _fetch_spatial_hub_frame(self, config: SpatialHubSourceConfig, authority_name: str) -> gpd.GeoDataFrame:
-        payload = self._get_spatial_hub_package_payload(config)
-        resource = self._select_spatial_hub_resource(payload, config)
-        handle = self._resolve_spatial_hub_resource_handle(config, payload, resource)
-        feature_type_names = self._fetch_spatial_hub_feature_type_names(handle)
-        layer_name = self._select_spatial_hub_feature_type_name(
-            feature_type_names,
-            config,
-            handle.preview_layer_name,
-            handle.alternative_name,
-        )
-        property_names = self._fetch_spatial_hub_property_names(handle, layer_name)
-        authority_fields = self._select_spatial_hub_authority_fields(property_names, config.authority_field_candidates)
-        if not authority_fields:
-            raise RuntimeError(
-                f"{config.source_name} layer {layer_name!r} did not expose a usable authority field. "
-                f"Configured candidates={config.authority_field_candidates!r}. "
-                f"Available properties={property_names[:20]!r}"
-            )
+        handle = self._resolve_spatial_hub_resource_handle(config)
+        type_name = self._resolve_feature_type_name(config, handle)
+        authority_fields = self._select_authority_filter_field(config, handle, type_name)
         try:
-            frame = self._download_spatial_hub_frame(
-                handle.capabilities_url,
-                layer_name,
-                authority_name=authority_name,
+            response = self.client.get(
+                self._with_authkey(
+                    handle.geoserver_root,
+                    {
+                        "service": "WFS",
+                        "version": "1.0.0",
+                        "request": "GetFeature",
+                        "typeName": type_name,
+                        "outputFormat": "application/json",
+                        "cql_filter": self._build_authority_filter(authority_fields, authority_name),
+                    },
+                )
+            )
+            response.raise_for_status()
+            return self._download_spatial_hub_frame(
+                response,
+                authority_name,
                 authority_fields=authority_fields,
                 context=f"{config.source_name} GetFeature for {authority_name}",
             )
-            if frame.empty:
-                return frame
-            return self._standardise_frame(frame, authority_name, authority_fields)
-        except RuntimeError as exc:
-            if not _is_spatial_hub_illegal_property_error(exc):
+        except RuntimeError as error:
+            if not _is_spatial_hub_illegal_property_error(error):
                 raise
             self.logger.warning(
-                "spatial_hub_authority_filter_rejected",
+                "spatial_hub_authority_filter_fallback",
                 extra={
                     "source_name": config.source_name,
-                    "dataset_id": config.dataset_id,
                     "authority_name": authority_name,
-                    "authority_fields": authority_fields,
-                    "error": str(exc),
+                    "reason": str(error),
                 },
             )
-            return self._fetch_spatial_hub_frame_without_server_filter(
-                config,
-                handle,
-                layer_name,
-                authority_name,
-            )
+            frame = self._fetch_spatial_hub_frame_without_server_filter(config, authority_name, handle, type_name)
+            matching_field = next((field for field in authority_fields if field in frame.columns), None)
+            if matching_field:
+                frame[matching_field] = frame[matching_field].map(_canonicalise_authority_name)
+                frame = frame[frame[matching_field] == authority_name].copy()
+            if not frame.empty and not self.authority_aoi.empty:
+                authority_geom = self.authority_aoi[self.authority_aoi["authority_name"] == authority_name]
+                if not authority_geom.empty:
+                    frame = gpd.overlay(frame, authority_geom[["geometry"]], how="intersection")
+            return frame
 
     def _fetch_spatial_hub_frame_without_server_filter(
         self,
         config: SpatialHubSourceConfig,
-        handle: SpatialHubResourceHandle,
-        layer_name: str,
         authority_name: str,
+        handle: SpatialHubResourceHandle,
+        type_name: str,
     ) -> gpd.GeoDataFrame:
-        cache_key = f"{config.dataset_id}:{layer_name}:full"
-        cached = self._spatial_hub_unfiltered_frame_cache.get(cache_key)
-        if cached is None:
-            cached = self._download_spatial_hub_frame(
-                handle.capabilities_url,
-                layer_name,
-                authority_name=None,
-                authority_fields=[],
-                context=f"{config.source_name} GetFeature full dataset",
+        cache_key = f"{config.dataset_id}:{type_name}"
+        if cache_key not in self._spatial_hub_unfiltered_frame_cache:
+            response = self.client.get(
+                self._with_authkey(
+                    handle.geoserver_root,
+                    {
+                        "service": "WFS",
+                        "version": "1.0.0",
+                        "request": "GetFeature",
+                        "typeName": type_name,
+                        "outputFormat": "application/json",
+                    },
+                )
             )
-            self._spatial_hub_unfiltered_frame_cache[cache_key] = cached.copy()
-        authority_fields = self._select_spatial_hub_authority_fields(
-            [str(column) for column in cached.columns],
-            config.authority_field_candidates,
-        )
-        return self._standardise_frame(cached.copy(), authority_name, authority_fields)
+            response.raise_for_status()
+            frame = self._download_spatial_hub_frame(
+                response,
+                authority_name,
+                authority_fields=[],
+                context=f"{config.source_name} unfiltered GetFeature",
+                standardise=False,
+            )
+            self._spatial_hub_unfiltered_frame_cache[cache_key] = frame
+        return self._spatial_hub_unfiltered_frame_cache[cache_key].copy()
 
     def _download_spatial_hub_frame(
         self,
-        capabilities_url: str,
-        layer_name: str,
+        response: httpx.Response,
+        authority_name: str,
         *,
-        authority_name: str | None,
         authority_fields: list[str],
         context: str,
+        standardise: bool = True,
     ) -> gpd.GeoDataFrame:
-        download_url = self._build_wfs_download_url(
-            capabilities_url,
-            layer_name,
-            authority_name=authority_name,
-            authority_fields=authority_fields,
-        )
-        response = self.client.get(download_url)
-        response.raise_for_status()
+        text = response.text
         _raise_for_spatial_hub_error_payload(
-            response.text,
+            text,
             content_type=response.headers.get("content-type"),
             context=context,
         )
-        with tempfile.NamedTemporaryFile(suffix=".geojson", delete=False) as handle:
+        with tempfile.NamedTemporaryFile(suffix=".geojson") as handle:
             handle.write(response.content)
-            temp_path = Path(handle.name)
-        try:
-            return gpd.read_file(temp_path, engine="pyogrio")
-        except Exception as exc:
-            raise RuntimeError(
-                f"{context} could not be parsed as spatial data. "
-                f"Layer={layer_name!r}. Response snippet={_short_error_snippet(response.text)!r}"
-            ) from exc
+            handle.flush()
+            frame = gpd.read_file(handle.name)
+        if standardise:
+            frame = self._standardise_frame(frame, authority_name, authority_fields)
+        return frame
 
-    def _build_wfs_download_url(
-        self,
-        capabilities_url: str,
-        layer_name: str,
-        *,
-        authority_name: str | None,
-        authority_fields: list[str],
-    ) -> str:
-        parsed = urlparse(capabilities_url)
-        query = {
-            "service": "WFS",
-            "version": "1.0.0",
-            "request": "GetFeature",
-            "typeName": layer_name,
-            "outputFormat": "application/json",
-        }
-        if authority_name and authority_fields:
-            escaped_authority = authority_name.replace("'", "''")
-            query["cql_filter"] = " or ".join([f"{field}='{escaped_authority}'" for field in authority_fields])
-        existing_query = {key: value for key, value in parse_qs(parsed.query).items() if value}
-        if "authkey" in existing_query:
-            query["authkey"] = existing_query["authkey"][0]
-        return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", urlencode(query), ""))
+    def _build_authority_filter(self, authority_fields: list[str], authority_name: str) -> str:
+        if not authority_fields:
+            return "1=1"
+        clauses = [f"{field}='{authority_name}'" for field in authority_fields]
+        return " or ".join(clauses)
+
+    def _with_authkey(self, url: str, params: dict[str, Any]) -> str:
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        for key, value in params.items():
+            query[key] = [str(value)]
+        query["authkey"] = [self.spatial_hub_authkey]
+        return urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", urlencode(query, doseq=True), ""))
 
     def _standardise_frame(
         self,
@@ -1398,17 +1361,16 @@ class SourcePhaseRunner:
         self.database.execute(
             """
                 update landintel.canonical_sites as cs
-                set primary_ros_parcel_id = candidate.id,
+                set primary_ros_parcel_id = (
+                        select rp.id
+                        from public.ros_cadastral_parcels as rp
+                        where rp.authority_name = cs.authority_name
+                          and cs.geometry is not null
+                          and ST_Intersects(rp.geometry, cs.geometry)
+                        order by ST_Area(ST_Intersection(rp.geometry, cs.geometry)) desc nulls last
+                        limit 1
+                    ),
                     updated_at = now()
-                from lateral (
-                    select rp.id
-                    from public.ros_cadastral_parcels as rp
-                    where rp.authority_name = cs.authority_name
-                      and cs.geometry is not null
-                      and ST_Intersects(rp.geometry, cs.geometry)
-                    order by ST_Area(ST_Intersection(rp.geometry, cs.geometry)) desc nulls last
-                    limit 1
-                ) as candidate
                 where cs.id = cast(:site_id as uuid)
             """,
             {"site_id": site_id},
@@ -1493,6 +1455,74 @@ def _short_error_snippet(text: str, limit: int = 280) -> str:
 def _is_spatial_hub_illegal_property_error(error: Exception) -> bool:
     message = str(error).lower()
     return "illegal property name" in message or "property name" in message and "instead of features" in message
+
+
+def _coalesce_value(current: Any, incoming: Any) -> Any:
+    if current is None:
+        return incoming
+    if isinstance(current, str) and not current.strip():
+        return incoming
+    return current
+
+
+def _merge_text_lists(current: Any, incoming: Any) -> list[str]:
+    merged: list[str] = []
+    for values in (current or [], incoming or []):
+        if not values:
+            continue
+        if isinstance(values, str):
+            candidates = [values]
+        else:
+            candidates = list(values)
+        for value in candidates:
+            text = str(value).strip()
+            if text and text not in merged:
+                merged.append(text)
+    return merged
+
+
+def _merge_boolean(current: bool | None, incoming: bool | None) -> bool | None:
+    if current is True or incoming is True:
+        return True
+    if current is False or incoming is False:
+        return False
+    return None
+
+
+def _merge_geometry_wkbs(geometry_wkbs: list[str | None]) -> str | None:
+    geometries: list[BaseGeometry] = []
+    for geometry_wkb in geometry_wkbs:
+        if not geometry_wkb:
+            continue
+        geometry = shapely_wkb.loads(bytes.fromhex(str(geometry_wkb)))
+        polygonized = _polygonize_geometry(geometry)
+        if polygonized is not None:
+            geometries.append(polygonized)
+    if not geometries:
+        return None
+    merged = unary_union(geometries)
+    polygonized = _polygonize_geometry(merged)
+    return _geometry_hex(polygonized)
+
+
+def _merge_raw_payloads(raw_payloads: list[str | None]) -> str:
+    merged_rows: list[Any] = []
+    for raw_payload in raw_payloads:
+        if not raw_payload:
+            continue
+        try:
+            payload = json.loads(raw_payload)
+        except json.JSONDecodeError:
+            merged_rows.append({"unparsed_payload": raw_payload})
+            continue
+        merged_rows.append(payload)
+    return json.dumps(
+        {
+            "source_row_count": len(merged_rows),
+            "source_rows": merged_rows,
+        },
+        default=_json_default,
+    )
 
 
 def _pick_text(row: dict[str, Any], candidates: list[str]) -> str | None:

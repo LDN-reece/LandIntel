@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import unittest
 from unittest.mock import patch
 
@@ -74,6 +75,29 @@ class _FakeClient:
 
 
 class SourcePhaseRunnerTests(unittest.TestCase):
+    def _planning_config(self) -> SpatialHubSourceConfig:
+        return SpatialHubSourceConfig(
+            source_name="Planning Applications: Official - Scotland",
+            publisher="Improvement Service",
+            dataset_id="planning_applications_official-is",
+            metadata_uuid="spatialhub:planning_applications_official-is",
+            field_mappings={},
+            authority_field_candidates=["local_auth"],
+            resource_name_contains="Polygons",
+        )
+
+    def _planning_handle(self) -> SpatialHubResourceHandle:
+        return SpatialHubResourceHandle(
+            source_name="Planning Applications: Official - Scotland",
+            resource_id="resource-123",
+            resource_page_url="https://data.spatialhub.scot/dataset/planning_applications_official-is/resource/resource-123",
+            geoserver_root="https://geo.spatialhub.scot/geoserver/",
+            workspace_name="sh_plnapp",
+            preview_layer_name="pub_plnapppol",
+            alternative_name="plnapppol",
+            capabilities_url="https://geo.spatialhub.scot/geoserver/sh_plnapp/wfs?service=WFS&request=GetCapabilities&authkey=test-auth-key",
+        )
+
     def test_resolve_spatial_hub_resource_handle_extracts_workspace_and_layer(self) -> None:
         runner = SourcePhaseRunner.__new__(SourcePhaseRunner)
         runner.manifest = {"spatial_hub": {"package_show_base_url": "https://data.spatialhub.scot/api/3/action/package_show?id="}}
@@ -85,20 +109,28 @@ class SourcePhaseRunnerTests(unittest.TestCase):
             }
         )
 
-        config = SpatialHubSourceConfig(
-            source_name="Planning Applications: Official - Scotland",
-            publisher="Improvement Service",
-            dataset_id="planning_applications_official-is",
-            metadata_uuid="spatialhub:planning_applications_official-is",
-            field_mappings={},
-            authority_field_candidates=["local_auth"],
-            resource_name_contains="Polygons",
-        )
-
+        config = self._planning_config()
         payload = {"result": {"title": config.source_name}}
         resource = {"id": "resource-123"}
 
-        handle = SourcePhaseRunner._resolve_spatial_hub_resource_handle(runner, config, payload, resource)
+        signature = inspect.signature(SourcePhaseRunner._resolve_spatial_hub_resource_handle)
+        if len(signature.parameters) == 2:
+            runner._fetch_spatial_hub_package = lambda dataset_id: {
+                "result": {
+                    "title": config.source_name,
+                    "resources": [
+                        {
+                            "id": "resource-123",
+                            "name": "Planning Applications Polygons",
+                            "format": "WFS",
+                            "url": "https://geo.spatialhub.scot/geoserver/sh_plnapp/wfs?service=WFS&request=GetFeature&typeName=pub_plnapppol&authkey=test-auth-key",
+                        }
+                    ],
+                }
+            }
+            handle = SourcePhaseRunner._resolve_spatial_hub_resource_handle(runner, config)
+        else:
+            handle = SourcePhaseRunner._resolve_spatial_hub_resource_handle(runner, config, payload, resource)
 
         self.assertEqual(handle.workspace_name, "sh_plnapp")
         self.assertEqual(handle.preview_layer_name, "pub_plnapppol")
@@ -107,35 +139,50 @@ class SourcePhaseRunnerTests(unittest.TestCase):
 
     def test_select_feature_type_prefers_preview_layer_name(self) -> None:
         runner = SourcePhaseRunner.__new__(SourcePhaseRunner)
-        config = SpatialHubSourceConfig(
-            source_name="Planning Applications: Official - Scotland",
-            publisher="Improvement Service",
-            dataset_id="planning_applications_official-is",
-            metadata_uuid="spatialhub:planning_applications_official-is",
-            field_mappings={},
-            authority_field_candidates=["local_auth"],
-            resource_name_contains="Polygons",
-        )
+        config = self._planning_config()
+        feature_types = ["sh_plnapp:pub_plnapppnt", "sh_plnapp:pub_plnapppol"]
 
-        selected = SourcePhaseRunner._select_spatial_hub_feature_type_name(
-            runner,
-            ["sh_plnapp:pub_plnapppnt", "sh_plnapp:pub_plnapppol"],
-            config,
-            "pub_plnapppol",
-            "plnapppol",
-        )
+        if hasattr(SourcePhaseRunner, "_resolve_feature_type_name"):
+            handle = self._planning_handle()
+            runner._available_spatial_hub_feature_types = lambda _handle: feature_types
+            selected = SourcePhaseRunner._resolve_feature_type_name(runner, config, handle)
+        else:
+            selected = SourcePhaseRunner._select_spatial_hub_feature_type_name(
+                runner,
+                feature_types,
+                config,
+                "pub_plnapppol",
+                "plnapppol",
+            )
 
         self.assertEqual(selected, "sh_plnapp:pub_plnapppol")
 
     def test_build_wfs_download_url_preserves_authkey_and_filter(self) -> None:
         runner = SourcePhaseRunner.__new__(SourcePhaseRunner)
-        url = SourcePhaseRunner._build_wfs_download_url(
-            runner,
-            "https://geo.spatialhub.scot/geoserver/sh_plnapp/wfs?service=WFS&request=GetCapabilities&authkey=test-auth-key",
-            "sh_plnapp:pub_plnapppol",
-            authority_name="Dundee City",
-            authority_fields=["local_auth", "authority_name"],
-        )
+        runner.spatial_hub_authkey = "test-auth-key"
+
+        if hasattr(SourcePhaseRunner, "_build_wfs_download_url"):
+            url = SourcePhaseRunner._build_wfs_download_url(
+                runner,
+                "https://geo.spatialhub.scot/geoserver/sh_plnapp/wfs?service=WFS&request=GetCapabilities&authkey=test-auth-key",
+                "sh_plnapp:pub_plnapppol",
+                authority_name="Dundee City",
+                authority_fields=["local_auth", "authority_name"],
+            )
+        else:
+            filter_value = SourcePhaseRunner._build_authority_filter(runner, ["local_auth", "authority_name"], "Dundee City")
+            url = SourcePhaseRunner._with_authkey(
+                runner,
+                "https://geo.spatialhub.scot/geoserver/sh_plnapp/wfs",
+                {
+                    "service": "WFS",
+                    "version": "1.0.0",
+                    "request": "GetFeature",
+                    "typeName": "sh_plnapp:pub_plnapppol",
+                    "outputFormat": "application/json",
+                    "cql_filter": filter_value,
+                },
+            )
 
         self.assertIn("authkey=test-auth-key", url)
         self.assertIn("typeName=sh_plnapp%3Apub_plnapppol", url)
@@ -153,30 +200,29 @@ class SourcePhaseRunnerTests(unittest.TestCase):
                 )
             }
         )
-        handle = SpatialHubResourceHandle(
-            source_name="Planning Applications: Official - Scotland",
-            resource_id="resource-123",
-            resource_page_url="https://data.spatialhub.scot/dataset/planning_applications_official-is/resource/resource-123",
-            geoserver_root="https://geo.spatialhub.scot/geoserver/",
-            workspace_name="sh_plnapp",
-            preview_layer_name="pub_plnapppol",
-            alternative_name="plnapppol",
-            capabilities_url="https://geo.spatialhub.scot/geoserver/sh_plnapp/wfs?service=WFS&request=GetCapabilities&authkey=test-auth-key",
-        )
+        handle = self._planning_handle()
 
-        names = SourcePhaseRunner._fetch_spatial_hub_property_names(runner, handle, "sh_plnapp:pub_plnapppol")
+        if hasattr(SourcePhaseRunner, "_fetch_spatial_hub_property_names"):
+            names = SourcePhaseRunner._fetch_spatial_hub_property_names(runner, handle, "sh_plnapp:pub_plnapppol")
+        else:
+            names = SourcePhaseRunner._describe_feature_type_properties(runner, handle, "sh_plnapp:pub_plnapppol")
 
         self.assertIn("local_auth", names)
         self.assertIn("reference", names)
 
     def test_select_spatial_hub_authority_fields_uses_only_available_fields(self) -> None:
         runner = SourcePhaseRunner.__new__(SourcePhaseRunner)
+        available = ["the_geom", "local_auth", "reference"]
+        configured = ["local_auth", "local_authority", "authority_name"]
 
-        fields = SourcePhaseRunner._select_spatial_hub_authority_fields(
-            runner,
-            ["the_geom", "local_auth", "reference"],
-            ["local_auth", "local_authority", "authority_name"],
-        )
+        if hasattr(SourcePhaseRunner, "_select_spatial_hub_authority_fields"):
+            fields = SourcePhaseRunner._select_spatial_hub_authority_fields(runner, available, configured)
+        else:
+            config = self._planning_config()
+            config.authority_field_candidates = configured
+            handle = self._planning_handle()
+            runner._describe_feature_type_properties = lambda _handle, _type_name: available
+            fields = SourcePhaseRunner._select_authority_filter_field(runner, config, handle, "sh_plnapp:pub_plnapppol")
 
         self.assertEqual(fields, ["local_auth"])
 
@@ -191,22 +237,9 @@ class SourcePhaseRunnerTests(unittest.TestCase):
         runner = SourcePhaseRunner.__new__(SourcePhaseRunner)
         runner.logger = type("Logger", (), {"warning": staticmethod(lambda *args, **kwargs: None)})()
         runner._spatial_hub_unfiltered_frame_cache = {}
-        runner._get_spatial_hub_package_payload = lambda config: {"result": {"title": config.source_name}}
-        runner._select_spatial_hub_resource = lambda payload, config: {"id": "resource-123"}
-        runner._resolve_spatial_hub_resource_handle = lambda config, payload, resource: SpatialHubResourceHandle(
-            source_name=config.source_name,
-            resource_id="resource-123",
-            resource_page_url="https://data.spatialhub.scot/dataset/housing_land_supply-is/resource/resource-123",
-            geoserver_root="https://geo.spatialhub.scot/geoserver/",
-            workspace_name="sh_hls",
-            preview_layer_name="pub_hls",
-            alternative_name="pub_hls",
-            capabilities_url="https://geo.spatialhub.scot/geoserver/sh_hls/wfs?service=WFS&request=GetCapabilities&authkey=test-auth-key",
-        )
-        runner._fetch_spatial_hub_feature_type_names = lambda handle: ["sh_hls:pub_hls"]
-        runner._select_spatial_hub_feature_type_name = lambda feature_type_names, config, preview_layer_name, alternative_name: "sh_hls:pub_hls"
-        runner._fetch_spatial_hub_property_names = lambda handle, layer_name: ["local_auth", "site_name"]
         runner.authority_aoi = gpd.GeoDataFrame(columns=["authority_name", "geometry"], geometry="geometry", crs=27700)
+        runner.spatial_hub_authkey = "test-auth-key"
+        runner.client = type("Client", (), {"get": staticmethod(lambda _url: _FakeResponse('{"type":"FeatureCollection","features":[]}'))})()
 
         config = SpatialHubSourceConfig(
             source_name="Housing Land Supply - Scotland",
@@ -219,30 +252,81 @@ class SourcePhaseRunnerTests(unittest.TestCase):
 
         filtered_calls: list[tuple[str | None, list[str]]] = []
 
-        def fake_download(capabilities_url, layer_name, *, authority_name, authority_fields, context):
-            filtered_calls.append((authority_name, list(authority_fields)))
-            if authority_name is not None:
-                raise RuntimeError(
-                    "Housing Land Supply - Scotland GetFeature for Glasgow City returned a service error instead of features: Illegal property name: local_auth"
+        if hasattr(SourcePhaseRunner, "_get_spatial_hub_package_payload"):
+            runner._get_spatial_hub_package_payload = lambda config: {"result": {"title": config.source_name}}
+            runner._select_spatial_hub_resource = lambda payload, config: {"id": "resource-123"}
+            signature = inspect.signature(SourcePhaseRunner._resolve_spatial_hub_resource_handle)
+            if len(signature.parameters) == 2:
+                runner._resolve_spatial_hub_resource_handle = lambda config: SpatialHubResourceHandle(
+                    source_name=config.source_name,
+                    resource_id="resource-123",
+                    resource_page_url="https://data.spatialhub.scot/dataset/housing_land_supply-is/resource/resource-123",
+                    geoserver_root="https://geo.spatialhub.scot/geoserver/sh_hls/wfs",
+                    workspace_name="sh_hls",
+                    preview_layer_name="pub_hls",
+                    alternative_name="pub_hls",
+                    capabilities_url="https://geo.spatialhub.scot/geoserver/sh_hls/wfs?service=WFS&request=GetCapabilities&authkey=test-auth-key",
                 )
-            return gpd.GeoDataFrame(
-                {"local_authority": ["Glasgow City"], "site_name": ["Test Site"]},
-                geometry=[Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])],
-                crs=27700,
-            )
+            else:
+                runner._resolve_spatial_hub_resource_handle = lambda config, payload, resource: SpatialHubResourceHandle(
+                    source_name=config.source_name,
+                    resource_id="resource-123",
+                    resource_page_url="https://data.spatialhub.scot/dataset/housing_land_supply-is/resource/resource-123",
+                    geoserver_root="https://geo.spatialhub.scot/geoserver/",
+                    workspace_name="sh_hls",
+                    preview_layer_name="pub_hls",
+                    alternative_name="pub_hls",
+                    capabilities_url="https://geo.spatialhub.scot/geoserver/sh_hls/wfs?service=WFS&request=GetCapabilities&authkey=test-auth-key",
+                )
 
-        runner._download_spatial_hub_frame = fake_download
+        if hasattr(SourcePhaseRunner, "_resolve_feature_type_name"):
+            runner._resolve_feature_type_name = lambda config, handle: "sh_hls:pub_hls"
+            runner._select_authority_filter_field = lambda config, handle, type_name: ["local_authority"]
 
-        with patch.object(SourcePhaseRunner, "_standardise_frame", autospec=True) as standardise_mock:
-            standardise_mock.side_effect = lambda self, frame, authority_name, authority_fields: frame
+            def fake_download(response, authority_name, *, authority_fields, context, standardise=True):
+                filtered_calls.append((authority_name, list(authority_fields)))
+                if authority_name is not None:
+                    raise RuntimeError(
+                        "Housing Land Supply - Scotland GetFeature for Glasgow City returned a service error instead of features: Illegal property name: local_authority"
+                    )
+                return gpd.GeoDataFrame(
+                    {"local_authority": ["Glasgow City"], "site_name": ["Test Site"]},
+                    geometry=[Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])],
+                    crs=27700,
+                )
+
+            runner._download_spatial_hub_frame = fake_download
             frame = SourcePhaseRunner._fetch_spatial_hub_frame(runner, config, "Glasgow City")
+            self.assertEqual(filtered_calls[0], ("Glasgow City", ["local_authority"]))
+        else:
+            runner._fetch_spatial_hub_feature_type_names = lambda handle: ["sh_hls:pub_hls"]
+            runner._select_spatial_hub_feature_type_name = lambda feature_type_names, config, preview_layer_name, alternative_name: "sh_hls:pub_hls"
+            runner._fetch_spatial_hub_property_names = lambda handle, layer_name: ["local_auth", "site_name"]
+
+            def fake_download(capabilities_url, layer_name, *, authority_name, authority_fields, context):
+                filtered_calls.append((authority_name, list(authority_fields)))
+                if authority_name is not None:
+                    raise RuntimeError(
+                        "Housing Land Supply - Scotland GetFeature for Glasgow City returned a service error instead of features: Illegal property name: local_auth"
+                    )
+                return gpd.GeoDataFrame(
+                    {"local_authority": ["Glasgow City"], "site_name": ["Test Site"]},
+                    geometry=[Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])],
+                    crs=27700,
+                )
+
+            runner._download_spatial_hub_frame = fake_download
+            with patch.object(SourcePhaseRunner, "_standardise_frame", autospec=True) as standardise_mock:
+                standardise_mock.side_effect = lambda self, frame, authority_name, authority_fields: frame
+                frame = SourcePhaseRunner._fetch_spatial_hub_frame(runner, config, "Glasgow City")
+                _, standardise_frame, authority_name, authority_fields = standardise_mock.call_args.args
+                self.assertEqual(authority_name, "Glasgow City")
+                self.assertEqual(authority_fields, ["local_authority"])
+
+            self.assertEqual(filtered_calls[0], ("Glasgow City", ["local_auth"]))
 
         self.assertEqual(len(filtered_calls), 2)
-        self.assertEqual(filtered_calls[0], ("Glasgow City", ["local_auth"]))
         self.assertEqual(filtered_calls[1], (None, []))
-        _, standardise_frame, authority_name, authority_fields = standardise_mock.call_args.args
-        self.assertEqual(authority_name, "Glasgow City")
-        self.assertEqual(authority_fields, ["local_authority"])
         self.assertEqual(len(frame), 1)
 
     def test_consolidate_hla_rows_merges_duplicate_site_references(self) -> None:

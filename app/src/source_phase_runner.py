@@ -95,6 +95,8 @@ class SourcePhaseRunner:
         self._spatial_hub_package_cache: dict[str, dict[str, Any]] = {}
         self._spatial_hub_handle_cache: dict[str, SpatialHubResourceHandle] = {}
         self._spatial_hub_feature_type_cache: dict[str, list[str]] = {}
+        self._spatial_hub_property_name_cache: dict[str, list[str]] = {}
+        self._spatial_hub_unfiltered_frame_cache: dict[str, gpd.GeoDataFrame] = {}
         self.spatial_hub_authkey = self._resolve_spatial_hub_authkey()
         self.authority_aoi = self.loader.fetch_active_authorities()
 
@@ -791,6 +793,22 @@ class SourcePhaseRunner:
             query["authkey"] = self.spatial_hub_authkey
         return f"{geoserver_root}{workspace_name}/wfs?{urlencode(query)}"
 
+    def _build_describe_feature_type_url(
+        self,
+        geoserver_root: str,
+        workspace_name: str,
+        layer_name: str,
+    ) -> str:
+        query = {
+            "service": "WFS",
+            "version": "1.0.0",
+            "request": "DescribeFeatureType",
+            "typeName": layer_name,
+        }
+        if self.spatial_hub_authkey:
+            query["authkey"] = self.spatial_hub_authkey
+        return f"{geoserver_root}{workspace_name}/wfs?{urlencode(query)}"
+
     def _fetch_spatial_hub_feature_type_names(self, handle: SpatialHubResourceHandle) -> list[str]:
         cached = self._spatial_hub_feature_type_cache.get(handle.workspace_name)
         if cached is not None:
@@ -859,6 +877,68 @@ class SourcePhaseRunner:
             f"available feature types={feature_type_names[:10]!r}"
         )
 
+    def _fetch_spatial_hub_property_names(
+        self,
+        handle: SpatialHubResourceHandle,
+        layer_name: str,
+    ) -> list[str]:
+        cache_key = f"{handle.workspace_name}:{layer_name}"
+        cached = self._spatial_hub_property_name_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        describe_url = self._build_describe_feature_type_url(handle.geoserver_root, handle.workspace_name, layer_name)
+        response = self.client.get(describe_url)
+        response.raise_for_status()
+        text = response.text
+        _raise_for_spatial_hub_error_payload(
+            text,
+            content_type=response.headers.get("content-type"),
+            context=f"{handle.source_name} DescribeFeatureType",
+            allow_xml=True,
+        )
+        try:
+            root = ET.fromstring(text)
+        except ET.ParseError as exc:
+            raise RuntimeError(
+                f"{handle.source_name} DescribeFeatureType response was not valid XML: {_short_error_snippet(text)}"
+            ) from exc
+
+        property_names: list[str] = []
+        for element in root.findall(".//{*}element"):
+            name = str(element.attrib.get("name") or "").strip()
+            if name and name not in property_names:
+                property_names.append(name)
+        if not property_names:
+            raise RuntimeError(f"{handle.source_name} DescribeFeatureType did not expose any property names.")
+        self._spatial_hub_property_name_cache[cache_key] = property_names
+        return property_names
+
+    def _select_spatial_hub_authority_fields(
+        self,
+        available_property_names: list[str],
+        configured_candidates: list[str],
+    ) -> list[str]:
+        lookup = {name.lower(): name for name in available_property_names}
+        selected: list[str] = []
+        for candidate in configured_candidates:
+            actual_name = lookup.get(candidate.lower())
+            if actual_name and actual_name not in selected:
+                selected.append(actual_name)
+        if selected:
+            return selected
+
+        heuristic_fields = [
+            name
+            for name in available_property_names
+            if any(keyword in name.lower() for keyword in ("auth", "authorit", "council", "local"))
+        ]
+        deduped: list[str] = []
+        for name in heuristic_fields:
+            if name not in deduped:
+                deduped.append(name)
+        return deduped
+
     def _fetch_spatial_hub_frame(self, config: SpatialHubSourceConfig, authority_name: str) -> gpd.GeoDataFrame:
         payload = self._get_spatial_hub_package_payload(config)
         resource = self._select_spatial_hub_resource(payload, config)
@@ -870,32 +950,101 @@ class SourcePhaseRunner:
             handle.preview_layer_name,
             handle.alternative_name,
         )
+        property_names = self._fetch_spatial_hub_property_names(handle, layer_name)
+        authority_fields = self._select_spatial_hub_authority_fields(property_names, config.authority_field_candidates)
+        if not authority_fields:
+            raise RuntimeError(
+                f"{config.source_name} layer {layer_name!r} did not expose a usable authority field. "
+                f"Configured candidates={config.authority_field_candidates!r}. "
+                f"Available properties={property_names[:20]!r}"
+            )
+        try:
+            frame = self._download_spatial_hub_frame(
+                handle.capabilities_url,
+                layer_name,
+                authority_name=authority_name,
+                authority_fields=authority_fields,
+                context=f"{config.source_name} GetFeature for {authority_name}",
+            )
+            if frame.empty:
+                return frame
+            return self._standardise_frame(frame, authority_name, authority_fields)
+        except RuntimeError as exc:
+            if not _is_spatial_hub_illegal_property_error(exc):
+                raise
+            self.logger.warning(
+                "spatial_hub_authority_filter_rejected",
+                extra={
+                    "source_name": config.source_name,
+                    "dataset_id": config.dataset_id,
+                    "authority_name": authority_name,
+                    "authority_fields": authority_fields,
+                    "error": str(exc),
+                },
+            )
+            return self._fetch_spatial_hub_frame_without_server_filter(
+                config,
+                handle,
+                layer_name,
+                authority_name,
+            )
+
+    def _fetch_spatial_hub_frame_without_server_filter(
+        self,
+        config: SpatialHubSourceConfig,
+        handle: SpatialHubResourceHandle,
+        layer_name: str,
+        authority_name: str,
+    ) -> gpd.GeoDataFrame:
+        cache_key = f"{config.dataset_id}:{layer_name}:full"
+        cached = self._spatial_hub_unfiltered_frame_cache.get(cache_key)
+        if cached is None:
+            cached = self._download_spatial_hub_frame(
+                handle.capabilities_url,
+                layer_name,
+                authority_name=None,
+                authority_fields=[],
+                context=f"{config.source_name} GetFeature full dataset",
+            )
+            self._spatial_hub_unfiltered_frame_cache[cache_key] = cached.copy()
+        authority_fields = self._select_spatial_hub_authority_fields(
+            [str(column) for column in cached.columns],
+            config.authority_field_candidates,
+        )
+        return self._standardise_frame(cached.copy(), authority_name, authority_fields)
+
+    def _download_spatial_hub_frame(
+        self,
+        capabilities_url: str,
+        layer_name: str,
+        *,
+        authority_name: str | None,
+        authority_fields: list[str],
+        context: str,
+    ) -> gpd.GeoDataFrame:
         download_url = self._build_wfs_download_url(
-            handle.capabilities_url,
+            capabilities_url,
             layer_name,
             authority_name=authority_name,
-            authority_fields=config.authority_field_candidates,
+            authority_fields=authority_fields,
         )
         response = self.client.get(download_url)
         response.raise_for_status()
         _raise_for_spatial_hub_error_payload(
             response.text,
             content_type=response.headers.get("content-type"),
-            context=f"{config.source_name} GetFeature for {authority_name}",
+            context=context,
         )
         with tempfile.NamedTemporaryFile(suffix=".geojson", delete=False) as handle:
             handle.write(response.content)
             temp_path = Path(handle.name)
         try:
-            frame = gpd.read_file(temp_path, engine="pyogrio")
+            return gpd.read_file(temp_path, engine="pyogrio")
         except Exception as exc:
             raise RuntimeError(
-                f"{config.source_name} response for {authority_name} could not be parsed as spatial data. "
+                f"{context} could not be parsed as spatial data. "
                 f"Layer={layer_name!r}. Response snippet={_short_error_snippet(response.text)!r}"
             ) from exc
-        if frame.empty:
-            return frame
-        return self._standardise_frame(frame, authority_name, config.authority_field_candidates)
 
     def _build_wfs_download_url(
         self,
@@ -1339,6 +1488,11 @@ def _short_error_snippet(text: str, limit: int = 280) -> str:
     stripped = re.sub(r"<[^>]+>", " ", text or "")
     compact = re.sub(r"\s+", " ", stripped).strip()
     return compact[:limit]
+
+
+def _is_spatial_hub_illegal_property_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return "illegal property name" in message or "property name" in message and "instead of features" in message
 
 
 def _pick_text(row: dict[str, Any], candidates: list[str]) -> str | None:

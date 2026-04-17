@@ -65,6 +65,10 @@ spatial_hub:
       metadata_uuid: spatialhub:housing_land_supply-is
       authority_field_candidates:
         - local_auth
+        - local_authority
+        - authority_name
+        - council_name
+        - council
       field_mappings:
         source_record:
           - site_reference

@@ -135,6 +135,36 @@ Use this order the first time:
 
 This makes it much easier to see which step fails or under-loads.
 
+## How to browse the results in Supabase
+
+The live source truth is now split clearly:
+
+- `landintel.*` = raw, reconciled, and provenance-aware source layer
+- `analytics.v_live_*` = analyst-facing browse and audit layer
+- `landintel.v_site_traceability` = deep lineage/debug view only
+
+### Start with these views
+
+1. `analytics.v_live_source_coverage`
+   Use this to see what data exists by authority and source family.
+2. `analytics.v_live_site_summary`
+   Use this to see what sites exist, why they exist, how complete they are, and whether they are review-ready.
+3. `analytics.v_live_site_sources`
+   Use this to see what planning/HLA/BGS/source records are attached to each site.
+4. `analytics.v_live_site_readiness`
+   Use this for the fastest readiness triage.
+5. `landintel.v_site_traceability`
+   Use this only for deep lineage and debugging.
+
+### Views that are not the live source audit truth
+
+These older parcel/operations views may still be useful, but they are not the current live-source site audit surface:
+
+- `analytics.v_frontend_authority_summary`
+- `analytics.v_frontend_authority_size_summary`
+- `analytics.v_ros_parcels_summary_by_authority_size`
+- `analytics.v_ingest_run_summary`
+
 ## Strategic meaning of this phase
 
 This phase gets the MVP beyond parcel-only sourcing.
@@ -145,5 +175,6 @@ It starts to answer:
 - whether a site is already in HLA
 - whether prior ground investigation is visible in BGS
 - how those references start rolling into one `canonical_site`
+- whether the resulting site is partial, core, enriched, review-ready, or still blocked
 
 That is the bridge from a lean parcel base to a real evidence-led sourcing engine.

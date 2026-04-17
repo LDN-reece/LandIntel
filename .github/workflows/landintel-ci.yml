@@ -44,8 +44,18 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Run unit tests
-        run: python -m unittest discover -s tests -p "test_*.py" -v
-
       - name: Compile critical runners
-        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py
+        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py tests/test_source_phase_runner.py
+
+      - name: Run unit tests
+        run: |
+          set -o pipefail
+          python -m unittest discover -s tests -p "test_*.py" -v 2>&1 | tee /tmp/landintel-unittest.log
+
+      - name: Upload unit test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: landintel-unittest-log
+          path: /tmp/landintel-unittest.log
+          if-no-files-found: warn

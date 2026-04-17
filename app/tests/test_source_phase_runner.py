@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 
 from src.source_phase_runner import (
-    SourcePhaseRunner,
+    _build_wfs_download_url,
     _is_spatial_hub_illegal_property_error,
     _raise_for_spatial_hub_error_payload,
     _short_error_snippet,
@@ -14,9 +14,7 @@ from src.source_phase_runner import (
 
 class SourcePhaseRunnerTests(unittest.TestCase):
     def test_build_wfs_download_url_preserves_authkey_and_filter(self) -> None:
-        runner = SourcePhaseRunner.__new__(SourcePhaseRunner)
-        url = SourcePhaseRunner._build_wfs_download_url(
-            runner,
+        url = _build_wfs_download_url(
             "https://geo.spatialhub.scot/geoserver/sh_plnapp/wfs?service=WFS&request=GetCapabilities&authkey=test-auth-key",
             "sh_plnapp:pub_plnapppol",
             authority_name="Dundee City",

@@ -105,7 +105,12 @@ class SourcePhaseRunnerTests(unittest.TestCase):
         runner._batch_insert_reference_aliases = Mock()
         runner._batch_insert_source_links = Mock()
         runner._batch_insert_evidence_references = Mock()
-        runner._load_canonical_site_frames = Mock(return_value={"Glasgow City": gpd.GeoDataFrame([], geometry="geometry", crs=27700)})
+        empty_site_frame = gpd.GeoDataFrame(
+            {"id": [], "geometry": gpd.GeoSeries([], crs=27700)},
+            geometry="geometry",
+            crs=27700,
+        )
+        runner._load_canonical_site_frames = Mock(return_value={"Glasgow City": empty_site_frame})
         runner._find_best_site_in_frame = Mock(return_value="site-hla")
         runner._add_site_frame_geometry = Mock()
         runner._set_primary_parcels = Mock()

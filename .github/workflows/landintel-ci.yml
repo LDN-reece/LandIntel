@@ -54,7 +54,7 @@ jobs:
 
       - name: Upload unit test log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: landintel-unittest-log
           path: /tmp/landintel-unittest.log

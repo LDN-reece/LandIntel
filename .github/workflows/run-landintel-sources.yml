@@ -97,11 +97,35 @@ jobs:
       - name: Run source phase command
         run: |
           set -euo pipefail
+
+          run_with_retries() {
+            local max_attempts="$1"
+            local delay_seconds="$2"
+            shift 2
+            local attempt=1
+            while true; do
+              echo "Running: $* (attempt ${attempt}/${max_attempts})"
+              if "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "Command failed after ${max_attempts} attempts"
+                return 1
+              fi
+              echo "Command failed. Retrying in ${delay_seconds} seconds..."
+              sleep "$delay_seconds"
+              attempt=$((attempt + 1))
+            done
+          }
+
           if [ "${{ inputs.command }}" = "sync-source-catalog" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_catalog_sync sync-source-catalog
           elif [ "${{ inputs.command }}" = "run-migrations" ]; then
             python -m src.source_phase_runner run-migrations
+          elif [ "${{ inputs.command }}" = "ingest-bgs" ]; then
+            python -m src.source_phase_runner run-migrations
+            run_with_retries 3 30 python -m src.source_phase_runner ingest-bgs
           else
             python -m src.source_phase_runner run-migrations
             python -m src.source_phase_runner "${{ inputs.command }}"

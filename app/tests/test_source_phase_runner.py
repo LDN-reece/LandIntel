@@ -91,6 +91,7 @@ class SourcePhaseRunnerTests(unittest.TestCase):
         runner.target_authorities = ["Glasgow City"]
         runner.loader = Mock()
         runner.database = Mock()
+        runner.logger = Mock()
         runner.loader.create_ingest_run.return_value = "run-id"
         runner._reset_canonical_state = Mock()
         runner._resolve_source_registry_id = Mock(side_effect=["hla-registry", "planning-registry"])

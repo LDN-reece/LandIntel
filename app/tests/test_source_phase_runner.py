@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import Mock
+
+import geopandas as gpd
+from shapely.geometry import Polygon
 
 from src.source_phase_runner import (
     SourcePhaseRunner,
@@ -62,6 +66,93 @@ class SourcePhaseRunnerTests(unittest.TestCase):
     def test_short_error_snippet_strips_markup(self) -> None:
         snippet = _short_error_snippet("<html><body><h1>Error</h1><p>Access Denied</p></body></html>")
         self.assertEqual(snippet, "Error Access Denied")
+
+    def test_find_best_site_in_frame_prefers_largest_overlap(self) -> None:
+        runner = SourcePhaseRunner.__new__(SourcePhaseRunner)
+        site_frame = gpd.GeoDataFrame(
+            [
+                {"id": "site-a", "geometry": Polygon(((0, 0), (4, 0), (4, 4), (0, 4)))},
+                {"id": "site-b", "geometry": Polygon(((2, 0), (8, 0), (8, 6), (2, 6)))},
+            ],
+            geometry="geometry",
+            crs=27700,
+        )
+
+        best_site_id = SourcePhaseRunner._find_best_site_in_frame(
+            runner,
+            site_frame,
+            Polygon(((3, 1), (7, 1), (7, 5), (3, 5))),
+        )
+
+        self.assertEqual(best_site_id, "site-b")
+
+    def test_reconcile_canonical_sites_defers_primary_parcel_assignment(self) -> None:
+        runner = SourcePhaseRunner.__new__(SourcePhaseRunner)
+        runner.target_authorities = ["Glasgow City"]
+        runner.loader = Mock()
+        runner.database = Mock()
+        runner.loader.create_ingest_run.return_value = "run-id"
+        runner._reset_canonical_state = Mock()
+        runner._resolve_source_registry_id = Mock(side_effect=["hla-registry", "planning-registry"])
+        runner._upsert_canonical_site = Mock(return_value="site-hla")
+        runner._site_geometry_params = Mock(return_value={"dummy": "geometry"})
+        runner._reference_alias_params = Mock(return_value={"dummy": "alias"})
+        runner._source_link_params = Mock(return_value={"dummy": "link"})
+        runner._evidence_params = Mock(return_value={"dummy": "evidence"})
+        runner._batch_update_hla_records = Mock()
+        runner._batch_update_planning_records = Mock()
+        runner._batch_insert_site_geometry_versions = Mock()
+        runner._batch_insert_reference_aliases = Mock()
+        runner._batch_insert_source_links = Mock()
+        runner._batch_insert_evidence_references = Mock()
+        runner._load_canonical_site_frames = Mock(return_value={"Glasgow City": gpd.GeoDataFrame([], geometry="geometry", crs=27700)})
+        runner._find_best_site_in_frame = Mock(return_value="site-hla")
+        runner._add_site_frame_geometry = Mock()
+        runner._set_primary_parcels = Mock()
+
+        hla_rows = gpd.GeoDataFrame(
+            [
+                {
+                    "id": "hla-row",
+                    "source_record_id": "HLA-1",
+                    "authority_name": "Glasgow City",
+                    "site_reference": "REF-1",
+                    "site_name": "Seed Site",
+                    "geometry": Polygon(((0, 0), (2, 0), (2, 2), (0, 2))),
+                    "effectiveness_status": "effective",
+                    "programming_horizon": "0-5",
+                    "constraint_reasons": [],
+                    "remaining_capacity": 20,
+                }
+            ],
+            geometry="geometry",
+            crs=27700,
+        )
+        planning_rows = gpd.GeoDataFrame(
+            [
+                {
+                    "id": "planning-row",
+                    "source_record_id": "PLN-1",
+                    "authority_name": "Glasgow City",
+                    "planning_reference": "25/00001/DC",
+                    "proposal_text": "Mixed-use redevelopment",
+                    "decision": "pending",
+                    "geometry": Polygon(((0, 0), (2, 0), (2, 2), (0, 2))),
+                }
+            ],
+            geometry="geometry",
+            crs=27700,
+        )
+        runner.database.read_geodataframe.side_effect = [hla_rows, planning_rows]
+
+        result = SourcePhaseRunner.reconcile_canonical_sites(runner)
+
+        self.assertEqual(result, {"canonical_site_count": 1, "linked_rows": 2})
+        runner._set_primary_parcels.assert_called_once_with()
+        runner._batch_update_hla_records.assert_called_once()
+        self.assertEqual(runner._batch_insert_site_geometry_versions.call_count, 2)
+        runner._batch_update_planning_records.assert_called_once()
+        runner.loader.update_ingest_run.assert_called_once()
 
 
 if __name__ == "__main__":

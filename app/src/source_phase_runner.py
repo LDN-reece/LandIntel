@@ -158,6 +158,7 @@ class SourcePhaseRunner:
 
             created_count = 0
             linked_rows = 0
+            batch_size = 500
 
             hla_rows = self.database.read_geodataframe(
                 """
@@ -166,14 +167,21 @@ class SourcePhaseRunner:
                     from landintel.hla_site_records
                 """
             )
+            self.logger.info("reconcile_hla_rows_loaded", extra={"row_count": len(hla_rows)})
+            hla_updates: list[dict[str, Any]] = []
+            hla_geometries: list[dict[str, Any]] = []
+            hla_aliases: list[dict[str, Any]] = []
+            hla_links: list[dict[str, Any]] = []
+            hla_evidence: list[dict[str, Any]] = []
             for row in hla_rows.itertuples(index=False):
+                geometry = _polygonize_geometry(row.geometry)
                 site_code = self._canonical_site_code("HLA", row.authority_name, row.site_reference or row.source_record_id)
                 site_name = (row.site_name or row.site_reference or row.source_record_id)[:240]
                 site_id = self._upsert_canonical_site(
                     site_code=site_code,
                     site_name=site_name,
                     authority_name=row.authority_name,
-                    geometry=_polygonize_geometry(row.geometry),
+                    geometry=geometry,
                     surfaced_reason="Surfaced from Housing Land Supply evidence.",
                     metadata={
                         "seed_source": "hla",
@@ -183,48 +191,68 @@ class SourcePhaseRunner:
                         "remaining_capacity": row.remaining_capacity,
                     },
                 )
-                self.database.execute(
-                    "update landintel.hla_site_records set canonical_site_id = cast(:site_id as uuid) where id = cast(:record_id as uuid)",
-                    {"site_id": site_id, "record_id": row.id},
+                hla_updates.append({"site_id": site_id, "record_id": row.id})
+                if geometry is not None:
+                    hla_geometries.append(
+                        self._site_geometry_params(
+                            site_id,
+                            "hla",
+                            geometry,
+                            hla_registry_id,
+                            run_id,
+                        )
+                    )
+                hla_aliases.append(
+                    self._reference_alias_params(
+                        site_id,
+                        source_family="hla",
+                        source_dataset="Housing Land Supply - Scotland",
+                        authority_name=row.authority_name,
+                        raw_reference_value=row.site_reference or row.source_record_id,
+                        site_name=site_name,
+                        source_registry_id=hla_registry_id,
+                        ingest_run_id=run_id,
+                        planning_reference=None,
+                        status="matched",
+                        confidence=1.0,
+                    )
                 )
-                self._record_site_geometry(site_id, "hla", _polygonize_geometry(row.geometry), hla_registry_id, run_id)
-                self._record_reference_alias(
-                    site_id,
-                    source_family="hla",
-                    source_dataset="Housing Land Supply - Scotland",
-                    authority_name=row.authority_name,
-                    raw_reference_value=row.site_reference or row.source_record_id,
-                    site_name=site_name,
-                    source_registry_id=hla_registry_id,
-                    ingest_run_id=run_id,
-                    planning_reference=None,
-                    status="matched",
-                    confidence=1.0,
+                hla_links.append(
+                    self._source_link_params(
+                        site_id,
+                        source_family="hla",
+                        source_dataset="Housing Land Supply - Scotland",
+                        source_record_id=row.source_record_id,
+                        link_method="direct_reference",
+                        confidence=1.0,
+                        source_registry_id=hla_registry_id,
+                        ingest_run_id=run_id,
+                    )
                 )
-                self._record_source_link(
-                    site_id,
-                    source_family="hla",
-                    source_dataset="Housing Land Supply - Scotland",
-                    source_record_id=row.source_record_id,
-                    link_method="direct_reference",
-                    confidence=1.0,
-                    source_registry_id=hla_registry_id,
-                    ingest_run_id=run_id,
+                hla_evidence.append(
+                    self._evidence_params(
+                        site_id,
+                        source_family="hla",
+                        source_dataset="Housing Land Supply - Scotland",
+                        source_record_id=row.source_record_id,
+                        source_reference=row.site_reference,
+                        confidence="high",
+                        source_registry_id=hla_registry_id,
+                        ingest_run_id=run_id,
+                        metadata={"site_name": site_name},
+                    )
                 )
-                self._record_evidence(
-                    site_id,
-                    source_family="hla",
-                    source_dataset="Housing Land Supply - Scotland",
-                    source_record_id=row.source_record_id,
-                    source_reference=row.site_reference,
-                    confidence="high",
-                    source_registry_id=hla_registry_id,
-                    ingest_run_id=run_id,
-                    metadata={"site_name": site_name},
-                )
-                self._set_primary_parcel(site_id)
                 created_count += 1
                 linked_rows += 1
+
+            self._batch_update_hla_records(hla_updates, batch_size=batch_size)
+            self._batch_insert_site_geometry_versions(hla_geometries, batch_size=batch_size)
+            self._batch_insert_reference_aliases(hla_aliases, batch_size=batch_size)
+            self._batch_insert_source_links(hla_links, batch_size=batch_size)
+            self._batch_insert_evidence_references(hla_evidence, batch_size=batch_size)
+            self.logger.info("reconcile_hla_seed_complete", extra={"created_count": created_count, "linked_rows": linked_rows})
+
+            site_frames_by_authority = self._load_canonical_site_frames()
 
             planning_rows = self.database.read_geodataframe(
                 """
@@ -232,9 +260,15 @@ class SourcePhaseRunner:
                     from landintel.planning_application_records
                 """
             )
-            for row in planning_rows.itertuples(index=False):
+            self.logger.info("reconcile_planning_rows_loaded", extra={"row_count": len(planning_rows)})
+            planning_updates: list[dict[str, Any]] = []
+            planning_geometries: list[dict[str, Any]] = []
+            planning_aliases: list[dict[str, Any]] = []
+            planning_links: list[dict[str, Any]] = []
+            planning_evidence: list[dict[str, Any]] = []
+            for row_number, row in enumerate(planning_rows.itertuples(index=False), start=1):
                 geometry = _polygonize_geometry(row.geometry)
-                site_id = self._find_best_site_by_geometry(row.authority_name, geometry) if geometry is not None else None
+                site_id = self._find_best_site_in_frame(site_frames_by_authority.get(row.authority_name), geometry)
                 if site_id is None:
                     site_code = self._canonical_site_code("PLN", row.authority_name, row.planning_reference or row.source_record_id)
                     site_name = (row.proposal_text or row.planning_reference or row.source_record_id)[:240]
@@ -247,49 +281,73 @@ class SourcePhaseRunner:
                         metadata={"seed_source": "planning", "decision": row.decision},
                     )
                     if geometry is not None:
-                        self._record_site_geometry(site_id, "planning", geometry, planning_registry_id, run_id)
-                    self._set_primary_parcel(site_id)
+                        planning_geometries.append(
+                            self._site_geometry_params(
+                                site_id,
+                                "planning",
+                                geometry,
+                                planning_registry_id,
+                                run_id,
+                            )
+                        )
+                        self._add_site_frame_geometry(site_frames_by_authority, row.authority_name, site_id, geometry)
                     created_count += 1
-                self.database.execute(
-                    "update landintel.planning_application_records set canonical_site_id = cast(:site_id as uuid) where id = cast(:record_id as uuid)",
-                    {"site_id": site_id, "record_id": row.id},
+                planning_updates.append({"site_id": site_id, "record_id": row.id})
+                planning_aliases.append(
+                    self._reference_alias_params(
+                        site_id,
+                        source_family="planning",
+                        source_dataset="Planning Applications: Official - Scotland",
+                        authority_name=row.authority_name,
+                        raw_reference_value=row.planning_reference or row.source_record_id,
+                        site_name=(row.proposal_text or row.planning_reference or row.source_record_id)[:240],
+                        source_registry_id=planning_registry_id,
+                        ingest_run_id=run_id,
+                        planning_reference=row.planning_reference,
+                        status="matched",
+                        confidence=0.85 if geometry is not None else 0.7,
+                    )
                 )
-                self._record_reference_alias(
-                    site_id,
-                    source_family="planning",
-                    source_dataset="Planning Applications: Official - Scotland",
-                    authority_name=row.authority_name,
-                    raw_reference_value=row.planning_reference or row.source_record_id,
-                    site_name=(row.proposal_text or row.planning_reference or row.source_record_id)[:240],
-                    source_registry_id=planning_registry_id,
-                    ingest_run_id=run_id,
-                    planning_reference=row.planning_reference,
-                    status="matched",
-                    confidence=0.85 if geometry is not None else 0.7,
+                planning_links.append(
+                    self._source_link_params(
+                        site_id,
+                        source_family="planning",
+                        source_dataset="Planning Applications: Official - Scotland",
+                        source_record_id=row.source_record_id,
+                        link_method="spatial_overlap" if geometry is not None else "planning_reference",
+                        confidence=0.85 if geometry is not None else 0.7,
+                        source_registry_id=planning_registry_id,
+                        ingest_run_id=run_id,
+                    )
                 )
-                self._record_source_link(
-                    site_id,
-                    source_family="planning",
-                    source_dataset="Planning Applications: Official - Scotland",
-                    source_record_id=row.source_record_id,
-                    link_method="spatial_overlap" if geometry is not None else "planning_reference",
-                    confidence=0.85 if geometry is not None else 0.7,
-                    source_registry_id=planning_registry_id,
-                    ingest_run_id=run_id,
-                )
-                self._record_evidence(
-                    site_id,
-                    source_family="planning",
-                    source_dataset="Planning Applications: Official - Scotland",
-                    source_record_id=row.source_record_id,
-                    source_reference=row.planning_reference,
-                    confidence="high" if geometry is not None else "medium",
-                    source_registry_id=planning_registry_id,
-                    ingest_run_id=run_id,
-                    metadata={"decision": row.decision, "proposal_text": row.proposal_text},
+                planning_evidence.append(
+                    self._evidence_params(
+                        site_id,
+                        source_family="planning",
+                        source_dataset="Planning Applications: Official - Scotland",
+                        source_record_id=row.source_record_id,
+                        source_reference=row.planning_reference,
+                        confidence="high" if geometry is not None else "medium",
+                        source_registry_id=planning_registry_id,
+                        ingest_run_id=run_id,
+                        metadata={"decision": row.decision, "proposal_text": row.proposal_text},
+                    )
                 )
                 linked_rows += 1
+                if row_number % 1000 == 0:
+                    self.logger.info(
+                        "reconcile_planning_progress",
+                        extra={"processed_rows": row_number, "created_count": created_count, "linked_rows": linked_rows},
+                    )
 
+            self._batch_update_planning_records(planning_updates, batch_size=batch_size)
+            self._batch_insert_site_geometry_versions(planning_geometries, batch_size=batch_size)
+            self._batch_insert_reference_aliases(planning_aliases, batch_size=batch_size)
+            self._batch_insert_source_links(planning_links, batch_size=batch_size)
+            self._batch_insert_evidence_references(planning_evidence, batch_size=batch_size)
+            self.logger.info("reconcile_planning_link_complete", extra={"created_count": created_count, "linked_rows": linked_rows})
+            self._set_primary_parcels()
+            self.logger.info("reconcile_primary_parcels_complete", extra={"site_count": created_count})
             self.loader.update_ingest_run(
                 run_id,
                 IngestRunUpdate(
@@ -1357,41 +1415,337 @@ class SourcePhaseRunner:
             },
         )
 
-    def _set_primary_parcel(self, site_id: str) -> None:
+    def _batch_update_hla_records(self, params_list: list[dict[str, Any]], *, batch_size: int) -> None:
+        for batch in chunked(params_list, batch_size):
+            self.database.execute_many(
+                "update landintel.hla_site_records set canonical_site_id = cast(:site_id as uuid) where id = cast(:record_id as uuid)",
+                batch,
+            )
+
+    def _batch_update_planning_records(self, params_list: list[dict[str, Any]], *, batch_size: int) -> None:
+        for batch in chunked(params_list, batch_size):
+            self.database.execute_many(
+                "update landintel.planning_application_records set canonical_site_id = cast(:site_id as uuid) where id = cast(:record_id as uuid)",
+                batch,
+            )
+
+    def _batch_insert_site_geometry_versions(self, params_list: list[dict[str, Any]], *, batch_size: int) -> None:
+        for batch in chunked(params_list, batch_size):
+            self.database.execute_many(
+                """
+                    insert into landintel.site_geometry_versions (
+                        canonical_site_id,
+                        geometry_source,
+                        version_label,
+                        geometry,
+                        source_registry_id,
+                        ingest_run_id,
+                        metadata
+                    )
+                    values (
+                        cast(:site_id as uuid),
+                        :geometry_source,
+                        :version_label,
+                        ST_Multi(ST_GeomFromWKB(decode(:geometry_wkb, 'hex'), 27700)),
+                        cast(:source_registry_id as uuid),
+                        cast(:ingest_run_id as uuid),
+                        '{}'::jsonb
+                    )
+                """,
+                batch,
+            )
+
+    def _batch_insert_reference_aliases(self, params_list: list[dict[str, Any]], *, batch_size: int) -> None:
+        for batch in chunked(params_list, batch_size):
+            self.database.execute_many(
+                """
+                    insert into landintel.site_reference_aliases (
+                        canonical_site_id,
+                        source_family,
+                        source_dataset,
+                        authority_name,
+                        site_name,
+                        raw_reference_value,
+                        normalized_reference_value,
+                        planning_reference,
+                        geometry_hash,
+                        status,
+                        confidence,
+                        source_registry_id,
+                        ingest_run_id,
+                        metadata
+                    )
+                    values (
+                        cast(:site_id as uuid),
+                        :source_family,
+                        :source_dataset,
+                        :authority_name,
+                        :site_name,
+                        :raw_reference_value,
+                        :normalized_reference_value,
+                        :planning_reference,
+                        :geometry_hash,
+                        :status,
+                        :confidence,
+                        cast(:source_registry_id as uuid),
+                        cast(:ingest_run_id as uuid),
+                        '{}'::jsonb
+                    )
+                """,
+                batch,
+            )
+
+    def _batch_insert_source_links(self, params_list: list[dict[str, Any]], *, batch_size: int) -> None:
+        for batch in chunked(params_list, batch_size):
+            self.database.execute_many(
+                """
+                    insert into landintel.site_source_links (
+                        canonical_site_id,
+                        source_family,
+                        source_dataset,
+                        source_record_id,
+                        link_method,
+                        confidence,
+                        source_registry_id,
+                        ingest_run_id,
+                        metadata
+                    )
+                    values (
+                        cast(:site_id as uuid),
+                        :source_family,
+                        :source_dataset,
+                        :source_record_id,
+                        :link_method,
+                        :confidence,
+                        cast(:source_registry_id as uuid),
+                        cast(:ingest_run_id as uuid),
+                        '{}'::jsonb
+                    )
+                """,
+                batch,
+            )
+
+    def _batch_insert_evidence_references(self, params_list: list[dict[str, Any]], *, batch_size: int) -> None:
+        for batch in chunked(params_list, batch_size):
+            self.database.execute_many(
+                """
+                    insert into landintel.evidence_references (
+                        canonical_site_id,
+                        source_family,
+                        source_dataset,
+                        source_record_id,
+                        source_reference,
+                        confidence,
+                        source_registry_id,
+                        ingest_run_id,
+                        metadata
+                    )
+                    values (
+                        cast(:site_id as uuid),
+                        :source_family,
+                        :source_dataset,
+                        :source_record_id,
+                        :source_reference,
+                        :confidence,
+                        cast(:source_registry_id as uuid),
+                        cast(:ingest_run_id as uuid),
+                        cast(:metadata as jsonb)
+                    )
+                """,
+                batch,
+            )
+
+    def _site_geometry_params(
+        self,
+        site_id: str,
+        geometry_source: str,
+        geometry: BaseGeometry,
+        source_registry_id: str | None,
+        ingest_run_id: str,
+    ) -> dict[str, Any]:
+        return {
+            "site_id": site_id,
+            "geometry_source": geometry_source,
+            "version_label": f"{geometry_source}:{datetime.now(timezone.utc).date().isoformat()}",
+            "geometry_wkb": _geometry_hex(geometry),
+            "source_registry_id": source_registry_id,
+            "ingest_run_id": ingest_run_id,
+        }
+
+    def _reference_alias_params(
+        self,
+        site_id: str,
+        *,
+        source_family: str,
+        source_dataset: str,
+        authority_name: str,
+        raw_reference_value: str,
+        site_name: str,
+        source_registry_id: str | None,
+        ingest_run_id: str,
+        planning_reference: str | None,
+        status: str,
+        confidence: float,
+    ) -> dict[str, Any]:
+        return {
+            "site_id": site_id,
+            "source_family": source_family,
+            "source_dataset": source_dataset,
+            "authority_name": authority_name,
+            "site_name": site_name,
+            "raw_reference_value": raw_reference_value,
+            "normalized_reference_value": _normalize_ref(raw_reference_value),
+            "planning_reference": planning_reference,
+            "geometry_hash": _normalize_ref(raw_reference_value),
+            "status": status,
+            "confidence": confidence,
+            "source_registry_id": source_registry_id,
+            "ingest_run_id": ingest_run_id,
+        }
+
+    def _source_link_params(
+        self,
+        site_id: str,
+        *,
+        source_family: str,
+        source_dataset: str,
+        source_record_id: str,
+        link_method: str,
+        confidence: float,
+        source_registry_id: str | None,
+        ingest_run_id: str,
+    ) -> dict[str, Any]:
+        return {
+            "site_id": site_id,
+            "source_family": source_family,
+            "source_dataset": source_dataset,
+            "source_record_id": source_record_id,
+            "link_method": link_method,
+            "confidence": confidence,
+            "source_registry_id": source_registry_id,
+            "ingest_run_id": ingest_run_id,
+        }
+
+    def _evidence_params(
+        self,
+        site_id: str,
+        *,
+        source_family: str,
+        source_dataset: str,
+        source_record_id: str,
+        source_reference: str | None,
+        confidence: str,
+        source_registry_id: str | None,
+        ingest_run_id: str,
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "site_id": site_id,
+            "source_family": source_family,
+            "source_dataset": source_dataset,
+            "source_record_id": source_record_id,
+            "source_reference": source_reference,
+            "confidence": confidence,
+            "source_registry_id": source_registry_id,
+            "ingest_run_id": ingest_run_id,
+            "metadata": json.dumps(metadata, default=_json_default),
+        }
+
+    def _load_canonical_site_frames(self) -> dict[str, gpd.GeoDataFrame]:
+        sites = self.database.read_geodataframe(
+            """
+                select id, authority_name, geometry
+                from landintel.canonical_sites
+                where geometry is not null
+            """
+        )
+        if sites.empty:
+            return {}
+        if sites.crs is None:
+            sites = sites.set_crs(27700, allow_override=True)
+        elif sites.crs.to_epsg() != 27700:
+            sites = sites.to_crs(27700)
+        frames: dict[str, gpd.GeoDataFrame] = {}
+        for authority_name, frame in sites.groupby("authority_name", dropna=False):
+            authority_key = str(authority_name)
+            authority_frame = gpd.GeoDataFrame(frame.copy(), geometry="geometry", crs=sites.crs)
+            frames[authority_key] = authority_frame.reset_index(drop=True)
+        return frames
+
+    def _add_site_frame_geometry(
+        self,
+        site_frames_by_authority: dict[str, gpd.GeoDataFrame],
+        authority_name: str,
+        site_id: str,
+        geometry: BaseGeometry,
+    ) -> None:
+        new_frame = gpd.GeoDataFrame(
+            [{"id": site_id, "authority_name": authority_name, "geometry": geometry}],
+            geometry="geometry",
+            crs=27700,
+        )
+        existing = site_frames_by_authority.get(authority_name)
+        if existing is None or existing.empty:
+            site_frames_by_authority[authority_name] = new_frame
+            return
+        combined = pd.concat([existing, new_frame], ignore_index=True)
+        site_frames_by_authority[authority_name] = gpd.GeoDataFrame(combined, geometry="geometry", crs=existing.crs or 27700)
+
+    def _set_primary_parcels(self) -> None:
         self.database.execute(
             """
+                with ranked_matches as (
+                    select distinct on (cs.id)
+                        cs.id as canonical_site_id,
+                        rp.id as parcel_id
+                    from landintel.canonical_sites as cs
+                    join public.ros_cadastral_parcels as rp
+                      on rp.authority_name = cs.authority_name
+                     and cs.geometry is not null
+                     and ST_Intersects(rp.geometry, cs.geometry)
+                    order by
+                        cs.id,
+                        ST_Area(ST_Intersection(rp.geometry, cs.geometry)) desc nulls last,
+                        rp.id
+                )
                 update landintel.canonical_sites as cs
-                set primary_ros_parcel_id = (
-                        select rp.id
-                        from public.ros_cadastral_parcels as rp
-                        where rp.authority_name = cs.authority_name
-                          and cs.geometry is not null
-                          and ST_Intersects(rp.geometry, cs.geometry)
-                        order by ST_Area(ST_Intersection(rp.geometry, cs.geometry)) desc nulls last
-                        limit 1
-                    ),
+                set primary_ros_parcel_id = ranked_matches.parcel_id,
                     updated_at = now()
-                where cs.id = cast(:site_id as uuid)
-            """,
-            {"site_id": site_id},
+                from ranked_matches
+                where cs.id = ranked_matches.canonical_site_id
+            """
         )
 
-    def _find_best_site_by_geometry(self, authority_name: str, geometry: BaseGeometry | None) -> str | None:
-        if geometry is None:
+    def _find_best_site_in_frame(
+        self,
+        site_frame: gpd.GeoDataFrame | None,
+        geometry: BaseGeometry | None,
+    ) -> str | None:
+        if geometry is None or site_frame is None or site_frame.empty:
             return None
-        row = self.database.fetch_one(
-            """
-                select id
-                from landintel.canonical_sites
-                where authority_name = :authority_name
-                  and geometry is not null
-                  and ST_Intersects(geometry, ST_Multi(ST_GeomFromWKB(decode(:geometry_wkb, 'hex'), 27700)))
-                order by ST_Area(ST_Intersection(geometry, ST_Multi(ST_GeomFromWKB(decode(:geometry_wkb, 'hex'), 27700)))) desc nulls last
-                limit 1
-            """,
-            {"authority_name": authority_name, "geometry_wkb": _geometry_hex(geometry)},
-        )
-        return str(row["id"]) if row else None
+        try:
+            candidate_indexes = list(site_frame.sindex.query(geometry, predicate="intersects"))
+        except Exception:
+            candidate_indexes = [
+                index
+                for index, candidate_geometry in enumerate(site_frame.geometry)
+                if candidate_geometry is not None and candidate_geometry.intersects(geometry)
+            ]
+        if not candidate_indexes:
+            return None
+
+        best_site_id: str | None = None
+        best_overlap_area = -1.0
+        for candidate in site_frame.iloc[candidate_indexes].itertuples(index=False):
+            candidate_geometry = _polygonize_geometry(candidate.geometry)
+            if candidate_geometry is None or not candidate_geometry.intersects(geometry):
+                continue
+            overlap = candidate_geometry.intersection(geometry)
+            overlap_area = float(overlap.area) if not overlap.is_empty else 0.0
+            if overlap_area > best_overlap_area:
+                best_overlap_area = overlap_area
+                best_site_id = str(candidate.id)
+        return best_site_id
 
     def _fetch_bgs_items(self, collection: BgsCollectionConfig, geometry: BaseGeometry) -> list[dict[str, Any]]:
         geo_series = gpd.GeoSeries([geometry], crs=27700)

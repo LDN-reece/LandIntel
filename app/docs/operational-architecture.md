@@ -50,6 +50,40 @@ These are the supported manual browse surfaces for the live sourcing phase:
 - `analytics.v_live_site_sources`
 - `analytics.v_live_site_readiness`
 
+### Live site spine for constraints and qualification
+
+The live site spine for site qualification and the Constraints tab is:
+
+- `public.sites`
+- `public.site_locations`
+
+Constraint and qualification logic should anchor on `public.site_locations.geometry`.
+
+This is an extension of the repo architecture, not a second canonical site system.
+
+### Constraints measurement architecture
+
+These are the approved measurement-layer tables for the Constraints tab:
+
+- `public.site_spatial_links`
+- `public.site_title_validation`
+- `public.constraint_layer_registry`
+- `public.constraint_source_features`
+- `public.site_constraint_measurements`
+- `public.site_constraint_group_summaries`
+- `public.site_commercial_friction_facts`
+
+These are the approved analyst-facing Constraints tab surfaces:
+
+- `analytics.v_constraints_tab_overview`
+- `analytics.v_constraints_tab_measurements`
+- `analytics.v_constraints_tab_group_summaries`
+- `analytics.v_constraints_tab_commercial_friction`
+
+This layer is measurement-first. It stores overlap, distance, grouped summaries, and commercially relevant friction facts only.
+
+It does not add scoring, pass/fail logic, or RAG logic.
+
 ### Legacy parcel-era operational summaries
 
 These remain useful for parcel operations, but they are not the current live-source site audit truth:
@@ -61,6 +95,13 @@ These remain useful for parcel operations, but they are not the current live-sou
 - `analytics.v_relation_storage_usage`
 - `analytics.v_storage_bucket_usage`
 
+### Legacy constraints path
+
+- `public.site_constraints`
+
+`public.site_constraints` is the legacy severity-style path.
+It can remain for backward compatibility, but new Constraints tab and qualification logic should not be built on it.
+
 ## Frontend rule
 
 Frontend and API delivery layers should read from precomputed analytics views or other deliberately slim delivery tables. They should not query `staging.*`, should not stream raw parcel attributes unnecessarily, and should not run broad spatial aggregation live per request.
@@ -68,6 +109,11 @@ Frontend and API delivery layers should read from precomputed analytics views or
 For the live source phase:
 - Supabase manual browsing should start with `analytics.v_live_source_coverage` and `analytics.v_live_site_summary`
 - frontend and operator reads should not start with raw `landintel` tables unless the task is lineage/debugging
+
+For the Constraints tab:
+- Supabase manual browsing should start with `analytics.v_constraints_tab_overview`
+- detailed investigation should then move to `analytics.v_constraints_tab_group_summaries`, `analytics.v_constraints_tab_measurements`, and `analytics.v_constraints_tab_commercial_friction`
+- frontend and operator reads should not start from raw `public.constraint_source_features` or raw `public.site_constraints`
 
 ## Operational rule
 
@@ -82,3 +128,10 @@ Use this order when manually browsing live source data in Supabase:
 3. `analytics.v_live_site_sources`
 4. `analytics.v_live_site_readiness`
 5. `landintel.v_site_traceability` only for deep lineage/debugging
+
+Use this order when manually browsing constraints data in Supabase:
+
+1. `analytics.v_constraints_tab_overview`
+2. `analytics.v_constraints_tab_group_summaries`
+3. `analytics.v_constraints_tab_measurements`
+4. `analytics.v_constraints_tab_commercial_friction`

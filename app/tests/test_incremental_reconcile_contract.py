@@ -129,7 +129,13 @@ class IncrementalReconcileContractTests(unittest.TestCase):
         ):
             self.assertIn(env_name, WORKFLOW)
 
-    def test_workflow_runs_incremental_worker_and_schedule(self) -> None:
+    def test_workflow_pauses_burn_in_schedules(self) -> None:
+        self.assertIn("Automated schedules are intentionally paused during incremental reconcile burn-in.", WORKFLOW)
+        self.assertNotIn("schedule:", WORKFLOW)
+        self.assertIn('selected_command="${{ inputs.command }}"', WORKFLOW)
+        self.assertNotIn('github.event.schedule', WORKFLOW)
+
+    def test_workflow_runs_incremental_worker_commands(self) -> None:
         for snippet in (
             'python -m src.source_reconcile_incremental process-reconcile-queue',
             'python -m src.source_reconcile_catchup reconcile-catchup-scan',
@@ -138,9 +144,6 @@ class IncrementalReconcileContractTests(unittest.TestCase):
             'python -m src.source_reconcile_incremental refresh-affected-sites',
             'python -m src.source_reconcile_incremental weekly-reconcile-maintenance',
             'python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py',
-            '- cron: "0 * * * *"',
-            '- cron: "20 * * * *"',
-            '- cron: "40 3 * * 1"',
         ):
             self.assertIn(snippet, WORKFLOW)
 

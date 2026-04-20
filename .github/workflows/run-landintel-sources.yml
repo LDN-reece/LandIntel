@@ -148,14 +148,14 @@ jobs:
             python -m src.source_reconcile_audit audit-source-footprint
           elif [ "$SELECTED_COMMAND" = "process-reconcile-queue" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_reconcile_incremental process-reconcile-queue
-            python -m src.source_reconcile_incremental refresh-affected-sites
+            python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000
+            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
           elif [ "$SELECTED_COMMAND" = "reconcile-catchup-scan" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_reconcile_catchup reconcile-catchup-scan
           elif [ "$SELECTED_COMMAND" = "refresh-affected-sites" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_reconcile_incremental refresh-affected-sites
+            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
           elif [ "$SELECTED_COMMAND" = "weekly-reconcile-maintenance" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_reconcile_incremental weekly-reconcile-maintenance
@@ -166,14 +166,14 @@ jobs:
             python -m src.source_phase_runner run-migrations
             python -m src.source_phase_runner ingest-planning-history
             python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning
-            python -m src.source_reconcile_incremental process-reconcile-queue
-            python -m src.source_reconcile_incremental refresh-affected-sites
+            python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000
+            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
           elif [ "$SELECTED_COMMAND" = "ingest-hla" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_phase_runner ingest-hla
             python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family hla
-            python -m src.source_reconcile_incremental process-reconcile-queue
-            python -m src.source_reconcile_incremental refresh-affected-sites
+            python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000
+            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
           elif [ "$SELECTED_COMMAND" = "ingest-bgs" ]; then
             python -m src.source_phase_runner run-migrations
             run_with_retries 3 30 python -m src.source_phase_runner ingest-bgs

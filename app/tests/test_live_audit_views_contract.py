@@ -161,7 +161,8 @@ class LiveAuditViewsContractTests(unittest.TestCase):
 
     def test_run_sources_workflow_offers_run_migrations(self) -> None:
         self.assertIn("- run-migrations", RUN_SOURCES_WORKFLOW)
-        self.assertIn('elif [ "${{ inputs.command }}" = "run-migrations" ]; then', RUN_SOURCES_WORKFLOW)
+        self.assertIn('selected_command="${{ inputs.command }}"', RUN_SOURCES_WORKFLOW)
+        self.assertIn('elif [ "$SELECTED_COMMAND" = "run-migrations" ]; then', RUN_SOURCES_WORKFLOW)
         self.assertIn("python -m src.source_phase_runner run-migrations", RUN_SOURCES_WORKFLOW)
 
     def test_run_sources_workflow_passes_boundary_authkey(self) -> None:

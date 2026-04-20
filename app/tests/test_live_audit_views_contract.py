@@ -9,8 +9,8 @@ SQL_VIEWS = (APP_DIR / "sql" / "033_landintel_live_audit_views.sql").read_text(e
 SQL_COMMENTS = (APP_DIR / "sql" / "034_landintel_live_audit_comments.sql").read_text(encoding="utf-8")
 SQL_SMOKE = (APP_DIR / "sql_checks" / "live_audit_smoke.sql").read_text(encoding="utf-8")
 RUNBOOK = (APP_DIR / "docs" / "live-source-audit-runbook.md").read_text(encoding="utf-8")
-SUPABASE_DEPLOY_WORKFLOW = (
-    APP_DIR.parent / ".github" / "workflows" / "codex-mcp-supabase-deploy.yml"
+RUN_SOURCES_WORKFLOW = (
+    APP_DIR.parent / ".github" / "workflows" / "run-landintel-sources.yml"
 ).read_text(encoding="utf-8")
 
 
@@ -159,14 +159,14 @@ class LiveAuditViewsContractTests(unittest.TestCase):
         ):
             self.assertIn(view_name, RUNBOOK)
 
-    def test_supabase_deploy_workflow_warns_when_schema_audit_is_missing(self) -> None:
-        self.assertIn("path: /tmp/landintel-schema-audit", SUPABASE_DEPLOY_WORKFLOW)
-        self.assertIn("if-no-files-found: warn", SUPABASE_DEPLOY_WORKFLOW)
-        self.assertNotIn("if-no-files-found: error", SUPABASE_DEPLOY_WORKFLOW)
+    def test_run_sources_workflow_offers_run_migrations(self) -> None:
+        self.assertIn("- run-migrations", RUN_SOURCES_WORKFLOW)
+        self.assertIn('elif [ "${{ inputs.command }}" = "run-migrations" ]; then', RUN_SOURCES_WORKFLOW)
+        self.assertIn("python -m src.source_phase_runner run-migrations", RUN_SOURCES_WORKFLOW)
 
-    def test_supabase_deploy_workflow_passes_boundary_authkey(self) -> None:
-        self.assertIn("BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}", SUPABASE_DEPLOY_WORKFLOW)
-        self.assertIn('echo "Missing GitHub secret: BOUNDARY_AUTHKEY"', SUPABASE_DEPLOY_WORKFLOW)
+    def test_run_sources_workflow_passes_boundary_authkey(self) -> None:
+        self.assertIn("BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}", RUN_SOURCES_WORKFLOW)
+        self.assertIn('echo "Missing GitHub secret: BOUNDARY_AUTHKEY"', RUN_SOURCES_WORKFLOW)
 
 
 if __name__ == "__main__":

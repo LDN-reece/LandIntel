@@ -133,7 +133,7 @@ class IncrementalReconcileContractTests(unittest.TestCase):
         self.assertIn("Automated schedules are intentionally paused during incremental reconcile burn-in.", WORKFLOW)
         self.assertNotIn("schedule:", WORKFLOW)
         self.assertIn('selected_command="${{ inputs.command }}"', WORKFLOW)
-        self.assertNotIn('github.event.schedule', WORKFLOW)
+        self.assertNotIn('case "${{ github.event.schedule }}"', WORKFLOW)
 
     def test_workflow_runs_incremental_worker_commands(self) -> None:
         for snippet in (

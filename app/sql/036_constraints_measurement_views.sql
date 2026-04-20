@@ -124,8 +124,8 @@ group_rollup as (
     select
         summaries.site_id,
         summaries.site_location_id,
-        count(*)::bigint as constraint_groups_measured,
-        count(*) filter (where summaries.intersecting_feature_count > 0)::bigint as constraint_groups_intersecting,
+        count(distinct layer.constraint_group) as constraint_groups_measured,
+        count(distinct layer.constraint_group) filter (where summaries.intersecting_feature_count > 0) as constraint_groups_intersecting,
         array_agg(distinct layer.layer_key order by layer.layer_key) as measured_layer_keys,
         max(summaries.measured_at) as latest_measurement_at
     from public.site_constraint_group_summaries as summaries

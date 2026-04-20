@@ -160,17 +160,28 @@ class IncrementalReconcileAuditRunner(SourcePhaseRunner):
                 order by state_count desc, review_reason_code asc
             """
         )
+        planning_by_authority_top = planning_by_authority[:10]
+        planning_by_authority_remaining_count = max(len(planning_by_authority) - len(planning_by_authority_top), 0)
         payload = {
             "summary": summary,
-            "planning_by_authority": planning_by_authority,
             "reconcile_by_family": reconcile_by_family,
             "linkage_by_family": linkage_by_family,
             "queue_health": queue_health,
             "drift_summary": drift_summary,
             "planning_review_reasons": planning_review_reasons,
+            "planning_by_authority_top": planning_by_authority_top,
+            "planning_by_authority_remaining_count": planning_by_authority_remaining_count,
         }
         self.logger.info("source_phase_audit", extra=payload)
-        return payload
+        return {
+            "summary": summary,
+            "reconcile_by_family": reconcile_by_family,
+            "linkage_by_family": linkage_by_family,
+            "queue_health": queue_health,
+            "drift_summary": drift_summary,
+            "planning_review_reasons": planning_review_reasons,
+            "planning_by_authority": planning_by_authority,
+        }
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -7,6 +7,7 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parents[1]
 SQL_MIGRATION = (APP_DIR / "sql" / "040_incremental_reconcile_mvp.sql").read_text(encoding="utf-8")
 WORKER = (APP_DIR / "src" / "source_reconcile_incremental.py").read_text(encoding="utf-8")
+CATCHUP_WORKER = (APP_DIR / "src" / "source_reconcile_catchup.py").read_text(encoding="utf-8")
 SETTINGS = (APP_DIR / "config" / "settings.py").read_text(encoding="utf-8")
 WORKFLOW = (
     APP_DIR.parent / ".github" / "workflows" / "run-landintel-sources.yml"
@@ -76,6 +77,10 @@ class IncrementalReconcileContractTests(unittest.TestCase):
         self.assertIn("possible_split", WORKER)
         self.assertIn("Blocked — structural review required", WORKER)
 
+    def test_catchup_runner_uses_live_ingest_timestamp_columns(self) -> None:
+        self.assertIn("finished_at desc nulls last, started_at desc nulls last, id desc", CATCHUP_WORKER)
+        self.assertNotIn("created_at desc nulls last", CATCHUP_WORKER)
+
     def test_settings_expose_incremental_reconcile_controls(self) -> None:
         for setting_name in (
             "planning_new_site_min_area_acres",
@@ -114,10 +119,10 @@ class IncrementalReconcileContractTests(unittest.TestCase):
     def test_workflow_runs_incremental_worker_and_schedule(self) -> None:
         for snippet in (
             'python -m src.source_reconcile_incremental process-reconcile-queue',
-            'python -m src.source_reconcile_incremental reconcile-catchup-scan',
+            'python -m src.source_reconcile_catchup reconcile-catchup-scan',
             'python -m src.source_reconcile_incremental refresh-affected-sites',
             'python -m src.source_reconcile_incremental weekly-reconcile-maintenance',
-            'python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py',
+            'python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py',
             '- cron: "0 * * * *"',
             '- cron: "20 2 * * *"',
             '- cron: "40 3 * * 1"',

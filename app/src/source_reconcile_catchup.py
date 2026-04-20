@@ -14,7 +14,7 @@ from src.source_reconcile_incremental import HLA_DATASET, PLANNING_DATASET, Incr
 
 
 class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
-    """Seed reconcile work in bounded batches using the live ingest schema."""
+    """Seed reconcile work in bounded batches across the full live source tables."""
 
     def reconcile_catchup_scan(
         self,
@@ -46,39 +46,25 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
                 "hla_retired": 0,
             }
             if source_family in (None, "planning") and not self._runtime_limit_reached(started, effective_runtime_minutes):
-                latest_planning = self._latest_successful_ingest_run("ingest_planning_history")
-                if latest_planning:
-                    planning_counts = self._seed_family_from_latest_ingest(
-                        source_family="planning",
-                        source_dataset=PLANNING_DATASET,
-                        latest_ingest_run_id=str(latest_planning["id"]),
-                        authority_scope=self._authority_scope_for_run(
-                            str(latest_planning["id"]),
-                            source_family="planning",
-                        ),
-                        batch_limit=effective_batch_limit,
-                        started=started,
-                        runtime_minutes=effective_runtime_minutes,
-                    )
-                    result["planning_seeded"] = planning_counts["seeded"]
-                    result["planning_retired"] = planning_counts["retired"]
+                planning_counts = self._seed_family_scan(
+                    source_family="planning",
+                    source_dataset=PLANNING_DATASET,
+                    batch_limit=effective_batch_limit,
+                    started=started,
+                    runtime_minutes=effective_runtime_minutes,
+                )
+                result["planning_seeded"] = planning_counts["seeded"]
+                result["planning_retired"] = planning_counts["retired"]
             if source_family in (None, "hla") and not self._runtime_limit_reached(started, effective_runtime_minutes):
-                latest_hla = self._latest_successful_ingest_run("ingest_hla")
-                if latest_hla:
-                    hla_counts = self._seed_family_from_latest_ingest(
-                        source_family="hla",
-                        source_dataset=HLA_DATASET,
-                        latest_ingest_run_id=str(latest_hla["id"]),
-                        authority_scope=self._authority_scope_for_run(
-                            str(latest_hla["id"]),
-                            source_family="hla",
-                        ),
-                        batch_limit=effective_batch_limit,
-                        started=started,
-                        runtime_minutes=effective_runtime_minutes,
-                    )
-                    result["hla_seeded"] = hla_counts["seeded"]
-                    result["hla_retired"] = hla_counts["retired"]
+                hla_counts = self._seed_family_scan(
+                    source_family="hla",
+                    source_dataset=HLA_DATASET,
+                    batch_limit=effective_batch_limit,
+                    started=started,
+                    runtime_minutes=effective_runtime_minutes,
+                )
+                result["hla_seeded"] = hla_counts["seeded"]
+                result["hla_retired"] = hla_counts["retired"]
             total = sum(result.values())
             self.loader.update_ingest_run(
                 run_id,
@@ -100,26 +86,23 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
             )
             raise
 
-    def _seed_family_from_latest_ingest(
+    def _seed_family_scan(
         self,
         *,
         source_family: str,
         source_dataset: str,
-        latest_ingest_run_id: str,
-        authority_scope: list[str],
         batch_limit: int,
         started: float,
         runtime_minutes: int,
     ) -> dict[str, int]:
         counts = {"seeded": 0, "retired": 0}
-        for authority_name in authority_scope:
+        for authority_name in self._authority_scope_for_family(source_family):
             if self._runtime_limit_reached(started, runtime_minutes):
                 break
             while not self._runtime_limit_reached(started, runtime_minutes):
                 batch = self._fetch_source_batch(
                     source_family=source_family,
                     authority_name=authority_name,
-                    latest_ingest_run_id=latest_ingest_run_id,
                     batch_limit=batch_limit,
                 )
                 if not batch:
@@ -127,13 +110,11 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
                 self._upsert_state_batch(
                     source_family=source_family,
                     source_dataset=source_dataset,
-                    latest_ingest_run_id=latest_ingest_run_id,
                     batch=batch,
                 )
                 self._queue_upsert_batch(
                     source_family=source_family,
                     source_dataset=source_dataset,
-                    latest_ingest_run_id=latest_ingest_run_id,
                     batch=batch,
                 )
                 counts["seeded"] += len(batch)
@@ -150,7 +131,6 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
                 retirement_batch = self._fetch_retirement_batch(
                     source_family=source_family,
                     authority_name=authority_name,
-                    latest_ingest_run_id=latest_ingest_run_id,
                     batch_limit=batch_limit,
                 )
                 if not retirement_batch:
@@ -158,7 +138,6 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
                 self._apply_retirement_batch(
                     source_family=source_family,
                     source_dataset=source_dataset,
-                    latest_ingest_run_id=latest_ingest_run_id,
                     batch=retirement_batch,
                 )
                 counts["retired"] += len(retirement_batch)
@@ -178,85 +157,98 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
         *,
         source_family: str,
         authority_name: str,
-        latest_ingest_run_id: str,
         batch_limit: int,
     ) -> list[dict[str, Any]]:
         if source_family == "planning":
             return self.database.fetch_all(
                 """
-                select
-                    planning.authority_name,
-                    planning.source_record_id,
-                    landintel.planning_reconcile_signature(
-                        planning.source_record_id,
+                with prepared as (
+                    select
                         planning.authority_name,
-                        planning.planning_reference,
-                        planning.proposal_text,
-                        planning.application_status,
-                        planning.decision,
-                        planning.appeal_status,
-                        planning.raw_payload,
-                        planning.geometry
-                    ) as source_signature,
-                    landintel.normalized_geometry_hash(planning.geometry) as geometry_hash,
-                    planning.canonical_site_id as source_canonical_site_id
-                from landintel.planning_application_records as planning
+                        planning.source_record_id,
+                        landintel.planning_reconcile_signature(
+                            planning.source_record_id,
+                            planning.authority_name,
+                            planning.planning_reference,
+                            planning.proposal_text,
+                            planning.application_status,
+                            planning.decision,
+                            planning.appeal_status,
+                            planning.raw_payload,
+                            planning.geometry
+                        ) as source_signature,
+                        landintel.normalized_geometry_hash(planning.geometry) as geometry_hash,
+                        planning.canonical_site_id as source_canonical_site_id,
+                        planning.ingest_run_id
+                    from landintel.planning_application_records as planning
+                    where planning.authority_name = :authority_name
+                )
+                select prepared.*
+                from prepared
                 left join landintel.source_reconcile_state as state_row
                   on state_row.source_family = 'planning'
-                 and state_row.authority_name = planning.authority_name
-                 and state_row.source_record_id = planning.source_record_id
-                where planning.ingest_run_id = cast(:run_id as uuid)
-                  and planning.authority_name = :authority_name
-                  and (
-                      state_row.id is null
-                      or state_row.last_seen_ingest_run_id is distinct from cast(:run_id as uuid)
-                      or state_row.active_flag = false
-                  )
-                order by planning.source_record_id asc
+                 and state_row.authority_name = prepared.authority_name
+                 and state_row.source_record_id = prepared.source_record_id
+                where state_row.id is null
+                   or state_row.current_source_signature is distinct from prepared.source_signature
+                   or state_row.current_geometry_hash is distinct from prepared.geometry_hash
+                   or state_row.active_flag = false
+                   or (
+                        prepared.source_canonical_site_id is not null
+                        and state_row.current_canonical_site_id is null
+                        and state_row.last_processed_at is null
+                   )
+                order by prepared.source_record_id asc
                 limit :batch_limit
                 """,
                 {
-                    "run_id": latest_ingest_run_id,
                     "authority_name": authority_name,
                     "batch_limit": batch_limit,
                 },
             )
         return self.database.fetch_all(
             """
-            select
-                hla.authority_name,
-                hla.source_record_id,
-                landintel.hla_reconcile_signature(
-                    hla.source_record_id,
+            with prepared as (
+                select
                     hla.authority_name,
-                    hla.site_reference,
-                    hla.site_name,
-                    hla.effectiveness_status,
-                    hla.programming_horizon,
-                    hla.constraint_reasons,
-                    hla.remaining_capacity,
-                    hla.raw_payload,
-                    hla.geometry
-                ) as source_signature,
-                landintel.normalized_geometry_hash(hla.geometry) as geometry_hash,
-                hla.canonical_site_id as source_canonical_site_id
-            from landintel.hla_site_records as hla
+                    hla.source_record_id,
+                    landintel.hla_reconcile_signature(
+                        hla.source_record_id,
+                        hla.authority_name,
+                        hla.site_reference,
+                        hla.site_name,
+                        hla.effectiveness_status,
+                        hla.programming_horizon,
+                        hla.constraint_reasons,
+                        hla.remaining_capacity,
+                        hla.raw_payload,
+                        hla.geometry
+                    ) as source_signature,
+                    landintel.normalized_geometry_hash(hla.geometry) as geometry_hash,
+                    hla.canonical_site_id as source_canonical_site_id,
+                    hla.ingest_run_id
+                from landintel.hla_site_records as hla
+                where hla.authority_name = :authority_name
+            )
+            select prepared.*
+            from prepared
             left join landintel.source_reconcile_state as state_row
               on state_row.source_family = 'hla'
-             and state_row.authority_name = hla.authority_name
-             and state_row.source_record_id = hla.source_record_id
-            where hla.ingest_run_id = cast(:run_id as uuid)
-              and hla.authority_name = :authority_name
-              and (
-                  state_row.id is null
-                  or state_row.last_seen_ingest_run_id is distinct from cast(:run_id as uuid)
-                  or state_row.active_flag = false
-              )
-            order by hla.source_record_id asc
+             and state_row.authority_name = prepared.authority_name
+             and state_row.source_record_id = prepared.source_record_id
+            where state_row.id is null
+               or state_row.current_source_signature is distinct from prepared.source_signature
+               or state_row.current_geometry_hash is distinct from prepared.geometry_hash
+               or state_row.active_flag = false
+               or (
+                    prepared.source_canonical_site_id is not null
+                    and state_row.current_canonical_site_id is null
+                    and state_row.last_processed_at is null
+               )
+            order by prepared.source_record_id asc
             limit :batch_limit
             """,
             {
-                "run_id": latest_ingest_run_id,
                 "authority_name": authority_name,
                 "batch_limit": batch_limit,
             },
@@ -267,28 +259,33 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
         *,
         source_family: str,
         authority_name: str,
-        latest_ingest_run_id: str,
         batch_limit: int,
     ) -> list[dict[str, Any]]:
+        source_table = self._source_table_name(source_family)
         return self.database.fetch_all(
-            """
+            f"""
             select
-                id as state_id,
-                authority_name,
-                source_record_id,
-                current_canonical_site_id
-            from landintel.source_reconcile_state
-            where source_family = :source_family
-              and authority_name = :authority_name
-              and active_flag = true
-              and last_seen_ingest_run_id is distinct from cast(:run_id as uuid)
-            order by source_record_id asc
+                state_row.id as state_id,
+                state_row.authority_name,
+                state_row.source_record_id,
+                state_row.current_canonical_site_id,
+                state_row.last_seen_ingest_run_id as ingest_run_id
+            from landintel.source_reconcile_state as state_row
+            where state_row.source_family = :source_family
+              and state_row.authority_name = :authority_name
+              and state_row.active_flag = true
+              and not exists (
+                  select 1
+                  from {source_table} as source_row
+                  where source_row.authority_name = state_row.authority_name
+                    and source_row.source_record_id = state_row.source_record_id
+              )
+            order by state_row.source_record_id asc
             limit :batch_limit
             """,
             {
                 "source_family": source_family,
                 "authority_name": authority_name,
-                "run_id": latest_ingest_run_id,
                 "batch_limit": batch_limit,
             },
         )
@@ -298,7 +295,6 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
         *,
         source_family: str,
         source_dataset: str,
-        latest_ingest_run_id: str,
         batch: list[dict[str, Any]],
     ) -> None:
         params_list = []
@@ -312,7 +308,7 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
                     "source_record_id": row["source_record_id"],
                     "source_signature": row.get("source_signature"),
                     "geometry_hash": row.get("geometry_hash"),
-                    "ingest_run_id": latest_ingest_run_id,
+                    "ingest_run_id": row.get("ingest_run_id"),
                     "source_canonical_site_id": row.get("source_canonical_site_id"),
                     "initial_match_method": "legacy_link" if has_legacy_site else None,
                     "initial_match_confidence": 1.0 if source_family == "hla" and has_legacy_site else 0.7 if has_legacy_site else None,
@@ -377,6 +373,55 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
                 current_geometry_hash = excluded.current_geometry_hash,
                 last_seen_ingest_run_id = excluded.last_seen_ingest_run_id,
                 last_seen_at = excluded.last_seen_at,
+                current_canonical_site_id = case
+                    when landintel.source_reconcile_state.current_canonical_site_id is null
+                     and excluded.current_canonical_site_id is not null
+                     and landintel.source_reconcile_state.last_processed_at is null
+                        then excluded.current_canonical_site_id
+                    else landintel.source_reconcile_state.current_canonical_site_id
+                end,
+                previous_canonical_site_id = case
+                    when landintel.source_reconcile_state.previous_canonical_site_id is null
+                     and excluded.previous_canonical_site_id is not null
+                     and landintel.source_reconcile_state.last_processed_at is null
+                        then excluded.previous_canonical_site_id
+                    else landintel.source_reconcile_state.previous_canonical_site_id
+                end,
+                match_method = case
+                    when landintel.source_reconcile_state.match_method is null
+                     and excluded.current_canonical_site_id is not null
+                     and landintel.source_reconcile_state.last_processed_at is null
+                        then excluded.match_method
+                    else landintel.source_reconcile_state.match_method
+                end,
+                match_confidence = case
+                    when landintel.source_reconcile_state.match_confidence is null
+                     and excluded.current_canonical_site_id is not null
+                     and landintel.source_reconcile_state.last_processed_at is null
+                        then excluded.match_confidence
+                    else landintel.source_reconcile_state.match_confidence
+                end,
+                publish_state = case
+                    when landintel.source_reconcile_state.current_canonical_site_id is null
+                     and excluded.current_canonical_site_id is not null
+                     and landintel.source_reconcile_state.last_processed_at is null
+                        then 'published'
+                    else landintel.source_reconcile_state.publish_state
+                end,
+                review_required = case
+                    when landintel.source_reconcile_state.current_canonical_site_id is null
+                     and excluded.current_canonical_site_id is not null
+                     and landintel.source_reconcile_state.last_processed_at is null
+                        then false
+                    else landintel.source_reconcile_state.review_required
+                end,
+                review_reason_code = case
+                    when landintel.source_reconcile_state.current_canonical_site_id is null
+                     and excluded.current_canonical_site_id is not null
+                     and landintel.source_reconcile_state.last_processed_at is null
+                        then null
+                    else landintel.source_reconcile_state.review_reason_code
+                end,
                 metadata = coalesce(landintel.source_reconcile_state.metadata, '{}'::jsonb) || excluded.metadata,
                 updated_at = now()
             """,
@@ -388,7 +433,6 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
         *,
         source_family: str,
         source_dataset: str,
-        latest_ingest_run_id: str,
         batch: list[dict[str, Any]],
     ) -> None:
         params_list = [
@@ -399,7 +443,7 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
                 "source_record_id": row["source_record_id"],
                 "source_signature": row.get("source_signature"),
                 "geometry_hash": row.get("geometry_hash"),
-                "ingest_run_id": latest_ingest_run_id,
+                "ingest_run_id": row.get("ingest_run_id"),
             }
             for row in batch
         ]
@@ -494,7 +538,6 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
         *,
         source_family: str,
         source_dataset: str,
-        latest_ingest_run_id: str,
         batch: list[dict[str, Any]],
     ) -> None:
         update_params = [{"state_id": row["state_id"]} for row in batch]
@@ -520,7 +563,7 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
                 "authority_name": row["authority_name"],
                 "source_record_id": row["source_record_id"],
                 "previous_canonical_site_id": row.get("current_canonical_site_id"),
-                "ingest_run_id": latest_ingest_run_id,
+                "ingest_run_id": row.get("ingest_run_id"),
             }
             for row in batch
         ]
@@ -601,10 +644,13 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
             """,
             queue_params,
         )
-        self._link_state_to_queue(source_family=source_family, batch=[
-            {"authority_name": row["authority_name"], "source_record_id": row["source_record_id"]}
-            for row in batch
-        ])
+        self._link_state_to_queue(
+            source_family=source_family,
+            batch=[
+                {"authority_name": row["authority_name"], "source_record_id": row["source_record_id"]}
+                for row in batch
+            ],
+        )
 
     def _link_state_to_queue(self, *, source_family: str, batch: list[dict[str, Any]]) -> None:
         params_list = [
@@ -629,51 +675,26 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
             params_list,
         )
 
-    def _authority_scope_for_run(self, run_id: str, *, source_family: str) -> list[str]:
-        scoped_authorities = self.database.fetch_all(
-            """
-            select jsonb_array_elements_text(coalesce(metadata -> 'target_authorities', '[]'::jsonb)) as authority_name
-            from public.ingest_runs
-            where id = cast(:run_id as uuid)
+    def _authority_scope_for_family(self, source_family: str) -> list[str]:
+        source_table = self._source_table_name(source_family)
+        rows = self.database.fetch_all(
+            f"""
+            select authority_name
+            from (
+                select distinct authority_name
+                from {source_table}
+                where authority_name is not null
+                union
+                select distinct authority_name
+                from landintel.source_reconcile_state
+                where source_family = :source_family
+                  and authority_name is not null
+            ) as authority_scope
+            order by authority_name asc
             """,
-            {"run_id": run_id},
+            {"source_family": source_family},
         )
-        if scoped_authorities:
-            return [str(row["authority_name"]) for row in scoped_authorities if row.get("authority_name")]
-        if source_family == "planning":
-            rows = self.database.fetch_all(
-                """
-                select distinct authority_name
-                from landintel.planning_application_records
-                where ingest_run_id = cast(:run_id as uuid)
-                order by authority_name asc
-                """,
-                {"run_id": run_id},
-            )
-        else:
-            rows = self.database.fetch_all(
-                """
-                select distinct authority_name
-                from landintel.hla_site_records
-                where ingest_run_id = cast(:run_id as uuid)
-                order by authority_name asc
-                """,
-                {"run_id": run_id},
-            )
         return [str(row["authority_name"]) for row in rows if row.get("authority_name")]
-
-    def _latest_successful_ingest_run(self, run_type: str) -> dict[str, object] | None:
-        return self.database.fetch_one(
-            """
-            select id
-            from public.ingest_runs
-            where run_type = :run_type
-              and status = 'success'
-            order by finished_at desc nulls last, started_at desc nulls last, id desc
-            limit 1
-            """,
-            {"run_type": run_type},
-        )
 
     def _source_table_name(self, source_family: str) -> str:
         return "landintel.planning_application_records" if source_family == "planning" else "landintel.hla_site_records"

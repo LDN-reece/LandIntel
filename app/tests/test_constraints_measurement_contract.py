@@ -114,6 +114,32 @@ class ConstraintsMeasurementContractTests(unittest.TestCase):
         ):
             self.assertIn(object_name, SQL_POLICIES)
 
+    def test_policies_enable_read_only_rls_on_public_measurement_tables(self) -> None:
+        for table_name in (
+            "public.site_spatial_links",
+            "public.site_title_validation",
+            "public.constraint_layer_registry",
+            "public.constraint_source_features",
+            "public.site_constraint_measurements",
+            "public.site_constraint_group_summaries",
+            "public.site_commercial_friction_facts",
+        ):
+            self.assertIn(f"alter table {table_name} enable row level security;", SQL_POLICIES)
+            self.assertIn(f"grant select on table {table_name} to authenticated;", SQL_POLICIES)
+
+        for policy_name in (
+            "site_spatial_links_authenticated_select",
+            "site_title_validation_authenticated_select",
+            "constraint_layer_registry_authenticated_select",
+            "constraint_source_features_authenticated_select",
+            "site_constraint_measurements_authenticated_select",
+            "site_constraint_group_summaries_authenticated_select",
+            "site_commercial_friction_facts_authenticated_select",
+        ):
+            self.assertIn(policy_name, SQL_POLICIES)
+
+        self.assertNotIn("disable row level security", SQL_POLICIES)
+
     def test_comments_mark_new_architecture_and_legacy_path(self) -> None:
         for object_name in (
             "public.site_spatial_links",

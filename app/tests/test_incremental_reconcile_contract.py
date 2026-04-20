@@ -105,6 +105,8 @@ class IncrementalReconcileContractTests(unittest.TestCase):
             "published_without_live_link_count",
             "source_rows_with_site_id",
             "active_live_link_count",
+            "planning_by_authority_top",
+            "planning_by_authority_remaining_count",
         ):
             self.assertIn(snippet, AUDIT_WORKER)
 

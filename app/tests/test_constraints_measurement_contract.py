@@ -41,6 +41,10 @@ class ConstraintsMeasurementContractTests(unittest.TestCase):
         ):
             self.assertIn(snippet, SQL_FUNCTIONS)
 
+    def test_measurement_function_preserves_null_distance(self) -> None:
+        self.assertIn("round(metrics.nearest_distance_m::numeric, 2) as nearest_distance_m", SQL_FUNCTIONS)
+        self.assertNotIn("coalesce(metrics.nearest_distance_m, 0)", SQL_FUNCTIONS)
+
     def test_measurement_sql_does_not_depend_on_canonical_sites(self) -> None:
         combined_sql = "\n".join((SQL_TABLES, SQL_FUNCTIONS, SQL_INDEXES, SQL_VIEWS, SQL_POLICIES, SQL_COMMENTS, SQL_SMOKE))
         self.assertNotIn("landintel.canonical_sites", combined_sql)
@@ -75,6 +79,13 @@ class ConstraintsMeasurementContractTests(unittest.TestCase):
             "friction_fact_count",
         ):
             self.assertIn(column_name, SQL_VIEWS)
+
+    def test_overview_rollup_counts_distinct_constraint_groups(self) -> None:
+        self.assertIn("count(distinct layer.constraint_group) as constraint_groups_measured", SQL_VIEWS)
+        self.assertIn(
+            "count(distinct layer.constraint_group) filter (where summaries.intersecting_feature_count > 0) as constraint_groups_intersecting",
+            SQL_VIEWS,
+        )
 
     def test_indexes_cover_measurement_write_paths(self) -> None:
         for snippet in (

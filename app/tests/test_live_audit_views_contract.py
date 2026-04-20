@@ -164,6 +164,10 @@ class LiveAuditViewsContractTests(unittest.TestCase):
         self.assertIn("if-no-files-found: warn", SUPABASE_DEPLOY_WORKFLOW)
         self.assertNotIn("if-no-files-found: error", SUPABASE_DEPLOY_WORKFLOW)
 
+    def test_supabase_deploy_workflow_passes_boundary_authkey(self) -> None:
+        self.assertIn("BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}", SUPABASE_DEPLOY_WORKFLOW)
+        self.assertIn('echo "Missing GitHub secret: BOUNDARY_AUTHKEY"', SUPABASE_DEPLOY_WORKFLOW)
+
 
 if __name__ == "__main__":
     unittest.main()

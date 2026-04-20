@@ -5,7 +5,12 @@ from pathlib import Path
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
-SQL_MIGRATION = (APP_DIR / "sql" / "040_incremental_reconcile_mvp.sql").read_text(encoding="utf-8")
+SQL_MIGRATION = "\n".join(
+    [
+        (APP_DIR / "sql" / "040_incremental_reconcile_mvp.sql").read_text(encoding="utf-8"),
+        (APP_DIR / "sql" / "041_incremental_reconcile_batched_enqueue.sql").read_text(encoding="utf-8"),
+    ]
+)
 WORKER = (APP_DIR / "src" / "source_reconcile_incremental.py").read_text(encoding="utf-8")
 CATCHUP_WORKER = (APP_DIR / "src" / "source_reconcile_catchup.py").read_text(encoding="utf-8")
 SETTINGS = (APP_DIR / "config" / "settings.py").read_text(encoding="utf-8")
@@ -56,10 +61,11 @@ class IncrementalReconcileContractTests(unittest.TestCase):
         self.assertIn("Blocked — structural review required", SQL_MIGRATION)
         self.assertIn("Contains provisional source links", SQL_MIGRATION)
 
-    def test_migration_wires_ingest_trigger(self) -> None:
-        self.assertIn("ingest_runs_incremental_reconcile_queue_trigger", SQL_MIGRATION)
+    def test_migration_moves_enqueue_to_workflow_led_batches(self) -> None:
         self.assertIn("queue_planning_reconcile_from_ingest", SQL_MIGRATION)
         self.assertIn("queue_hla_reconcile_from_ingest", SQL_MIGRATION)
+        self.assertIn("drop trigger if exists ingest_runs_incremental_reconcile_queue_trigger", SQL_MIGRATION)
+        self.assertIn("workflow-led and batched", SQL_MIGRATION)
 
     def test_worker_rechecks_stale_items_before_processing(self) -> None:
         self.assertIn("def _queue_item_is_outdated", WORKER)
@@ -80,6 +86,13 @@ class IncrementalReconcileContractTests(unittest.TestCase):
     def test_catchup_runner_uses_live_ingest_timestamp_columns(self) -> None:
         self.assertIn("finished_at desc nulls last, started_at desc nulls last, id desc", CATCHUP_WORKER)
         self.assertNotIn("created_at desc nulls last", CATCHUP_WORKER)
+
+    def test_catchup_runner_batches_queue_seeding(self) -> None:
+        self.assertIn("last_seen_ingest_run_id is distinct from cast(:run_id as uuid)", CATCHUP_WORKER)
+        self.assertIn("limit :batch_limit", CATCHUP_WORKER)
+        self.assertIn("source_reconcile_state_scope_seen_idx", SQL_MIGRATION)
+        self.assertIn("planning_application_records_reconcile_ingest_idx", SQL_MIGRATION)
+        self.assertIn("hla_site_records_reconcile_ingest_idx", SQL_MIGRATION)
 
     def test_settings_expose_incremental_reconcile_controls(self) -> None:
         for setting_name in (
@@ -120,11 +133,13 @@ class IncrementalReconcileContractTests(unittest.TestCase):
         for snippet in (
             'python -m src.source_reconcile_incremental process-reconcile-queue',
             'python -m src.source_reconcile_catchup reconcile-catchup-scan',
+            'python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning',
+            'python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family hla',
             'python -m src.source_reconcile_incremental refresh-affected-sites',
             'python -m src.source_reconcile_incremental weekly-reconcile-maintenance',
             'python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py',
             '- cron: "0 * * * *"',
-            '- cron: "20 2 * * *"',
+            '- cron: "20 * * * *"',
             '- cron: "40 3 * * 1"',
         ):
             self.assertIn(snippet, WORKFLOW)

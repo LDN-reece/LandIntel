@@ -21,10 +21,9 @@ on:
           - full-reconcile-canonical-sites
           - ingest-bgs
           - full-refresh-core-sources
-  schedule:
-    - cron: "0 * * * *"
-    - cron: "20 * * * *"
-    - cron: "40 3 * * 1"
+
+# Automated schedules are intentionally paused during incremental reconcile burn-in.
+# Resume hourly and weekly pulses only after the full manual workflow set is proven.
 
 concurrency:
   group: landintel-sources-${{ github.event_name }}-${{ github.event.inputs.command || github.event.schedule || 'manual' }}
@@ -108,27 +107,7 @@ jobs:
       - name: Resolve selected command
         run: |
           set -euo pipefail
-
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            case "${{ github.event.schedule }}" in
-              "0 * * * *")
-                selected_command="process-reconcile-queue"
-                ;;
-              "20 * * * *")
-                selected_command="reconcile-catchup-scan"
-                ;;
-              "40 3 * * 1")
-                selected_command="weekly-reconcile-maintenance"
-                ;;
-              *)
-                echo "Unsupported schedule trigger: ${{ github.event.schedule }}"
-                exit 1
-                ;;
-            esac
-          else
-            selected_command="${{ inputs.command }}"
-          fi
-
+          selected_command="${{ inputs.command }}"
           echo "SELECTED_COMMAND=${selected_command}" >> "$GITHUB_ENV"
 
       - name: Show selected command

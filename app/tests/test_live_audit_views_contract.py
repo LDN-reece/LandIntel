@@ -9,6 +9,9 @@ SQL_VIEWS = (APP_DIR / "sql" / "033_landintel_live_audit_views.sql").read_text(e
 SQL_COMMENTS = (APP_DIR / "sql" / "034_landintel_live_audit_comments.sql").read_text(encoding="utf-8")
 SQL_SMOKE = (APP_DIR / "sql_checks" / "live_audit_smoke.sql").read_text(encoding="utf-8")
 RUNBOOK = (APP_DIR / "docs" / "live-source-audit-runbook.md").read_text(encoding="utf-8")
+SUPABASE_DEPLOY_WORKFLOW = (
+    APP_DIR.parent / ".github" / "workflows" / "codex-mcp-supabase-deploy.yml"
+).read_text(encoding="utf-8")
 
 
 class LiveAuditViewsContractTests(unittest.TestCase):
@@ -155,6 +158,11 @@ class LiveAuditViewsContractTests(unittest.TestCase):
             "landintel.v_site_traceability",
         ):
             self.assertIn(view_name, RUNBOOK)
+
+    def test_supabase_deploy_workflow_warns_when_schema_audit_is_missing(self) -> None:
+        self.assertIn("path: /tmp/landintel-schema-audit", SUPABASE_DEPLOY_WORKFLOW)
+        self.assertIn("if-no-files-found: warn", SUPABASE_DEPLOY_WORKFLOW)
+        self.assertNotIn("if-no-files-found: error", SUPABASE_DEPLOY_WORKFLOW)
 
 
 if __name__ == "__main__":

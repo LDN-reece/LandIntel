@@ -102,7 +102,7 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
       - name: Compile critical runners
-        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py
+        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py
 
       - name: Resolve selected command
         run: |
@@ -143,6 +143,9 @@ jobs:
             python -m src.source_catalog_sync sync-source-catalog
           elif [ "$SELECTED_COMMAND" = "run-migrations" ]; then
             python -m src.source_phase_runner run-migrations
+          elif [ "$SELECTED_COMMAND" = "audit-source-footprint" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_reconcile_audit audit-source-footprint
           elif [ "$SELECTED_COMMAND" = "process-reconcile-queue" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_reconcile_incremental process-reconcile-queue

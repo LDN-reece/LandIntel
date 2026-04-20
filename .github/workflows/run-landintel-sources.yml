@@ -23,7 +23,7 @@ on:
           - full-refresh-core-sources
   schedule:
     - cron: "0 * * * *"
-    - cron: "20 2 * * *"
+    - cron: "20 * * * *"
     - cron: "40 3 * * 1"
 
 concurrency:
@@ -114,7 +114,7 @@ jobs:
               "0 * * * *")
                 selected_command="process-reconcile-queue"
                 ;;
-              "20 2 * * *")
+              "20 * * * *")
                 selected_command="reconcile-catchup-scan"
                 ;;
               "40 3 * * 1")
@@ -171,8 +171,6 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "reconcile-catchup-scan" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_reconcile_catchup reconcile-catchup-scan
-            python -m src.source_reconcile_incremental process-reconcile-queue
-            python -m src.source_reconcile_incremental refresh-affected-sites
           elif [ "$SELECTED_COMMAND" = "refresh-affected-sites" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_reconcile_incremental refresh-affected-sites
@@ -182,9 +180,16 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "full-reconcile-canonical-sites" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_phase_runner reconcile-canonical-sites
-          elif [ "$SELECTED_COMMAND" = "ingest-planning-history" ] || [ "$SELECTED_COMMAND" = "ingest-hla" ]; then
+          elif [ "$SELECTED_COMMAND" = "ingest-planning-history" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_phase_runner "$SELECTED_COMMAND"
+            python -m src.source_phase_runner ingest-planning-history
+            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning
+            python -m src.source_reconcile_incremental process-reconcile-queue
+            python -m src.source_reconcile_incremental refresh-affected-sites
+          elif [ "$SELECTED_COMMAND" = "ingest-hla" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_phase_runner ingest-hla
+            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family hla
             python -m src.source_reconcile_incremental process-reconcile-queue
             python -m src.source_reconcile_incremental refresh-affected-sites
           elif [ "$SELECTED_COMMAND" = "ingest-bgs" ]; then

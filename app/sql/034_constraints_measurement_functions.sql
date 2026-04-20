@@ -61,7 +61,7 @@ as $$
         round(coalesce(metrics.overlap_area_sqm, 0)::numeric, 2) as overlap_area_sqm,
         round(coalesce((metrics.overlap_area_sqm / metrics.site_area_sqm) * 100, 0)::numeric, 4) as overlap_pct_of_site,
         round(coalesce((metrics.overlap_area_sqm / metrics.feature_area_sqm) * 100, 0)::numeric, 4) as overlap_pct_of_feature,
-        round(coalesce(metrics.nearest_distance_m, 0)::numeric, 2) as nearest_distance_m
+        round(metrics.nearest_distance_m::numeric, 2) as nearest_distance_m
     from metrics
 
     union all

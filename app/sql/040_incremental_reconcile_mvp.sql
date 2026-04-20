@@ -304,6 +304,7 @@ declare
     v_now timestamptz := now();
     v_target_authorities text[] := array[]::text[];
     v_total_count integer := 0;
+    v_retired_count integer := 0;
 begin
     select coalesce(array_agg(authority_name), array[]::text[])
       into v_target_authorities
@@ -587,7 +588,8 @@ begin
     from retire_queue
     where state_row.id = retire_queue.state_id;
 
-    get diagnostics v_total_count = row_count + v_total_count;
+    get diagnostics v_retired_count = row_count;
+    v_total_count := v_total_count + v_retired_count;
     return v_total_count;
 end;
 $$;
@@ -600,6 +602,7 @@ declare
     v_now timestamptz := now();
     v_target_authorities text[] := array[]::text[];
     v_total_count integer := 0;
+    v_retired_count integer := 0;
 begin
     select coalesce(array_agg(authority_name), array[]::text[])
       into v_target_authorities
@@ -884,7 +887,8 @@ begin
     from retire_queue
     where state_row.id = retire_queue.state_id;
 
-    get diagnostics v_total_count = row_count + v_total_count;
+    get diagnostics v_retired_count = row_count;
+    v_total_count := v_total_count + v_retired_count;
     return v_total_count;
 end;
 $$;

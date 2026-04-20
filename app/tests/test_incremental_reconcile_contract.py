@@ -13,6 +13,7 @@ SQL_MIGRATION = "\n".join(
 )
 WORKER = (APP_DIR / "src" / "source_reconcile_incremental.py").read_text(encoding="utf-8")
 CATCHUP_WORKER = (APP_DIR / "src" / "source_reconcile_catchup.py").read_text(encoding="utf-8")
+AUDIT_WORKER = (APP_DIR / "src" / "source_reconcile_audit.py").read_text(encoding="utf-8")
 SETTINGS = (APP_DIR / "config" / "settings.py").read_text(encoding="utf-8")
 WORKFLOW = (
     APP_DIR.parent / ".github" / "workflows" / "run-landintel-sources.yml"
@@ -94,6 +95,19 @@ class IncrementalReconcileContractTests(unittest.TestCase):
         self.assertIn("planning_application_records_reconcile_ingest_idx", SQL_MIGRATION)
         self.assertIn("hla_site_records_reconcile_ingest_idx", SQL_MIGRATION)
 
+    def test_audit_runner_reports_reconcile_state_and_queue_health(self) -> None:
+        for snippet in (
+            "reconcile_by_family",
+            "linkage_by_family",
+            "planning_review_reasons",
+            "analytics.v_reconcile_queue_health",
+            "analytics.v_reconcile_drift_summary",
+            "published_without_live_link_count",
+            "source_rows_with_site_id",
+            "active_live_link_count",
+        ):
+            self.assertIn(snippet, AUDIT_WORKER)
+
     def test_settings_expose_incremental_reconcile_controls(self) -> None:
         for setting_name in (
             "planning_new_site_min_area_acres",
@@ -137,13 +151,14 @@ class IncrementalReconcileContractTests(unittest.TestCase):
 
     def test_workflow_runs_incremental_worker_commands(self) -> None:
         for snippet in (
+            'python -m src.source_reconcile_audit audit-source-footprint',
             'python -m src.source_reconcile_incremental process-reconcile-queue',
             'python -m src.source_reconcile_catchup reconcile-catchup-scan',
             'python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning',
             'python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family hla',
             'python -m src.source_reconcile_incremental refresh-affected-sites',
             'python -m src.source_reconcile_incremental weekly-reconcile-maintenance',
-            'python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py',
+            'python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py',
         ):
             self.assertIn(snippet, WORKFLOW)
 

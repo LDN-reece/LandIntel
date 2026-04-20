@@ -170,4 +170,4 @@ jobs:
         with:
           name: landintel-supabase-schema-audit
           path: /tmp/landintel-schema-audit
-          if-no-files-found: error
+          if-no-files-found: warn

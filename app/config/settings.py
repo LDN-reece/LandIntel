@@ -102,13 +102,6 @@ class Settings(BaseSettings):
     enable_internal_scheduler: bool = Field(default=False, alias="ENABLE_INTERNAL_SCHEDULER")
     startup_command: str = Field(default="none", alias="STARTUP_COMMAND")
     quarterly_cron: str = Field(default="0 6 2 3,6,9,12 *", alias="QUARTERLY_CRON")
-    workflow_source_input_path: Path | None = Field(default=None, alias="LANDINTEL_SOURCE_INPUT_PATH")
-    workflow_source_input_dir: Path | None = Field(default=None, alias="LANDINTEL_SOURCE_INPUT_DIR")
-    workflow_source_input_extracted_dir: Path | None = Field(
-        default=None,
-        alias="LANDINTEL_SOURCE_INPUT_EXTRACTED_DIR",
-    )
-    workflow_source_input_filename: str | None = Field(default=None, alias="LANDINTEL_SOURCE_INPUT_FILENAME")
 
     councils_config_path: Path = Field(
         default=CONFIG_DIR / "councils.yaml",

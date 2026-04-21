@@ -21,16 +21,6 @@ on:
           - full-reconcile-canonical-sites
           - ingest-bgs
           - full-refresh-core-sources
-      source_file_url:
-        description: Optional direct-download link for a source file or ZIP package. Upload it to Google Drive or another file host and paste the link here.
-        required: false
-        type: string
-        default: ""
-      source_file_name:
-        description: Optional file name override. Recommended when using Google Drive links so the workflow keeps the right file extension.
-        required: false
-        type: string
-        default: ""
 
 # Automated schedules are intentionally paused during incremental reconcile burn-in.
 # Resume hourly and weekly pulses only after the full manual workflow set is proven.
@@ -101,67 +91,12 @@ jobs:
       - name: Install system packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev proj-bin postgresql-client unzip
+          sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev proj-bin postgresql-client
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-
-      - name: Download workflow source file
-        if: ${{ inputs.source_file_url != '' }}
-        env:
-          SOURCE_FILE_URL: ${{ inputs.source_file_url }}
-          SOURCE_FILE_NAME: ${{ inputs.source_file_name }}
-        run: |
-          set -euo pipefail
-          INPUT_ROOT="${RUNNER_TEMP}/workflow-source"
-          DOWNLOAD_DIR="${INPUT_ROOT}/download"
-          EXTRACTED_DIR="${INPUT_ROOT}/extracted"
-          mkdir -p "$DOWNLOAD_DIR" "$EXTRACTED_DIR"
-
-          RESOLVED_NAME="$SOURCE_FILE_NAME"
-          if [ -z "$RESOLVED_NAME" ]; then
-            RESOLVED_NAME="$(python -c 'import os; from urllib.parse import unquote, urlparse; url = os.environ["SOURCE_FILE_URL"]; path = unquote(urlparse(url).path.rstrip("/")); name = os.path.basename(path); print(name or "workflow-source-input")')"
-          fi
-
-          SOURCE_PATH="${DOWNLOAD_DIR}/${RESOLVED_NAME}"
-
-          case "$SOURCE_FILE_URL" in
-            *drive.google.com/*|*docs.google.com/*)
-              python -m pip install gdown
-              SOURCE_PATH="$SOURCE_PATH" python - <<'PY'
-import os
-import gdown
-
-result = gdown.download(
-    url=os.environ["SOURCE_FILE_URL"],
-    output=os.environ["SOURCE_PATH"],
-    quiet=False,
-    fuzzy=True,
-)
-if not result:
-    raise SystemExit("Google Drive download failed")
-PY
-              ;;
-            *)
-              curl --fail --location --output "$SOURCE_PATH" "$SOURCE_FILE_URL"
-              ;;
-          esac
-
-          if [ ! -s "$SOURCE_PATH" ]; then
-            echo "Downloaded source file is empty"
-            exit 1
-          fi
-
-          echo "LANDINTEL_SOURCE_INPUT_PATH=$SOURCE_PATH" >> "$GITHUB_ENV"
-          echo "LANDINTEL_SOURCE_INPUT_DIR=$DOWNLOAD_DIR" >> "$GITHUB_ENV"
-          echo "LANDINTEL_SOURCE_INPUT_FILENAME=$RESOLVED_NAME" >> "$GITHUB_ENV"
-
-          if [[ "$SOURCE_PATH" == *.zip ]]; then
-            unzip -o "$SOURCE_PATH" -d "$EXTRACTED_DIR" >/dev/null
-            echo "LANDINTEL_SOURCE_INPUT_EXTRACTED_DIR=$EXTRACTED_DIR" >> "$GITHUB_ENV"
-          fi
 
       - name: Run regression checks
         run: python -m unittest discover -s tests -p "test_*.py" -v
@@ -178,8 +113,6 @@ PY
       - name: Show selected command
         run: |
           echo "Command: ${SELECTED_COMMAND}"
-          echo "Source file URL provided: ${{ inputs.source_file_url != '' }}"
-          echo "Source file name override provided: ${{ inputs.source_file_name != '' }}"
 
       - name: Run source phase command
         run: |

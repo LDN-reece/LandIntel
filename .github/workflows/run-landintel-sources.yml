@@ -130,7 +130,19 @@ jobs:
           case "$SOURCE_FILE_URL" in
             *drive.google.com/*|*docs.google.com/*)
               python -m pip install gdown
-              python -m gdown --fuzzy "$SOURCE_FILE_URL" -O "$SOURCE_PATH"
+              SOURCE_PATH="$SOURCE_PATH" python - <<'PY'
+import os
+import gdown
+
+result = gdown.download(
+    url=os.environ["SOURCE_FILE_URL"],
+    output=os.environ["SOURCE_PATH"],
+    quiet=False,
+    fuzzy=True,
+)
+if not result:
+    raise SystemExit("Google Drive download failed")
+PY
               ;;
             *)
               curl --fail --location --output "$SOURCE_PATH" "$SOURCE_FILE_URL"

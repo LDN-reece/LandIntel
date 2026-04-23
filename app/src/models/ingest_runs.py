@@ -27,3 +27,4 @@ class IngestRunUpdate:
     error_message: str | None = None
     metadata: dict[str, Any] | None = None
     finished: bool = False
+

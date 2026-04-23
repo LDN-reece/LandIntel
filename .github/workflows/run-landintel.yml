@@ -1,0 +1,215 @@
+name: Run LandIntel
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: Which stage to run on GitHub
+        required: true
+        type: choice
+        default: audit-operational-footprint
+        options:
+          - bootstrap-scottish-mvp
+          - run-migrations
+          - discover-sources
+          - load-boundaries
+          - ingest-ros-cadastral
+          - ingest-bgs-boreholes
+          - full-refresh
+          - audit-operational-footprint
+          - cleanup-operational-footprint
+          - prune-audit-artifacts
+          - seed-mvp-sites
+          - refresh-site-qualifications
+      source_file_url:
+        description: Optional direct-download link for a source file or ZIP package. Upload it to Google Drive or another file host and paste the link here. For BGS, use the original ZIP shapefile package.
+        required: false
+        type: string
+        default: ""
+      source_file_name:
+        description: Optional file name override. Recommended when using Google Drive links so the workflow keeps the right file extension.
+        required: false
+        type: string
+        default: ""
+      arguments:
+        description: Optional extra CLI arguments, for example --site-code SC-A-001 or --limit 6
+        required: false
+        type: string
+        default: ""
+      audit_backend:
+        description: Whether to retain selected source artifacts in Supabase Storage
+        required: true
+        type: choice
+        default: none
+        options:
+          - none
+          - supabase
+
+concurrency:
+  group: landintel-${{ inputs.command }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: app
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}/app
+      SUPABASE_URL: https://icmgcxujqoiyzxqonwca.supabase.co
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}
+      BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
+      ROS_CLIENT_ID: ${{ secrets.ROS_CLIENT_ID }}
+      ROS_CLIENT_SECRET: ${{ secrets.ROS_CLIENT_SECRET }}
+      AUDIT_ARTIFACT_BACKEND: ${{ inputs.audit_backend }}
+      SUPABASE_WORKING_BUCKET_NAME: landintel-working
+      SUPABASE_ARCHIVE_BUCKET_NAME: landintel-ingest-audit
+      PERSIST_STAGING_ROWS: "false"
+      STAGING_RETENTION_DAYS: "14"
+      ARTIFACT_WORKING_RETENTION_DAYS: "30"
+      ARTIFACT_ARCHIVE_RETENTION_DAYS: "365"
+      MIN_OPERATIONAL_AREA_ACRES: "4"
+      MIRROR_LAND_OBJECTS: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+
+      - name: Validate workflow configuration
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "Missing GitHub secret: SUPABASE_DB_URL"
+            exit 1
+          fi
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Missing GitHub secret: SUPABASE_SERVICE_ROLE_KEY"
+            exit 1
+          fi
+          case "$SUPABASE_DB_URL" in
+            postgresql://*|postgresql+psycopg://*|postgres://*)
+              echo "SUPABASE_DB_URL format looks valid"
+              ;;
+            https://*)
+              echo "SUPABASE_DB_URL is wrong. Use the Postgres connection string from Supabase Connect, not the project URL."
+              exit 1
+              ;;
+            *)
+              echo "SUPABASE_DB_URL must start with postgresql://, postgresql+psycopg://, or postgres://"
+              exit 1
+              ;;
+          esac
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev proj-bin postgresql-client
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Download workflow source file
+        if: ${{ inputs.source_file_url != '' }}
+        env:
+          SOURCE_FILE_URL: ${{ inputs.source_file_url }}
+          SOURCE_FILE_NAME: ${{ inputs.source_file_name }}
+          WORKFLOW_COMMAND: ${{ inputs.command }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SOURCE_FILE_URL" ]; then
+            echo "source_file_url is required when a hosted source file is expected"
+            exit 1
+          fi
+
+          INPUT_ROOT="${RUNNER_TEMP}/workflow-source"
+          DOWNLOAD_DIR="${INPUT_ROOT}/download"
+          EXTRACTED_DIR="${INPUT_ROOT}/extracted"
+          mkdir -p "$DOWNLOAD_DIR" "$EXTRACTED_DIR"
+
+          RESOLVED_NAME="$SOURCE_FILE_NAME"
+          if [ -z "$RESOLVED_NAME" ]; then
+            if [ "$WORKFLOW_COMMAND" = "ingest-bgs-boreholes" ]; then
+              RESOLVED_NAME="single-onshore-borehole-index-dataset-26-01-26.zip"
+            else
+              RESOLVED_NAME="$(python -c 'import os; from urllib.parse import unquote, urlparse; url = os.environ[\"SOURCE_FILE_URL\"]; path = unquote(urlparse(url).path.rstrip(\"/\")); name = os.path.basename(path); print(name or \"workflow-source-input\")')"
+            fi
+          fi
+
+          SOURCE_PATH="${DOWNLOAD_DIR}/${RESOLVED_NAME}"
+
+          case "$SOURCE_FILE_URL" in
+            *drive.google.com/*|*docs.google.com/*)
+              python -m pip install gdown
+              python -m gdown --fuzzy "$SOURCE_FILE_URL" -O "$SOURCE_PATH"
+              ;;
+            *)
+              curl --fail --location --output "$SOURCE_PATH" "$SOURCE_FILE_URL"
+              ;;
+          esac
+
+          if [ ! -s "$SOURCE_PATH" ]; then
+            echo "Downloaded source file is empty"
+            exit 1
+          fi
+
+          echo "LANDINTEL_SOURCE_INPUT_PATH=$SOURCE_PATH" >> "$GITHUB_ENV"
+          echo "LANDINTEL_SOURCE_INPUT_DIR=$DOWNLOAD_DIR" >> "$GITHUB_ENV"
+          echo "LANDINTEL_SOURCE_INPUT_FILENAME=$RESOLVED_NAME" >> "$GITHUB_ENV"
+
+          if [[ "$SOURCE_PATH" == *.zip ]]; then
+            unzip -o "$SOURCE_PATH" -d "$EXTRACTED_DIR" >/dev/null
+            echo "LANDINTEL_SOURCE_INPUT_EXTRACTED_DIR=$EXTRACTED_DIR" >> "$GITHUB_ENV"
+          fi
+
+          if [ "$WORKFLOW_COMMAND" = "ingest-bgs-boreholes" ]; then
+            unzip -l "$SOURCE_PATH" >/dev/null
+            echo "BGS_ARCHIVE_PATH=$SOURCE_PATH" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run regression checks
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Show selected command
+        run: |
+          echo "Command: ${{ inputs.command }}"
+          echo "Source file URL provided: ${{ inputs.source_file_url != '' }}"
+          echo "Source file name override provided: ${{ inputs.source_file_name != '' }}"
+          echo "Arguments: ${{ inputs.arguments }}"
+          echo "Audit backend: $AUDIT_ARTIFACT_BACKEND"
+          echo "Minimum operational area acres: $MIN_OPERATIONAL_AREA_ACRES"
+          echo "Mirror land objects: $MIRROR_LAND_OBJECTS"
+
+      - name: Run selected stage
+        run: |
+          set -euo pipefail
+          EXTRA_ARGS="${{ inputs.arguments }}"
+          if [ "${{ inputs.command }}" = "bootstrap-scottish-mvp" ]; then
+            python -m src.main run-migrations
+            python -m src.main seed-mvp-sites ${EXTRA_ARGS}
+            python -m src.main refresh-site-qualifications
+          elif [ "${{ inputs.command }}" = "ingest-bgs-boreholes" ]; then
+            if [ -z "${BGS_ARCHIVE_PATH:-}" ]; then
+              echo "BGS_ARCHIVE_PATH was not prepared"
+              exit 1
+            fi
+            python -m src.main run-migrations
+            python -m src.main ingest-bgs-boreholes --archive-path "${BGS_ARCHIVE_PATH}" ${EXTRA_ARGS}
+          else
+            python -m src.main "${{ inputs.command }}" ${EXTRA_ARGS}
+          fi

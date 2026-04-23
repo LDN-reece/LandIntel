@@ -22,3 +22,4 @@ class SourceRegistryRecord:
     record_json: dict[str, Any] = field(default_factory=dict)
     geographic_extent: BaseGeometry | None = None
     last_seen_at: datetime | None = None
+

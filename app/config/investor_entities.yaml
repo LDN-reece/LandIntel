@@ -1,0 +1,76 @@
+investor_entities:
+  - investor_code: fo_scotland_growth_capital
+    entity_name: Scotland Growth Family Office
+    investor_type: family_office
+    sub_type: development_capital
+    geography_scope: Scotland
+    scotland_focus: true
+    residential_focus: true
+    early_stage_focus: true
+    planning_risk_appetite: medium
+    typical_structure: flexible
+    typical_cheque_min: 250000
+    typical_cheque_max: 1500000
+    target_return_profile: "2x+ MOIC"
+    decision_speed: fast
+    relationship_type: internal_network
+    source_seed: curated_mvp
+    confidence_level: medium
+    provisional_seed: true
+
+  - investor_code: pf_planning_equity_alpha
+    entity_name: Planning Equity Alpha Fund
+    investor_type: private_fund
+    sub_type: land_focused
+    geography_scope: UK with Scotland selective
+    scotland_focus: true
+    residential_focus: true
+    early_stage_focus: true
+    planning_risk_appetite: high
+    typical_structure: spv_equity
+    typical_cheque_min: 750000
+    typical_cheque_max: 5000000
+    target_return_profile: "3x+ MOIC / high IRR"
+    decision_speed: medium
+    relationship_type: direct
+    source_seed: curated_mvp
+    confidence_level: medium
+    provisional_seed: true
+
+  - investor_code: hnwi_option_capital_scotland
+    entity_name: Option Capital Scotland Network
+    investor_type: hnwi
+    sub_type: opportunistic
+    geography_scope: Central Belt Scotland
+    scotland_focus: true
+    residential_focus: true
+    early_stage_focus: true
+    planning_risk_appetite: medium
+    typical_structure: option_funding
+    typical_cheque_min: 100000
+    typical_cheque_max: 750000
+    target_return_profile: "2x MOIC"
+    decision_speed: fast
+    relationship_type: internal_network
+    source_seed: curated_mvp
+    confidence_level: low
+    provisional_seed: true
+
+  - investor_code: public_regen_unlock_fund
+    entity_name: Regeneration Unlock Fund Scotland
+    investor_type: public_fund
+    sub_type: development_capital
+    geography_scope: Scotland
+    scotland_focus: true
+    residential_focus: true
+    early_stage_focus: true
+    planning_risk_appetite: low
+    typical_structure: conditional_purchase_funding
+    typical_cheque_min: 500000
+    typical_cheque_max: 3000000
+    target_return_profile: "capital preservation plus delivery"
+    decision_speed: slow
+    relationship_type: intermediary
+    source_seed: curated_mvp
+    confidence_level: low
+    provisional_seed: true

@@ -15,3 +15,4 @@ class AuthorityAOIRecord:
     geometry: BaseGeometry
     geometry_simplified: BaseGeometry | None
     active: bool = True
+

@@ -21,3 +21,4 @@ def calculate_area_metrics(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     enriched["area_ha"] = (enriched["area_sqm"] / SQM_PER_HECTARE).round(6)
     enriched["area_acres"] = (enriched["area_sqm"] / SQM_PER_ACRE).round(6)
     return enriched
+

@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+
+{% block title %}{{ brief.header.site_name }} | LandIntel{% endblock %}
+
+{% block content %}
+<section class="detail-shell">
+  <div class="detail-header panel">
+    <div>
+      <p class="eyebrow">{{ brief.header.site_code }}</p>
+      <h2>{{ brief.header.site_name }}</h2>
+      <p class="muted">{{ brief.header.authority_name or "Unknown authority" }} · {{ "%.2f"|format(brief.header.area_acres or 0) }} acres</p>
+      <p class="muted">{{ brief.header.latest_change_summary or "No recent change event recorded." }}</p>
+    </div>
+    <div class="detail-status">
+      <span class="pill">{{ brief.header.overall_tier }}</span>
+      <span class="subpill">{{ brief.header.review_status }}</span>
+      <span class="subpill">{{ brief.header.queue_name }}</span>
+    </div>
+  </div>
+
+  <section class="summary-grid">
+    <article class="panel">
+      <h3>Headline Commercial Summary</h3>
+      <dl class="data-grid">
+        <div><dt>Why It Surfaced</dt><dd>{{ brief.headline_summary.why_it_surfaced }}</dd></div>
+        <div><dt>Why It Survived</dt><dd>{{ brief.headline_summary.why_it_survived }}</dd></div>
+        <div><dt>Source Route</dt><dd>{{ brief.headline_summary.source_route.replace('-', ' ') }}</dd></div>
+        <div><dt>Size</dt><dd>{{ brief.headline_summary.size_headline }}</dd></div>
+        <div><dt>Settlement</dt><dd>{{ brief.headline_summary.settlement_headline }}</dd></div>
+        <div><dt>Planning</dt><dd>{{ brief.headline_summary.planning_headline }}</dd></div>
+        <div><dt>Title State</dt><dd>{{ brief.headline_summary.title_state }}</dd></div>
+        <div><dt>Ownership Label</dt><dd>{{ brief.headline_summary.ownership_control_fact_label }}</dd></div>
+      </dl>
+    </article>
+
+    <article class="panel">
+      <h3>Review Actions</h3>
+      <form method="post" action="/sites/{{ brief.header.canonical_site_id }}/review/status" class="action-form">
+        <label>
+          Review Status
+          <select name="review_status">
+            {% for value in ["New candidate", "Queued for review", "Under review", "Need more evidence", "Rejected", "Watchlist", "Conditional", "Strong candidate", "Buy title now", "Title ordered", "Title reviewed", "Likely missed / controlled", "Not for us", "Agency angle only", "Parked"] %}
+            <option value="{{ value }}" {% if brief.due_diligence.review_state and brief.due_diligence.review_state.review_status == value %}selected{% endif %}>{{ value }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Your Name
+          <input type="text" name="actor_name" value="LDN" />
+        </label>
+        <label>
+          Why
+          <textarea name="reason_text" rows="3" placeholder="Why are you changing the status?"></textarea>
+        </label>
+        <button type="submit" class="button-primary">Save Status</button>
+      </form>
+
+      <form method="post" action="/sites/{{ brief.header.canonical_site_id }}/review/note" class="action-form">
+        <label>
+          Your Name
+          <input type="text" name="actor_name" value="LDN" />
+        </label>
+        <label>
+          Note
+          <textarea name="note_text" rows="4" placeholder="Add a review note, hidden truth, or next check."></textarea>
+        </label>
+        <button type="submit" class="button-secondary">Add Note</button>
+      </form>
+    </article>
+  </section>
+
+  <section class="three-way-grid">
+    <article class="panel signal-good">
+      <h3>Good</h3>
+      {% if not brief.good_items %}
+      <p class="muted">No positive headline has been written yet.</p>
+      {% endif %}
+      {% for item in brief.good_items %}
+      <div class="interpretation-item">
+        <strong>{{ item.headline }}</strong>
+        <p>{{ item.summary }}</p>
+      </div>
+      {% endfor %}
+    </article>
+    <article class="panel signal-bad">
+      <h3>Bad</h3>
+      {% if not brief.bad_items %}
+      <p class="muted">No material but workable issue has been written yet.</p>
+      {% endif %}
+      {% for item in brief.bad_items %}
+      <div class="interpretation-item">
+        <strong>{{ item.headline }}</strong>
+        <p>{{ item.summary }}</p>
+      </div>
+      {% endfor %}
+    </article>
+    <article class="panel signal-ugly">
+      <h3>Ugly</h3>
+      {% if not brief.ugly_items %}
+      <p class="muted">No severe caution has been written yet.</p>
+      {% endif %}
+      {% for item in brief.ugly_items %}
+      <div class="interpretation-item">
+        <strong>{{ item.headline }}</strong>
+        <p>{{ item.summary }}</p>
+      </div>
+      {% endfor %}
+    </article>
+  </section>
+
+  <section class="summary-grid">
+    <article class="panel">
+      <h3>Title and Control</h3>
+      <dl class="data-grid">
+        <div><dt>Title State</dt><dd>{{ brief.due_diligence.title.title_state or "commercial_inference" }}</dd></div>
+        <div><dt>Title Reviewed</dt><dd>{{ "Yes" if brief.due_diligence.title.title_reviewed_flag else "No" }}</dd></div>
+        <div><dt>Title Validations</dt><dd>{{ brief.due_diligence.title.title_validation_count or 0 }}</dd></div>
+        <div><dt>Linked Parcels</dt><dd>{{ brief.due_diligence.title.parcel_link_count or 0 }}</dd></div>
+      </dl>
+      <p class="muted">{{ brief.due_diligence.title.title_summary or "Ownership remains a commercial inference until title review is complete." }}</p>
+      {% if brief.due_diligence.title.title_numbers %}
+      <p class="muted">Title numbers: {{ brief.due_diligence.title.title_numbers|join(", ") }}</p>
+      {% endif %}
+
+      <form method="post" action="/sites/{{ brief.header.canonical_site_id }}/review/title" class="action-form">
+        <label>
+          Title Action
+          <select name="action">
+            {% for value in ["buy_title_now", "title_ordered", "title_reviewed"] %}
+            <option value="{{ value }}">{{ value.replace("_", " ") }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Your Name
+          <input type="text" name="actor_name" value="LDN" />
+        </label>
+        <label>
+          Title Number
+          <input type="text" name="title_number" placeholder="Optional title reference" />
+        </label>
+        <label>
+          Why
+          <textarea name="reason_text" rows="3" placeholder="Why is this title step being taken?"></textarea>
+        </label>
+        <button type="submit" class="button-secondary">Record Title Action</button>
+      </form>
+    </article>
+
+    <article class="panel">
+      <h3>Manual Override</h3>
+      <p class="muted">System outputs are preserved. Overrides sit alongside them and never replace the original system view.</p>
+      <form method="post" action="/sites/{{ brief.header.canonical_site_id }}/review/override" class="action-form">
+        <label>
+          Your Name
+          <input type="text" name="actor_name" value="LDN" />
+        </label>
+        <label>
+          Override Key
+          <input type="text" name="override_key" placeholder="e.g. review_priority" />
+        </label>
+        <label>
+          Override Value
+          <input type="text" name="override_value" placeholder="e.g. urgent follow-up" />
+        </label>
+        <label>
+          Why
+          <textarea name="reason_text" rows="3" placeholder="Why are you overriding the system view?"></textarea>
+        </label>
+        <button type="submit" class="button-secondary">Record Override</button>
+      </form>
+    </article>
+  </section>
+
+  <section class="panel">
+    <h3>Layer 2: Detailed Due Diligence</h3>
+    <div class="facts-stack">
+      <details open>
+        <summary>Original Parcel Truth</summary>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Parcel</th>
+              <th>Authority</th>
+              <th>Area (acres)</th>
+              <th>Primary</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for parcel in brief.due_diligence.parcel_rows %}
+            <tr>
+              <td>{{ parcel.ros_inspire_id or parcel.id }}</td>
+              <td>{{ parcel.authority_name }}</td>
+              <td>{{ "%.2f"|format(parcel.area_acres or 0) }}</td>
+              <td>{{ "Yes" if parcel.is_primary else "No" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+
+      <details open>
+        <summary>Indicative Geometry Diagnostics</summary>
+        <dl class="data-grid">
+          <div><dt>Original Area</dt><dd>{{ "%.2f"|format(brief.due_diligence.geometry_diagnostics.original_area_acres or 0) }} acres</dd></div>
+          <div><dt>Indicative Clean Area</dt><dd>{% if brief.due_diligence.geometry_diagnostics.indicative_clean_area_acres %}{{ "%.2f"|format(brief.due_diligence.geometry_diagnostics.indicative_clean_area_acres) }} acres{% else %}Not estimated{% endif %}</dd></div>
+          <div><dt>Indicative Useable Ratio</dt><dd>{% if brief.due_diligence.geometry_diagnostics.indicative_usable_area_ratio %}{{ "%.2f"|format(brief.due_diligence.geometry_diagnostics.indicative_usable_area_ratio) }}{% else %}Not estimated{% endif %}</dd></div>
+          <div><dt>Indicative Only</dt><dd>Yes. This never replaces original parcel measurement.</dd></div>
+          <div><dt>Sliver Risk</dt><dd>{{ "Yes" if brief.due_diligence.geometry_diagnostics.sliver_flag else "No" }}</dd></div>
+          <div><dt>Fragmented</dt><dd>{{ "Yes" if brief.due_diligence.geometry_diagnostics.fragmentation_flag else "No" }}</dd></div>
+          <div><dt>Width / Depth Warning</dt><dd>{{ "Yes" if brief.due_diligence.geometry_diagnostics.width_depth_warning else "No" }}</dd></div>
+          <div><dt>Access-only Warning</dt><dd>{{ "Yes" if brief.due_diligence.geometry_diagnostics.access_only_warning else "No" }}</dd></div>
+        </dl>
+      </details>
+
+      <details open>
+        <summary>Planning Story</summary>
+        <ul class="simple-list">
+          {% for row in brief.due_diligence.planning_records %}
+          <li>{{ row.planning_reference or row.source_record_id }} · {{ row.application_status or "unknown" }} · {{ row.decision or "no decision" }} · {{ row.proposal_text or "No proposal text" }}</li>
+          {% endfor %}
+        </ul>
+      </details>
+
+      <details>
+        <summary>Future Context</summary>
+        <ul class="simple-list">
+          {% for row in brief.due_diligence.hla_records %}
+          <li>HLA · {{ row.site_reference or row.source_record_id }} · {{ row.effectiveness_status or "unknown" }} · {{ row.programming_horizon or "unknown" }}</li>
+          {% endfor %}
+          {% for row in brief.due_diligence.ldp_records %}
+          <li>LDP · {{ row.site_reference or row.policy_reference or row.source_record_id }} · {{ row.allocation_status or "unknown" }} · {{ row.support_level or "unknown" }}</li>
+          {% endfor %}
+          {% for row in brief.due_diligence.ela_records %}
+          <li>ELA · {{ row.site_reference or row.source_record_id }} · {{ row.employment_status or "unknown" }}</li>
+          {% endfor %}
+          {% for row in brief.due_diligence.vdl_records %}
+          <li>VDL · {{ row.site_reference or row.source_record_id }} · {{ row.derelict_status or row.vacancy_status or "unknown" }}</li>
+          {% endfor %}
+        </ul>
+      </details>
+
+      <details>
+        <summary>Constraints</summary>
+        <p class="muted">{{ brief.due_diligence.constraints.constraint_summary or "No linked constraint summary yet." }}</p>
+        <ul class="simple-list">
+          {% for row in brief.due_diligence.flood_records %}
+          <li>Flood · {{ row.flood_source or "unknown" }} · {{ row.severity_band or "unknown" }} · {{ row.overlap_pct or 0 }}% overlap</li>
+          {% endfor %}
+          {% for row in brief.due_diligence.constraint_group_summaries %}
+          <li>{{ row.constraint_group }} · {{ row.layer_name }} · max overlap {{ row.max_overlap_pct_of_site or 0 }}%</li>
+          {% endfor %}
+        </ul>
+      </details>
+
+      <details>
+        <summary>Source Drill-down and Evidence</summary>
+        <ul class="simple-list">
+          {% for row in brief.due_diligence.sources %}
+          <li>{{ row.source_family }} · {{ row.source_dataset }} · {{ row.linked_source_record_count }} linked record(s) · {{ row.link_method or "unknown method" }}</li>
+          {% endfor %}
+        </ul>
+      </details>
+
+      <details>
+        <summary>Review History</summary>
+        <ul class="simple-list">
+          {% for row in brief.due_diligence.review_events %}
+          <li>{{ row.created_at }} · {{ row.actor_name }} · {{ row.event_type }}{% if row.review_status %} · {{ row.review_status }}{% endif %}{% if row.reason_text %} · {{ row.reason_text }}{% endif %}{% if row.note_text %} · {{ row.note_text }}{% endif %}</li>
+          {% endfor %}
+        </ul>
+      </details>
+
+      <details>
+        <summary>Change History</summary>
+        <ul class="simple-list">
+          {% for row in brief.due_diligence.change_log %}
+          <li>{{ row.created_at }} · {{ row.source_family }} · {{ row.event_summary }}</li>
+          {% endfor %}
+        </ul>
+      </details>
+    </div>
+  </section>
+</section>
+{% endblock %}

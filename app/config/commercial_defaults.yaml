@@ -1,0 +1,45 @@
+review_checks:
+  - check_code: scope_lock_confirmed
+    check_label: Scope lock confirmed for Scotland residential land only
+    default_result: pass
+  - check_code: fact_inference_boundary_checked
+    check_label: Facts and inferences reviewed before commercial analysis
+    default_result: pass
+  - check_code: appraisal_ready
+    check_label: Site is ready for scenario appraisal and matching
+    default_result: pass
+
+appraisal_defaults:
+  sales_value_per_unit: 340736.84
+  build_cost_per_sqm: 1399.50
+  abnormal_cost_per_unit: 31653.51
+  s75_cost_per_unit: 8669.18
+  professional_fees_pct: 0.08
+  finance_pct: 0.0125
+  developer_margin_pct: 0.1875
+  average_unit_size_sqm: 130.63
+
+capital_requirement_defaults:
+  option_deposit_proxy_pct: 0.05
+  legal_cost_allowance_gbp: 100000
+  early_dd_allowance_gbp: 50000
+  early_abnormal_exposure_pct: 0.15
+  early_s75_exposure_pct: 0.10
+
+buyer_matching_defaults:
+  abnormal_band_thresholds:
+    low: 15000
+    medium: 35000
+  stage_bucket_map:
+    A: strategic
+    B: emerging
+    C: re_entry
+    D: re_entry
+    E: infrastructure_locked
+    F: reject
+
+investor_matching_defaults:
+  high_estimate_penalty_ratio: 1.0
+  geography_keywords:
+    - scotland
+    - scottish

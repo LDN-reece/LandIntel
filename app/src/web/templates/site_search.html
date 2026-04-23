@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+
+{% block title %}Opportunity Queue | LandIntel{% endblock %}
+
+{% block content %}
+{% set queue_order = ["Strong Candidates", "Needs Review", "New Candidates", "Watchlist / Resurfaced"] %}
+<section class="layout-grid">
+  <aside class="panel filter-panel">
+    <h2>Opportunity Filters</h2>
+    <p class="muted">Filter the live canonical opportunity queue, not a cached shortlist.</p>
+    <form method="get" action="/" class="filter-form">
+      <label>
+        Search
+        <input type="text" name="q" value="{{ filters.query or '' }}" placeholder="Site, code, authority, change summary" />
+      </label>
+
+      <label>
+        Queue
+        <select name="queue_name">
+          <option value="">Any</option>
+          {% for value in options.queues %}
+          <option value="{{ value }}" {% if filters.queue_name == value %}selected{% endif %}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Authority
+        <select name="authority_name">
+          <option value="">Any</option>
+          {% for authority in options.authorities %}
+          <option value="{{ authority }}" {% if filters.authority_name == authority %}selected{% endif %}>{{ authority }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Source Route
+        <select name="source_route">
+          <option value="">Any</option>
+          {% for value in options.source_routes %}
+          <option value="{{ value }}" {% if filters.source_route == value %}selected{% endif %}>{{ value.replace('-', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Size
+        <select name="size_band">
+          <option value="">Any</option>
+          {% for value in options.size_bands %}
+          <option value="{{ value }}" {% if filters.size_band == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Planning Context
+        <select name="planning_context_band">
+          <option value="">Any</option>
+          {% for value in options.planning_context_bands %}
+          <option value="{{ value }}" {% if filters.planning_context_band == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Settlement Position
+        <select name="settlement_position">
+          <option value="">Any</option>
+          {% for value in options.settlement_positions %}
+          <option value="{{ value }}" {% if filters.settlement_position == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Location
+        <select name="location_band">
+          <option value="">Any</option>
+          {% for value in options.location_bands %}
+          <option value="{{ value }}" {% if filters.location_band == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Constraints
+        <select name="constraint_severity">
+          <option value="">Any</option>
+          {% for value in options.constraint_severities %}
+          <option value="{{ value }}" {% if filters.constraint_severity == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Access
+        <select name="access_strength">
+          <option value="">Any</option>
+          {% for value in options.access_strengths %}
+          <option value="{{ value }}" {% if filters.access_strength == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Geometry
+        <select name="geometry_quality">
+          <option value="">Any</option>
+          {% for value in options.geometry_qualities %}
+          <option value="{{ value }}" {% if filters.geometry_quality == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Ownership / Control
+        <select name="ownership_control_state">
+          <option value="">Any</option>
+          {% for value in options.ownership_control_states %}
+          <option value="{{ value }}" {% if filters.ownership_control_state == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Title State
+        <select name="title_state">
+          <option value="">Any</option>
+          {% for value in options.title_states %}
+          <option value="{{ value }}" {% if filters.title_state == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Review Status
+        <select name="review_status">
+          <option value="">Any</option>
+          {% for value in options.review_statuses %}
+          <option value="{{ value }}" {% if filters.review_status == value %}selected{% endif %}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Resurfaced Only
+        <select name="resurfaced_only">
+          <option value="">Any</option>
+          <option value="true" {% if filters.resurfaced_only is sameas true %}selected{% endif %}>Yes</option>
+          <option value="false" {% if filters.resurfaced_only is sameas false %}selected{% endif %}>No</option>
+        </select>
+      </label>
+
+      <button type="submit" class="button-primary">Apply Filters</button>
+    </form>
+  </aside>
+
+  <section class="results-column">
+    <div class="section-header">
+      <div>
+        <h2>Opportunity Queue</h2>
+        <p class="muted">{{ results|length }} opportunity row(s) returned from the live queue surface.</p>
+      </div>
+    </div>
+
+    {% if not results %}
+    <div class="panel empty-state">
+      <p>No live opportunities matched the current filters.</p>
+    </div>
+    {% endif %}
+
+    {% for queue_name in queue_order %}
+    {% set queue_rows = grouped_results.get(queue_name, []) %}
+    <section class="queue-section">
+      <div class="queue-header">
+        <h3>{{ queue_name }}</h3>
+        <p class="muted">{{ queue_rows|length }} site(s)</p>
+      </div>
+
+      {% if not queue_rows %}
+      <div class="panel empty-state">
+        <p>No sites are currently sitting in this queue for the chosen filters.</p>
+      </div>
+      {% endif %}
+
+      {% for site in queue_rows %}
+      <article class="panel site-card">
+        <div class="site-card-header">
+          <div>
+            <p class="eyebrow">{{ site.site_code }} · Position {{ site.queue_position }}</p>
+            <h3><a href="/sites/{{ site.canonical_site_id }}">{{ site.site_name }}</a></h3>
+            <p class="muted">{{ site.authority_name }} · {{ "%.2f"|format(site.area_acres or 0) }} acres · {{ site.source_route.replace('-', ' ') }}</p>
+          </div>
+          <div class="status-stack">
+            <span class="pill">{{ site.overall_tier or "Unranked" }}</span>
+            <span class="subpill">{{ site.review_status or "New candidate" }}</span>
+          </div>
+        </div>
+
+        <div class="metric-grid phase-one-metric-grid">
+          <div><span class="metric-label">Size</span><strong>{{ site.size_rank or "unknown" }}</strong></div>
+          <div><span class="metric-label">Planning</span><strong>{{ site.planning_context_band or "unknown" }}</strong></div>
+          <div><span class="metric-label">Location</span><strong>{{ site.location_band or "unknown" }}</strong></div>
+          <div><span class="metric-label">Constraints</span><strong>{{ site.constraint_severity or "unknown" }}</strong></div>
+          <div><span class="metric-label">Access</span><strong>{{ site.access_strength or "unknown" }}</strong></div>
+          <div><span class="metric-label">Geometry</span><strong>{{ site.geometry_quality or "unknown" }}</strong></div>
+          <div><span class="metric-label">Control</span><strong>{{ site.ownership_control_state or "unknown" }}</strong></div>
+          <div><span class="metric-label">Title</span><strong>{{ site.title_state or "commercial_inference" }}</strong></div>
+        </div>
+
+        <p class="surfaced-reason">{{ site.why_it_surfaced }}</p>
+        <p class="muted">{{ site.why_it_survived }}</p>
+
+        <div class="three-way-grid">
+          <section class="signal-box signal-good">
+            <p class="signal-label">Good</p>
+            <strong>{{ site.good_headline or "No headline positive recorded yet" }}</strong>
+          </section>
+          <section class="signal-box signal-bad">
+            <p class="signal-label">Bad</p>
+            <strong>{{ site.bad_headline or "No headline warning recorded yet" }}</strong>
+          </section>
+          <section class="signal-box signal-ugly">
+            <p class="signal-label">Ugly</p>
+            <strong>{{ site.ugly_headline or "No headline ugly issue recorded yet" }}</strong>
+          </section>
+        </div>
+
+        <dl class="tag-grid">
+          <div><dt>Ownership Label</dt><dd>{{ site.ownership_control_fact_label or "commercial_inference" }}</dd></div>
+          <div><dt>Last Change</dt><dd>{{ site.last_change_summary or "No recent change event" }}</dd></div>
+          <div><dt>Resurfaced</dt><dd>{{ "Yes" if site.resurfaced_flag else "No" }}</dd></div>
+          <div><dt>Queue</dt><dd>{{ site.queue_name }}</dd></div>
+        </dl>
+      </article>
+      {% endfor %}
+    </section>
+    {% endfor %}
+  </section>
+</section>
+{% endblock %}

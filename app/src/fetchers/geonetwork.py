@@ -338,3 +338,4 @@ class GeoNetworkClient:
             key = record.metadata_uuid or record.source_name
             deduped[key] = record
         return list(deduped.values())
+

@@ -1,0 +1,52 @@
+buyer_profiles:
+  - profile_code: regional_family_homes
+    buyer_name: Regional Family Homes
+    target_strategy: edge-of-settlement family housing
+    min_acres: 4
+    max_acres: 24
+    preferred_authorities:
+      - East Lothian
+      - Midlothian
+      - Fife
+      - Stirling
+    min_price_per_sqft_gbp: 205
+    notes: Favors straightforward suburban family product with visible local demand and clean access.
+
+  - profile_code: strategic_masterplan_plc
+    buyer_name: Strategic Masterplan PLC
+    target_strategy: larger strategic land with planning runway
+    min_acres: 15
+    max_acres: 120
+    preferred_authorities:
+      - Fife
+      - East Lothian
+      - West Lothian
+      - South Lanarkshire
+    min_price_per_sqft_gbp: 185
+    notes: Looks for larger allocations, nearby growth context, and enough scale for phased delivery.
+
+  - profile_code: retirement_living_group
+    buyer_name: Retirement Living Group
+    target_strategy: compact settlement-edge sites with proven buyer demand
+    min_acres: 2
+    max_acres: 12
+    preferred_authorities:
+      - East Lothian
+      - Perth and Kinross
+      - Stirling
+      - Aberdeenshire
+    min_price_per_sqft_gbp: 220
+    notes: Prefers well-connected settlements, clear planning context, and stronger achieved values.
+
+  - profile_code: value_builder_scotland
+    buyer_name: Value Builder Scotland
+    target_strategy: lower-ticket family housing in secondary markets
+    min_acres: 4
+    max_acres: 35
+    preferred_authorities:
+      - Fife
+      - Moray
+      - North Ayrshire
+      - Angus
+    min_price_per_sqft_gbp: 165
+    notes: Accepts weaker value zones if parcel size, access, and deliverability remain practical.

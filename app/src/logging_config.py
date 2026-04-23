@@ -89,3 +89,4 @@ def configure_logging(settings: Settings) -> logging.Logger:
     logger.propagate = True
     logger.debug("logging_configured", extra={"log_file_path": str(settings.log_file_path)})
     return logger
+

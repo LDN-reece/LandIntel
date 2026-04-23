@@ -49,3 +49,4 @@ def choose_preferred_candidate(candidates: list[Path]) -> Path:
         return (4, name)
 
     return sorted(candidates, key=score)[0]
+

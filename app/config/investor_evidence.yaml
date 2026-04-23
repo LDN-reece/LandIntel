@@ -1,0 +1,40 @@
+investor_evidence:
+  - investor_code: fo_scotland_growth_capital
+    evidence_type: internal_track_record
+    source_name: curated_mvp_seed
+    evidence_date: 2026-04-01
+    geography_text: Scotland
+    structure_signal: flexible
+    capital_signal: 1000000
+    summary: Internal curated MVP evidence indicates this family-office style capital is willing to fund early-stage residential land control in Scotland.
+    confidence_tier: tier3
+
+  - investor_code: pf_planning_equity_alpha
+    evidence_type: internal_track_record
+    source_name: curated_mvp_seed
+    evidence_date: 2026-04-01
+    geography_text: UK / Scotland
+    structure_signal: spv_equity
+    capital_signal: 3000000
+    summary: Curated MVP evidence points to planning-led equity appetite for residential land positions with higher planning risk.
+    confidence_tier: tier3
+
+  - investor_code: hnwi_option_capital_scotland
+    evidence_type: internal_track_record
+    source_name: curated_mvp_seed
+    evidence_date: 2026-04-01
+    geography_text: Central Belt Scotland
+    structure_signal: option_funding
+    capital_signal: 500000
+    summary: Curated MVP evidence suggests fast-moving private capital willing to back option-style land control at smaller cheque sizes.
+    confidence_tier: tier3
+
+  - investor_code: public_regen_unlock_fund
+    evidence_type: internal_track_record
+    source_name: curated_mvp_seed
+    evidence_date: 2026-04-01
+    geography_text: Scotland
+    structure_signal: conditional_purchase_funding
+    capital_signal: 2000000
+    summary: Curated MVP evidence indicates slower-moving public or quasi-public capital suited to lower-risk unlock and regeneration-style positions.
+    confidence_tier: tier3

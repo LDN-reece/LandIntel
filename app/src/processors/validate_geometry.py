@@ -48,3 +48,4 @@ def repair_invalid_geometries(gdf: gpd.GeoDataFrame, logger: logging.Logger) -> 
             extra={"features_fixed": fixed, "features_dropped": dropped},
         )
     return repaired
+

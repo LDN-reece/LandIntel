@@ -1,0 +1,22 @@
+create table if not exists public.source_artifacts (
+    id uuid primary key default gen_random_uuid(),
+    ingest_run_id uuid references public.ingest_runs(id) on delete cascade,
+    source_name text not null,
+    authority_name text,
+    artifact_role text not null,
+    artifact_format text,
+    local_path text,
+    source_url text,
+    source_reference text,
+    storage_backend text not null default 'none',
+    storage_bucket text,
+    storage_path text,
+    content_sha256 text,
+    size_bytes bigint,
+    row_count_estimate integer,
+    retention_class text not null default 'working',
+    expires_at timestamptz,
+    deleted_at timestamptz,
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now()
+);

@@ -38,3 +38,4 @@ class RosProcessedParcelRecord:
     source_name: str
     source_file: str | None
     raw_attributes: dict[str, Any] = field(default_factory=dict)
+

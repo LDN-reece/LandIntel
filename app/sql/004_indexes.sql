@@ -17,11 +17,17 @@ create index if not exists ingest_runs_source_started_idx
 create index if not exists ros_cadastral_raw_geometry_gix
     on staging.ros_cadastral_parcels_raw using gist (geometry);
 
+create index if not exists ros_cadastral_raw_run_id_idx
+    on staging.ros_cadastral_parcels_raw (run_id);
+
 create index if not exists ros_cadastral_raw_inspire_idx
     on staging.ros_cadastral_parcels_raw (ros_inspire_id);
 
 create index if not exists ros_cadastral_clean_geometry_gix
     on staging.ros_cadastral_parcels_clean using gist (geometry);
+
+create index if not exists ros_cadastral_clean_run_id_idx
+    on staging.ros_cadastral_parcels_clean (run_id);
 
 create index if not exists ros_cadastral_clean_inspire_idx
     on staging.ros_cadastral_parcels_clean (ros_inspire_id);

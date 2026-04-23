@@ -19,3 +19,4 @@ class RosCadastralRawRecord:
     ros_inspire_id: str | None
     raw_attributes: dict[str, Any] = field(default_factory=dict)
     geometry: BaseGeometry | None = None
+

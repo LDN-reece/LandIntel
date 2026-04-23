@@ -1,0 +1,33 @@
+buyer_matching_weights:
+  geography_fit: 30
+  unit_scale_fit: 25
+  stage_fit: 15
+  abnormal_tolerance_fit: 15
+  evidence_recency: 10
+  route_in_quality: 5
+
+investor_matching_weights:
+  cheque_size_fit: 30
+  planning_risk_appetite: 25
+  structure_fit: 20
+  geography_fit: 10
+  residential_focus: 10
+  evidence_recency: 5
+
+fit_band_thresholds:
+  strong: 75
+  moderate: 60
+  weak: 40
+
+pricing_rules:
+  target_ldn_price_per_plot_factor: 0.80
+  absolute_max_price_per_plot_factor: 0.90
+  walk_away_price_per_plot_factor: 0.85
+
+strategy_thresholds:
+  investor_required_capital_gbp: 500000
+  investor_optional_capital_gbp: 250000
+  high_risk_buckets:
+    - D
+    - E
+    - F

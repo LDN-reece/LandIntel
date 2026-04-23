@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}LandIntel Phase One{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='site-review.css') }}" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Land Development Network</p>
+        <h1><a href="/">LandIntel Phase One</a></h1>
+        <p class="topbar-subtitle">Internal sourcing, desktop due diligence, ranking, review and tracking engine.</p>
+      </div>
+      <div class="topbar-meta">
+        <p class="topbar-copy">The system ranks and explains. Humans decide.</p>
+        <p class="topbar-copy">Ownership is commercial inference until title review is complete.</p>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

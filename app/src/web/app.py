@@ -1,1 +1,260 @@
-"\"\"\"Internal Phase One review UI for the canonical opportunity engine.\"\"\"\n\nfrom __future__ import annotations\n\nfrom pathlib import Path\n\nfrom fastapi import FastAPI, Form, HTTPException, Query, Request\nfrom fastapi.responses import HTMLResponse, RedirectResponse\nfrom fastapi.staticfiles import StaticFiles\nfrom fastapi.templating import Jinja2Templates\n\nfrom config.settings import Settings, get_settings\nfrom src.db import Database\nfrom src.logging_config import configure_logging\nfrom src.opportunity_engine.service import OpportunityService\nfrom src.opportunity_engine.types import OpportunitySearchFilters\n\n\nWEB_DIR = Path(__file__).resolve().parent\nTEMPLATES_DIR = WEB_DIR / \"templates\"\nSTATIC_DIR = WEB_DIR / \"static\"\n\n\ndef create_app(settings: Settings | None = None) -> FastAPI:\n    settings = settings or get_settings()\n    logger = configure_logging(settings)\n    service = OpportunityService(settings, logger)\n\n    app = FastAPI(title=\"LandIntel Phase One\", version=\"1.0.0\")\n    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))\n    app.mount(\"/static\", StaticFiles(directory=str(STATIC_DIR)), name=\"static\")\n\n    @app.on_event(\"shutdown\")\n    def _shutdown() -> None:\n        service.close()\n\n    @app.get(\"/\", response_class=HTMLResponse)\n    def queue_dashboard(\n        request: Request,\n        q: str | None = Query(default=None),\n        queue_name: str | None = Query(default=None),\n        authority_name: str | None = Query(default=None),\n        source_route: str | None = Query(default=None),\n        size_band: str | None = Query(default=None),\n        planning_context_band: str | None = Query(default=None),\n        settlement_position: str | None = Query(default=None),\n        location_band: str | None = Query(default=None),\n        constraint_severity: str | None = Query(default=None),\n        access_strength: str | None = Query(default=None),\n        geometry_quality: str | None = Query(default=None),\n        ownership_control_state: str | None = Query(default=None),\n        title_state: str | None = Query(default=None),\n        review_status: str | None = Query(default=None),\n        resurfaced_only: str | None = Query(default=None),\n    ) -> HTMLResponse:\n        filters = OpportunitySearchFilters(\n            query=q,\n            queue_name=queue_name,\n            authority_name=authority_name,\n            source_route=source_route,\n            size_band=size_band,\n            planning_context_band=planning_context_band,\n            settlement_position=settlement_position,\n            location_band=location_band,\n            constraint_severity=constraint_severity,\n            access_strength=access_strength,\n            geometry_quality=geometry_quality,\n            ownership_control_state=ownership_control_state,\n            title_state=title_state,\n            review_status=review_status,\n            resurfaced_only=_parse_optional_bool(resurfaced_only),\n        )\n        payload = service.search_opportunities(filters)\n        return templates.TemplateResponse(\n            \"site_search.html\",\n            {\n                \"request\": request,\n                \"results\": payload[\"results\"],\n                \"grouped_results\": payload[\"grouped_results\"],\n                \"options\": payload[\"options\"],\n                \"filters\": filters,\n            },\n        )\n\n    @app.get(\"/sites/{site_id}\", response_class=HTMLResponse)\n    def site_detail_page(request: Request, site_id: str) -> HTMLResponse:\n        payload = service.get_opportunity_review(site_id)\n        if not payload:\n            raise HTTPException(status_code=404, detail=\"Unknown site\")\n        return templates.TemplateResponse(\n            \"site_detail.html\",\n            {\n                \"request\": request,\n                \"detail\": payload[\"detail\"],\n                \"brief\": payload[\"brief\"],\n            },\n        )\n\n    @app.post(\"/sites/{site_id}/review/status\")\n    def site_review_status_page(\n        site_id: str,\n        review_status: str = Form(...),\n        actor_name: str = Form(\"LDN\"),\n        reason_text: str | None = Form(default=None),\n    ) -> RedirectResponse:\n        service.record_review_status(site_id, review_status, actor_name, reason_text)\n        return RedirectResponse(url=f\"/sites/{site_id}\", status_code=303)\n\n    @app.post(\"/sites/{site_id}/review/note\")\n    def site_review_note_page(\n        site_id: str,\n        actor_name: str = Form(\"LDN\"),\n        note_text: str = Form(...),\n    ) -> RedirectResponse:\n        service.record_review_note(site_id, actor_name, note_text)\n        return RedirectResponse(url=f\"/sites/{site_id}\", status_code=303)\n\n    @app.post(\"/sites/{site_id}/review/override\")\n    def site_review_override_page(\n        site_id: str,\n        actor_name: str = Form(\"LDN\"),\n        override_key: str = Form(...),\n        override_value: str = Form(...),\n        reason_text: str | None = Form(default=None),\n    ) -> RedirectResponse:\n        service.record_manual_override(\n            site_id,\n            actor_name,\n            override_key,\n            {\"value\": override_value},\n            reason_text,\n        )\n        return RedirectResponse(url=f\"/sites/{site_id}\", status_code=303)\n\n    @app.post(\"/sites/{site_id}/review/title\")\n    def site_review_title_page(\n        site_id: str,\n        action: str = Form(...),\n        actor_name: str = Form(\"LDN\"),\n        reason_text: str | None = Form(default=None),\n        title_number: str | None = Form(default=None),\n    ) -> RedirectResponse:\n        service.record_title_action(site_id, action, actor_name, reason_text, title_number)\n        return RedirectResponse(url=f\"/sites/{site_id}\", status_code=303)\n\n    @app.get(\"/api/sites\")\n    def search_sites_api(\n        q: str | None = Query(default=None),\n        queue_name: str | None = Query(default=None),\n        authority_name: str | None = Query(default=None),\n        source_route: str | None = Query(default=None),\n        size_band: str | None = Query(default=None),\n        planning_context_band: str | None = Query(default=None),\n        settlement_position: str | None = Query(default=None),\n        location_band: str | None = Query(default=None),\n        constraint_severity: str | None = Query(default=None),\n        access_strength: str | None = Query(default=None),\n        geometry_quality: str | None = Query(default=None),\n        ownership_control_state: str | None = Query(default=None),\n        title_state: str | None = Query(default=None),\n        review_status: str | None = Query(default=None),\n        resurfaced_only: str | None = Query(default=None),\n    ) -> dict[str, object]:\n        filters = OpportunitySearchFilters(\n            query=q,\n            queue_name=queue_name,\n            authority_name=authority_name,\n            source_route=source_route,\n            size_band=size_band,\n            planning_context_band=planning_context_band,\n            settlement_position=settlement_position,\n            location_band=location_band,\n            constraint_severity=constraint_severity,\n            access_strength=access_strength,\n            geometry_quality=geometry_quality,\n            ownership_control_state=ownership_control_state,\n            title_state=title_state,\n            review_status=review_status,\n            resurfaced_only=_parse_optional_bool(resurfaced_only),\n        )\n        payload = service.search_opportunities(filters)\n        return {\n            \"filters\": filters.__dict__,\n            \"results\": payload[\"results\"],\n            \"grouped_results\": payload[\"grouped_results\"],\n        }\n\n    @app.get(\"/api/sites/{site_id}\")\n    def site_detail_api(site_id: str) -> dict[str, object]:\n        payload = service.get_opportunity_review(site_id)\n        if not payload:\n            raise HTTPException(status_code=404, detail=\"Unknown site\")\n        return payload\n\n    @app.post(\"/api/sites/{site_id}/review/status\")\n    def site_review_status_api(\n        site_id: str,\n        review_status: str = Form(...),\n        actor_name: str = Form(\"LDN\"),\n        reason_text: str | None = Form(default=None),\n    ) -> dict[str, object]:\n        service.record_review_status(site_id, review_status, actor_name, reason_text)\n        return {\"ok\": True, \"site_id\": site_id, \"review_status\": review_status}\n\n    @app.post(\"/api/sites/{site_id}/review/note\")\n    def site_review_note_api(\n        site_id: str,\n        actor_name: str = Form(\"LDN\"),\n        note_text: str = Form(...),\n    ) -> dict[str, object]:\n        service.record_review_note(site_id, actor_name, note_text)\n        return {\"ok\": True, \"site_id\": site_id}\n\n    @app.post(\"/api/sites/{site_id}/review/override\")\n    def site_review_override_api(\n        site_id: str,\n        actor_name: str = Form(\"LDN\"),\n        override_key: str = Form(...),\n        override_value: str = Form(...),\n        reason_text: str | None = Form(default=None),\n    ) -> dict[str, object]:\n        service.record_manual_override(site_id, actor_name, override_key, {\"value\": override_value}, reason_text)\n        return {\"ok\": True, \"site_id\": site_id}\n\n    @app.post(\"/api/sites/{site_id}/review/title\")\n    def site_review_title_api(\n        site_id: str,\n        action: str = Form(...),\n        actor_name: str = Form(\"LDN\"),\n        reason_text: str | None = Form(default=None),\n        title_number: str | None = Form(default=None),\n    ) -> dict[str, object]:\n        service.record_title_action(site_id, action, actor_name, reason_text, title_number)\n        return {\"ok\": True, \"site_id\": site_id, \"action\": action}\n\n    return app\n\n\ndef serve(settings: Settings | None = None, *, host: str = \"127.0.0.1\", port: int = 8000) -> None:\n    settings = settings or get_settings()\n    database = Database(settings)\n    try:\n        database.run_migrations()\n    finally:\n        database.dispose()\n\n    import uvicorn\n\n    uvicorn.run(create_app(settings), host=host, port=port)\n\n\ndef _parse_optional_bool(value: str | None) -> bool | None:\n    if value is None or value == \"\":\n        return None\n    lowered = value.strip().lower()\n    if lowered in {\"true\", \"1\", \"yes\"}:\n        return True\n    if lowered in {\"false\", \"0\", \"no\"}:\n        return False\n    return None\n
+"""Internal Phase One review UI for the canonical opportunity engine."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from fastapi import FastAPI, Form, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+from config.settings import Settings, get_settings
+from src.db import Database
+from src.logging_config import configure_logging
+from src.opportunity_engine.service import OpportunityService
+from src.opportunity_engine.types import OpportunitySearchFilters
+
+
+WEB_DIR = Path(__file__).resolve().parent
+TEMPLATES_DIR = WEB_DIR / "templates"
+STATIC_DIR = WEB_DIR / "static"
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or get_settings()
+    logger = configure_logging(settings)
+    service = OpportunityService(settings, logger)
+
+    app = FastAPI(title="LandIntel Phase One", version="1.0.0")
+    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    @app.on_event("shutdown")
+    def _shutdown() -> None:
+        service.close()
+
+    @app.get("/", response_class=HTMLResponse)
+    def queue_dashboard(
+        request: Request,
+        q: str | None = Query(default=None),
+        queue_name: str | None = Query(default=None),
+        authority_name: str | None = Query(default=None),
+        source_route: str | None = Query(default=None),
+        size_band: str | None = Query(default=None),
+        planning_context_band: str | None = Query(default=None),
+        settlement_position: str | None = Query(default=None),
+        location_band: str | None = Query(default=None),
+        constraint_severity: str | None = Query(default=None),
+        access_strength: str | None = Query(default=None),
+        geometry_quality: str | None = Query(default=None),
+        ownership_control_state: str | None = Query(default=None),
+        title_state: str | None = Query(default=None),
+        review_status: str | None = Query(default=None),
+        resurfaced_only: str | None = Query(default=None),
+    ) -> HTMLResponse:
+        filters = OpportunitySearchFilters(
+            query=q,
+            queue_name=queue_name,
+            authority_name=authority_name,
+            source_route=source_route,
+            size_band=size_band,
+            planning_context_band=planning_context_band,
+            settlement_position=settlement_position,
+            location_band=location_band,
+            constraint_severity=constraint_severity,
+            access_strength=access_strength,
+            geometry_quality=geometry_quality,
+            ownership_control_state=ownership_control_state,
+            title_state=title_state,
+            review_status=review_status,
+            resurfaced_only=_parse_optional_bool(resurfaced_only),
+        )
+        payload = service.search_opportunities(filters)
+        return templates.TemplateResponse(
+            "site_search.html",
+            {
+                "request": request,
+                "results": payload["results"],
+                "grouped_results": payload["grouped_results"],
+                "options": payload["options"],
+                "filters": filters,
+            },
+        )
+
+    @app.get("/sites/{site_id}", response_class=HTMLResponse)
+    def site_detail_page(request: Request, site_id: str) -> HTMLResponse:
+        payload = service.get_opportunity_review(site_id)
+        if not payload:
+            raise HTTPException(status_code=404, detail="Unknown site")
+        return templates.TemplateResponse(
+            "site_detail.html",
+            {
+                "request": request,
+                "detail": payload["detail"],
+                "brief": payload["brief"],
+            },
+        )
+
+    @app.post("/sites/{site_id}/review/status")
+    def site_review_status_page(
+        site_id: str,
+        review_status: str = Form(...),
+        actor_name: str = Form("LDN"),
+        reason_text: str | None = Form(default=None),
+    ) -> RedirectResponse:
+        service.record_review_status(site_id, review_status, actor_name, reason_text)
+        return RedirectResponse(url=f"/sites/{site_id}", status_code=303)
+
+    @app.post("/sites/{site_id}/review/note")
+    def site_review_note_page(
+        site_id: str,
+        actor_name: str = Form("LDN"),
+        note_text: str = Form(...),
+    ) -> RedirectResponse:
+        service.record_review_note(site_id, actor_name, note_text)
+        return RedirectResponse(url=f"/sites/{site_id}", status_code=303)
+
+    @app.post("/sites/{site_id}/review/override")
+    def site_review_override_page(
+        site_id: str,
+        actor_name: str = Form("LDN"),
+        override_key: str = Form(...),
+        override_value: str = Form(...),
+        reason_text: str | None = Form(default=None),
+    ) -> RedirectResponse:
+        service.record_manual_override(
+            site_id,
+            actor_name,
+            override_key,
+            {"value": override_value},
+            reason_text,
+        )
+        return RedirectResponse(url=f"/sites/{site_id}", status_code=303)
+
+    @app.post("/sites/{site_id}/review/title")
+    def site_review_title_page(
+        site_id: str,
+        action: str = Form(...),
+        actor_name: str = Form("LDN"),
+        reason_text: str | None = Form(default=None),
+        title_number: str | None = Form(default=None),
+    ) -> RedirectResponse:
+        service.record_title_action(site_id, action, actor_name, reason_text, title_number)
+        return RedirectResponse(url=f"/sites/{site_id}", status_code=303)
+
+    @app.get("/api/sites")
+    def search_sites_api(
+        q: str | None = Query(default=None),
+        queue_name: str | None = Query(default=None),
+        authority_name: str | None = Query(default=None),
+        source_route: str | None = Query(default=None),
+        size_band: str | None = Query(default=None),
+        planning_context_band: str | None = Query(default=None),
+        settlement_position: str | None = Query(default=None),
+        location_band: str | None = Query(default=None),
+        constraint_severity: str | None = Query(default=None),
+        access_strength: str | None = Query(default=None),
+        geometry_quality: str | None = Query(default=None),
+        ownership_control_state: str | None = Query(default=None),
+        title_state: str | None = Query(default=None),
+        review_status: str | None = Query(default=None),
+        resurfaced_only: str | None = Query(default=None),
+    ) -> dict[str, object]:
+        filters = OpportunitySearchFilters(
+            query=q,
+            queue_name=queue_name,
+            authority_name=authority_name,
+            source_route=source_route,
+            size_band=size_band,
+            planning_context_band=planning_context_band,
+            settlement_position=settlement_position,
+            location_band=location_band,
+            constraint_severity=constraint_severity,
+            access_strength=access_strength,
+            geometry_quality=geometry_quality,
+            ownership_control_state=ownership_control_state,
+            title_state=title_state,
+            review_status=review_status,
+            resurfaced_only=_parse_optional_bool(resurfaced_only),
+        )
+        payload = service.search_opportunities(filters)
+        return {
+            "filters": filters.__dict__,
+            "results": payload["results"],
+            "grouped_results": payload["grouped_results"],
+        }
+
+    @app.get("/api/sites/{site_id}")
+    def site_detail_api(site_id: str) -> dict[str, object]:
+        payload = service.get_opportunity_review(site_id)
+        if not payload:
+            raise HTTPException(status_code=404, detail="Unknown site")
+        return payload
+
+    @app.post("/api/sites/{site_id}/review/status")
+    def site_review_status_api(
+        site_id: str,
+        review_status: str = Form(...),
+        actor_name: str = Form("LDN"),
+        reason_text: str | None = Form(default=None),
+    ) -> dict[str, object]:
+        service.record_review_status(site_id, review_status, actor_name, reason_text)
+        return {"ok": True, "site_id": site_id, "review_status": review_status}
+
+    @app.post("/api/sites/{site_id}/review/note")
+    def site_review_note_api(
+        site_id: str,
+        actor_name: str = Form("LDN"),
+        note_text: str = Form(...),
+    ) -> dict[str, object]:
+        service.record_review_note(site_id, actor_name, note_text)
+        return {"ok": True, "site_id": site_id}
+
+    @app.post("/api/sites/{site_id}/review/override")
+    def site_review_override_api(
+        site_id: str,
+        actor_name: str = Form("LDN"),
+        override_key: str = Form(...),
+        override_value: str = Form(...),
+        reason_text: str | None = Form(default=None),
+    ) -> dict[str, object]:
+        service.record_manual_override(site_id, actor_name, override_key, {"value": override_value}, reason_text)
+        return {"ok": True, "site_id": site_id}
+
+    @app.post("/api/sites/{site_id}/review/title")
+    def site_review_title_api(
+        site_id: str,
+        action: str = Form(...),
+        actor_name: str = Form("LDN"),
+        reason_text: str | None = Form(default=None),
+        title_number: str | None = Form(default=None),
+    ) -> dict[str, object]:
+        service.record_title_action(site_id, action, actor_name, reason_text, title_number)
+        return {"ok": True, "site_id": site_id, "action": action}
+
+    return app
+
+
+def serve(settings: Settings | None = None, *, host: str = "127.0.0.1", port: int = 8000) -> None:
+    settings = settings or get_settings()
+    database = Database(settings)
+    try:
+        database.run_migrations()
+    finally:
+        database.dispose()
+
+    import uvicorn
+
+    uvicorn.run(create_app(settings), host=host, port=port)
+
+
+def _parse_optional_bool(value: str | None) -> bool | None:
+    if value is None or value == "":
+        return None
+    lowered = value.strip().lower()
+    if lowered in {"true", "1", "yes"}:
+        return True
+    if lowered in {"false", "0", "no"}:
+        return False
+    return None

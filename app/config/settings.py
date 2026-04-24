@@ -108,6 +108,19 @@ class Settings(BaseSettings):
     )
     mirror_land_objects: bool = Field(default=False, alias="MIRROR_LAND_OBJECTS")
     batch_size: int = Field(default=1_000, alias="BATCH_SIZE")
+    planning_new_site_min_area_acres: float = Field(
+        default=4.0,
+        alias="PLANNING_NEW_SITE_MIN_AREA_ACRES",
+    )
+    reconcile_queue_batch_limit: int = Field(default=500, alias="RECONCILE_QUEUE_BATCH_LIMIT")
+    reconcile_refresh_batch_limit: int = Field(default=250, alias="RECONCILE_REFRESH_BATCH_LIMIT")
+    reconcile_runtime_minutes: int = Field(default=45, alias="RECONCILE_RUNTIME_MINUTES")
+    reconcile_lease_seconds: int = Field(default=1_800, alias="RECONCILE_LEASE_SECONDS")
+    reconcile_refresh_lease_seconds: int = Field(
+        default=1_200,
+        alias="RECONCILE_REFRESH_LEASE_SECONDS",
+    )
+    reconcile_max_attempts: int = Field(default=3, alias="RECONCILE_MAX_ATTEMPTS")
     http_timeout_seconds: int = Field(default=120, alias="HTTP_TIMEOUT_SECONDS")
 
     enable_internal_scheduler: bool = Field(default=False, alias="ENABLE_INTERNAL_SCHEDULER")

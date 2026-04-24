@@ -1,0 +1,74 @@
+{% set latest_change = detail.change_log[0] if detail.change_log else {} %}
+{% set positives = brief.headline_summary.key_positives or [] %}
+{% set warnings = brief.headline_summary.key_warnings or [] %}
+
+<header class="site-context-header">
+  <div class="site-context-identity">
+    <p class="context-kicker">{{ brief.header.site_code }}</p>
+    <h1>{{ brief.header.site_name }}</h1>
+    <p class="context-subtitle">
+      {{ brief.header.authority_name or "Unknown authority" }}
+      <span class="context-meta-divider"></span>
+      {{ "%.2f"|format(brief.header.area_acres or 0) }} acres
+    </p>
+  </div>
+
+  <dl class="site-context-stats" aria-label="Site context">
+    <div>
+      <dt>Tier</dt>
+      <dd>{{ brief.header.overall_tier or "Unranked" }}</dd>
+    </div>
+    <div>
+      <dt>Rank</dt>
+      <dd>
+        {% if brief.header.overall_rank_score is not none %}
+        {{ "%.1f"|format(brief.header.overall_rank_score) }}
+        {% else %}
+        Not yet evidenced
+        {% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt>Queue</dt>
+      <dd>{{ brief.header.queue_name or "New Candidates" }}</dd>
+    </div>
+  </dl>
+
+  <div class="site-context-ribbon">
+    <section class="context-ribbon-block">
+      <span class="mini-label">Why surfaced</span>
+      <p>{{ brief.headline_summary.why_it_surfaced or "Not yet evidenced" }}</p>
+    </section>
+
+    <section class="context-ribbon-block">
+      <span class="mini-label">Key positives</span>
+      <div class="token-row">
+        {% if positives %}
+        {% for item in positives[:3] %}
+        <span class="context-token positive">{{ item.headline }}</span>
+        {% endfor %}
+        {% else %}
+        <span class="context-token empty">Not yet evidenced</span>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="context-ribbon-block">
+      <span class="mini-label">Key warnings</span>
+      <div class="token-row">
+        {% if warnings %}
+        {% for item in warnings[:3] %}
+        <span class="context-token warning">{{ item.headline }}</span>
+        {% endfor %}
+        {% else %}
+        <span class="context-token empty">Not yet evidenced</span>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="context-ribbon-block">
+      <span class="mini-label">Last change trigger</span>
+      <p>{{ latest_change.event_summary or brief.header.latest_change_summary or "Awaiting source coverage" }}</p>
+    </section>
+  </div>
+</header>

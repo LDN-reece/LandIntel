@@ -1,0 +1,330 @@
+{% set ns = namespace(access_signal=None, geometry_signal=None, ownership_signal=None, utilities_signal=None, settlement_signal=None, title_signal=None, redevelopment_signal=None, stalled_signal=None) %}
+{% for signal in brief.due_diligence.signal_rows %}
+  {% if signal.signal_key == "access_strength" %}
+    {% set ns.access_signal = signal %}
+  {% elif signal.signal_key == "geometry_quality" %}
+    {% set ns.geometry_signal = signal %}
+  {% elif signal.signal_key == "ownership_control" %}
+    {% set ns.ownership_signal = signal %}
+  {% elif signal.signal_key == "utilities_burden" %}
+    {% set ns.utilities_signal = signal %}
+  {% elif signal.signal_key == "settlement_position" %}
+    {% set ns.settlement_signal = signal %}
+  {% elif signal.signal_key == "title_state" %}
+    {% set ns.title_signal = signal %}
+  {% elif signal.signal_key == "redevelopment_angle" %}
+    {% set ns.redevelopment_signal = signal %}
+  {% elif signal.signal_key == "stalled_site_angle" %}
+    {% set ns.stalled_signal = signal %}
+  {% endif %}
+{% endfor %}
+
+<section class="evidence-stack-shell">
+  <header class="evidence-stack-header">
+    <div>
+      <p class="section-kicker">Due diligence</p>
+      <h2>Evidence stack</h2>
+    </div>
+    <p class="section-copy">Good, bad, ugly, and source-backed context in one operating narrative.</p>
+  </header>
+
+  <section class="good-bad-ugly-ribbon">
+    <article class="gbu-column good">
+      <span class="mini-label">Good</span>
+      {% if brief.good_items %}
+      <ul class="evidence-list compact">
+        {% for item in brief.good_items %}
+        <li>
+          <strong>{{ item.headline }}</strong>
+          <p>{{ item.summary }}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="evidence-empty">Not yet evidenced</p>
+      {% endif %}
+    </article>
+
+    <article class="gbu-column bad">
+      <span class="mini-label">Bad</span>
+      {% if brief.bad_items %}
+      <ul class="evidence-list compact">
+        {% for item in brief.bad_items %}
+        <li>
+          <strong>{{ item.headline }}</strong>
+          <p>{{ item.summary }}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="evidence-empty">Not yet evidenced</p>
+      {% endif %}
+    </article>
+
+    <article class="gbu-column ugly">
+      <span class="mini-label">Ugly</span>
+      {% if brief.ugly_items %}
+      <ul class="evidence-list compact">
+        {% for item in brief.ugly_items %}
+        <li>
+          <strong>{{ item.headline }}</strong>
+          <p>{{ item.summary }}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="evidence-empty">Not yet evidenced</p>
+      {% endif %}
+    </article>
+  </section>
+
+  <details class="evidence-disclosure" open data-persist-id="evidence-size">
+    <summary>
+      <span>Size</span>
+      <span class="summary-state">{{ "%.2f"|format(brief.header.area_acres or 0) }} acres</span>
+    </summary>
+    <div class="evidence-body">
+      <dl class="metric-grid">
+        <div><dt>Original area</dt><dd>{{ "%.2f"|format(brief.due_diligence.geometry_diagnostics.original_area_acres or brief.header.area_acres or 0) }} acres</dd></div>
+        <div><dt>Indicative clean area</dt><dd>{% if brief.due_diligence.geometry_diagnostics.indicative_clean_area_acres %}{{ "%.2f"|format(brief.due_diligence.geometry_diagnostics.indicative_clean_area_acres) }} acres{% else %}Not yet evidenced{% endif %}</dd></div>
+        <div><dt>Parcel count</dt><dd>{{ brief.due_diligence.parcel_rows|length }}</dd></div>
+        <div><dt>Component count</dt><dd>{{ brief.due_diligence.geometry_diagnostics.component_count or "Not yet evidenced" }}</dd></div>
+      </dl>
+
+      {% if brief.due_diligence.parcel_rows %}
+      <ul class="evidence-list">
+        {% for parcel in brief.due_diligence.parcel_rows %}
+        <li>
+          <strong>{{ parcel.ros_inspire_id or parcel.id }}</strong>
+          <p>{{ parcel.authority_name or "Unknown authority" }} · {{ "%.2f"|format(parcel.area_acres or 0) }} acres{% if parcel.is_primary %} · Primary parcel{% endif %}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="evidence-empty">Awaiting source coverage</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="evidence-disclosure" open data-persist-id="evidence-planning">
+    <summary>
+      <span>Planning context</span>
+      <span class="summary-state">{{ brief.headline_summary.planning_headline or "Awaiting source coverage" }}</span>
+    </summary>
+    <div class="evidence-body">
+      {% if brief.due_diligence.planning_records or brief.due_diligence.hla_records or brief.due_diligence.ldp_records or brief.due_diligence.vdl_records %}
+      <ul class="evidence-list">
+        {% for row in brief.due_diligence.planning_records %}
+        <li>
+          <strong>{{ row.planning_reference or row.source_record_id }}</strong>
+          <p>{{ row.application_status or "Unknown status" }}{% if row.decision %} · {{ row.decision }}{% endif %}{% if row.proposal_text %} · {{ row.proposal_text }}{% endif %}</p>
+        </li>
+        {% endfor %}
+        {% for row in brief.due_diligence.hla_records %}
+        <li>
+          <strong>HLA {{ row.site_reference or row.source_record_id }}</strong>
+          <p>{{ row.effectiveness_status or "Unknown effectiveness" }}{% if row.programming_horizon %} · {{ row.programming_horizon }}{% endif %}</p>
+        </li>
+        {% endfor %}
+        {% for row in brief.due_diligence.ldp_records %}
+        <li>
+          <strong>LDP {{ row.site_reference or row.policy_reference or row.source_record_id }}</strong>
+          <p>{{ row.allocation_status or "Unknown allocation" }}{% if row.support_level %} · {{ row.support_level }}{% endif %}</p>
+        </li>
+        {% endfor %}
+        {% for row in brief.due_diligence.vdl_records %}
+        <li>
+          <strong>VDL {{ row.site_reference or row.source_record_id }}</strong>
+          <p>{{ row.derelict_status or row.vacancy_status or "Unknown brownfield posture" }}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="evidence-empty">Awaiting source coverage</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="evidence-disclosure" open data-persist-id="evidence-location">
+    <summary>
+      <span>Location</span>
+      <span class="summary-state">{{ brief.headline_summary.settlement_headline or brief.header.authority_name or "Not yet evidenced" }}</span>
+    </summary>
+    <div class="evidence-body">
+      <dl class="metric-grid">
+        <div><dt>Authority</dt><dd>{{ brief.header.authority_name or "Not yet evidenced" }}</dd></div>
+        <div><dt>Settlement</dt><dd>{{ detail.summary.settlement_name or "Not yet evidenced" }}</dd></div>
+        <div><dt>Source route</dt><dd>{{ brief.headline_summary.source_route.replace('-', ' ') }}</dd></div>
+        <div><dt>Workflow state</dt><dd>{{ detail.summary.workflow_status or "Not yet evidenced" }}</dd></div>
+      </dl>
+
+      {% if ns.settlement_signal %}
+      <p class="section-note">{{ ns.settlement_signal.reasoning }}</p>
+      {% else %}
+      <p class="evidence-empty">Awaiting source coverage</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="evidence-disclosure" open data-persist-id="evidence-constraints">
+    <summary>
+      <span>Constraints</span>
+      <span class="summary-state">{{ brief.due_diligence.constraints.constraint_summary or brief.due_diligence.assessment.constraint_severity or "Awaiting source coverage" }}</span>
+    </summary>
+    <div class="evidence-body">
+      {% if brief.due_diligence.constraints.constraint_summary %}
+      <p class="section-note">{{ brief.due_diligence.constraints.constraint_summary }}</p>
+      {% endif %}
+
+      {% if brief.due_diligence.flood_records or brief.due_diligence.constraint_group_summaries or brief.due_diligence.constraint_friction_facts %}
+      <ul class="evidence-list">
+        {% for row in brief.due_diligence.flood_records %}
+        <li>
+          <strong>Flood</strong>
+          <p>{{ row.flood_source or "Unknown source" }} · {{ row.severity_band or "Unknown severity" }} · {{ row.overlap_pct or 0 }}% overlap</p>
+        </li>
+        {% endfor %}
+        {% for row in brief.due_diligence.constraint_group_summaries %}
+        <li>
+          <strong>{{ row.constraint_group }}</strong>
+          <p>{{ row.layer_name }} · Max overlap {{ row.max_overlap_pct_of_site or 0 }}%</p>
+        </li>
+        {% endfor %}
+        {% for row in brief.due_diligence.constraint_friction_facts %}
+        <li>
+          <strong>{{ row.layer_name }}</strong>
+          <p>{{ row.fact_label }}{% if row.fact_value %} · {{ row.fact_value }}{% endif %}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="evidence-empty">Awaiting source coverage</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="evidence-disclosure" open data-persist-id="evidence-access">
+    <summary>
+      <span>Access</span>
+      <span class="summary-state">{{ ns.access_signal.signal_value.rank if ns.access_signal else "Not yet evidenced" }}</span>
+    </summary>
+    <div class="evidence-body">
+      {% if ns.access_signal %}
+      <p class="section-note">{{ ns.access_signal.reasoning }}</p>
+      {% else %}
+      <p class="evidence-empty">Not yet evidenced</p>
+      {% endif %}
+
+      <dl class="metric-grid">
+        <div><dt>Access-only warning</dt><dd>{{ "Yes" if brief.due_diligence.geometry_diagnostics.access_only_warning else "No" }}</dd></div>
+        <div><dt>Width / depth warning</dt><dd>{{ "Yes" if brief.due_diligence.geometry_diagnostics.width_depth_warning else "No" }}</dd></div>
+      </dl>
+    </div>
+  </details>
+
+  <details class="evidence-disclosure" open data-persist-id="evidence-geometry">
+    <summary>
+      <span>Geometry</span>
+      <span class="summary-state">{{ ns.geometry_signal.signal_value.rank if ns.geometry_signal else "Not yet evidenced" }}</span>
+    </summary>
+    <div class="evidence-body">
+      {% if ns.geometry_signal %}
+      <p class="section-note">{{ ns.geometry_signal.reasoning }}</p>
+      {% endif %}
+
+      <dl class="metric-grid">
+        <div><dt>Indicative usable ratio</dt><dd>{% if brief.due_diligence.geometry_diagnostics.indicative_usable_area_ratio %}{{ "%.2f"|format(brief.due_diligence.geometry_diagnostics.indicative_usable_area_ratio) }}{% else %}Not yet evidenced{% endif %}</dd></div>
+        <div><dt>Sliver risk</dt><dd>{{ "Yes" if brief.due_diligence.geometry_diagnostics.sliver_flag else "No" }}</dd></div>
+        <div><dt>Fragmentation</dt><dd>{{ "Yes" if brief.due_diligence.geometry_diagnostics.fragmentation_flag else "No" }}</dd></div>
+        <div><dt>Component count</dt><dd>{{ brief.due_diligence.geometry_diagnostics.component_count or "Not yet evidenced" }}</dd></div>
+      </dl>
+    </div>
+  </details>
+
+  <details class="evidence-disclosure" open data-persist-id="evidence-control">
+    <summary>
+      <span>Ownership / control</span>
+      <span class="summary-state">{{ brief.due_diligence.title.title_state or "Title review required" }}</span>
+    </summary>
+    <div class="evidence-body">
+      <dl class="metric-grid">
+        <div><dt>Ownership label</dt><dd>{{ brief.headline_summary.ownership_control_fact_label or "Title review required" }}</dd></div>
+        <div><dt>Title reviewed</dt><dd>{{ "Yes" if brief.due_diligence.title.title_reviewed_flag else "No" }}</dd></div>
+        <div><dt>Title validations</dt><dd>{{ brief.due_diligence.title.title_validation_count or 0 }}</dd></div>
+        <div><dt>Linked parcels</dt><dd>{{ brief.due_diligence.title.parcel_link_count or 0 }}</dd></div>
+      </dl>
+
+      {% if brief.due_diligence.title.title_summary %}
+      <p class="section-note">{{ brief.due_diligence.title.title_summary }}</p>
+      {% else %}
+      <p class="evidence-empty">Title review required</p>
+      {% endif %}
+
+      {% if brief.due_diligence.title.title_numbers %}
+      <p class="section-note">Title references: {{ brief.due_diligence.title.title_numbers|join(", ") }}</p>
+      {% endif %}
+
+      {% if ns.ownership_signal %}
+      <p class="section-note">{{ ns.ownership_signal.reasoning }}</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="evidence-disclosure" open data-persist-id="evidence-utilities">
+    <summary>
+      <span>Utilities / context</span>
+      <span class="summary-state">{{ ns.utilities_signal.signal_value.rank if ns.utilities_signal else "Awaiting source coverage" }}</span>
+    </summary>
+    <div class="evidence-body">
+      {% if ns.utilities_signal %}
+      <p class="section-note">{{ ns.utilities_signal.reasoning }}</p>
+      {% endif %}
+
+      {% if ns.redevelopment_signal or ns.stalled_signal or brief.due_diligence.bgs_records %}
+      <ul class="evidence-list">
+        {% if ns.redevelopment_signal %}
+        <li>
+          <strong>Redevelopment angle</strong>
+          <p>{{ ns.redevelopment_signal.reasoning }}</p>
+        </li>
+        {% endif %}
+        {% if ns.stalled_signal %}
+        <li>
+          <strong>Stalled site angle</strong>
+          <p>{{ ns.stalled_signal.reasoning }}</p>
+        </li>
+        {% endif %}
+        {% for row in brief.due_diligence.bgs_records %}
+        <li>
+          <strong>{{ row.title or row.record_type or "BGS record" }}</strong>
+          <p>{{ row.severity or "Unknown severity" }}{% if row.observed_date %} · {{ row.observed_date }}{% endif %}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="evidence-empty">Awaiting source coverage</p>
+      {% endif %}
+    </div>
+  </details>
+
+  <details class="evidence-disclosure" open data-persist-id="evidence-references">
+    <summary>
+      <span>Evidence references</span>
+      <span class="summary-state">{{ brief.due_diligence.sources|length }} linked source group(s)</span>
+    </summary>
+    <div class="evidence-body">
+      {% if brief.due_diligence.sources %}
+      <ul class="evidence-list">
+        {% for row in brief.due_diligence.sources %}
+        <li>
+          <strong>{{ row.source_family }} · {{ row.source_dataset }}</strong>
+          <p>{{ row.linked_source_record_count }} linked record(s){% if row.link_method %} · {{ row.link_method }}{% endif %}</p>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="evidence-empty">Awaiting source coverage</p>
+      {% endif %}
+    </div>
+  </details>
+</section>

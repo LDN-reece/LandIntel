@@ -1,0 +1,21 @@
+{% set interpretation_items = interpretation_items if interpretation_items is defined else brief.positives %}
+{% if not interpretation_items %}
+<p class="muted">No items in this section.</p>
+{% endif %}
+{% for item in interpretation_items %}
+<article class="interpretation-item">
+  <h4>{{ item.title }}</h4>
+  <p>{{ item.summary }}</p>
+  <p class="muted">{{ item.reasoning }}</p>
+  {% if item.evidence %}
+  <details>
+    <summary>Evidence</summary>
+    <ul class="simple-list">
+      {% for evidence in item.evidence %}
+      <li>{{ evidence.assertion }}{% if evidence.source_identifier %} · {{ evidence.source_identifier }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</article>
+{% endfor %}

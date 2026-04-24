@@ -1,0 +1,203 @@
+{% set review_state = brief.due_diligence.review_state or {} %}
+{% set assessment = brief.due_diligence.assessment or {} %}
+{% set latest_override = brief.due_diligence.manual_overrides[0] if brief.due_diligence.manual_overrides else {} %}
+{% set latest_note = review_state.latest_note_text or (brief.due_diligence.review_events[0].note_text if brief.due_diligence.review_events and brief.due_diligence.review_events[0].note_text else None) %}
+
+<section class="review-rail-shell">
+  <header class="review-rail-header">
+    <div>
+      <p class="section-kicker">Review + actions</p>
+      <h2>Analyst rail</h2>
+    </div>
+    <p class="section-copy">System view remains visible while human judgment is added alongside it.</p>
+  </header>
+
+  <section class="review-rail-block">
+    <div class="block-header">
+      <p class="block-kicker">System view</p>
+      <h3>Current posture</h3>
+    </div>
+
+    <dl class="metric-grid">
+      <div><dt>Queue</dt><dd>{{ brief.header.queue_name }}</dd></div>
+      <div><dt>Review status</dt><dd>{{ brief.header.review_status }}</dd></div>
+      <div><dt>Tier</dt><dd>{{ brief.header.overall_tier }}</dd></div>
+      <div><dt>Title state</dt><dd>{{ brief.due_diligence.title.title_state or "Title review required" }}</dd></div>
+      <div><dt>Human review</dt><dd>{{ "Required" if assessment.human_review_required else "Not flagged" }}</dd></div>
+      <div><dt>Title workflow</dt><dd>{{ review_state.title_workflow_state or "not_triggered" }}</dd></div>
+    </dl>
+
+    <div class="rail-callout">
+      <span class="mini-label">Why it survived</span>
+      <p>{{ assessment.why_it_survived or brief.headline_summary.why_it_survived or "Not yet evidenced" }}</p>
+    </div>
+
+    <div class="rail-callout">
+      <span class="mini-label">Dominant blocker</span>
+      <p>{{ assessment.dominant_blocker or "Not yet evidenced" }}</p>
+    </div>
+
+    <div class="rail-callout">
+      <span class="mini-label">Latest human note</span>
+      <p>{{ latest_note or "Not yet evidenced" }}</p>
+    </div>
+  </section>
+
+  <section class="review-rail-block">
+    <div class="block-header">
+      <p class="block-kicker">Human view</p>
+      <h3>Status movement</h3>
+    </div>
+
+    <form method="post" action="/sites/{{ brief.header.canonical_site_id }}/review/status" class="action-form">
+      <label>
+        <span class="field-label">Review status</span>
+        <select name="review_status">
+          {% for value in ["New candidate", "Queued for review", "Under review", "Need more evidence", "Rejected", "Watchlist", "Conditional", "Strong candidate", "Buy title now", "Title ordered", "Title reviewed", "Likely missed / controlled", "Not for us", "Agency angle only", "Parked"] %}
+          <option value="{{ value }}" {% if review_state.review_status == value %}selected{% endif %}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        <span class="field-label">Your name</span>
+        <input type="text" name="actor_name" value="LDN" />
+      </label>
+
+      <label>
+        <span class="field-label">Reason</span>
+        <textarea name="reason_text" rows="3" placeholder="Record why the status is moving."></textarea>
+      </label>
+
+      <button type="submit" class="button-primary">Save status</button>
+    </form>
+  </section>
+
+  <section class="review-rail-block">
+    <div class="block-header">
+      <p class="block-kicker">Human view</p>
+      <h3>Feedback + notes</h3>
+    </div>
+
+    <form method="post" action="/sites/{{ brief.header.canonical_site_id }}/review/note" class="action-form">
+      <label>
+        <span class="field-label">Your name</span>
+        <input type="text" name="actor_name" value="LDN" />
+      </label>
+
+      <label>
+        <span class="field-label">Feedback / note</span>
+        <textarea name="note_text" rows="5" placeholder="Add human judgment, missing truth, or next action."></textarea>
+      </label>
+
+      <button type="submit" class="button-secondary">Add note</button>
+    </form>
+  </section>
+
+  <section class="review-rail-block">
+    <div class="block-header">
+      <p class="block-kicker">Human view</p>
+      <h3>Manual override</h3>
+    </div>
+
+    <form method="post" action="/sites/{{ brief.header.canonical_site_id }}/review/override" class="action-form">
+      <label>
+        <span class="field-label">Your name</span>
+        <input type="text" name="actor_name" value="LDN" />
+      </label>
+
+      <label>
+        <span class="field-label">Override key</span>
+        <input type="text" name="override_key" placeholder="review_priority" />
+      </label>
+
+      <label>
+        <span class="field-label">Override value</span>
+        <input type="text" name="override_value" placeholder="urgent follow-up" />
+      </label>
+
+      <label>
+        <span class="field-label">Reason</span>
+        <textarea name="reason_text" rows="3" placeholder="Explain why human judgment departs from the current system view."></textarea>
+      </label>
+
+      <button type="submit" class="button-secondary">Record override</button>
+    </form>
+  </section>
+
+  <section class="review-rail-block">
+    <div class="block-header">
+      <p class="block-kicker">Human view</p>
+      <h3>Title trigger</h3>
+    </div>
+
+    <form method="post" action="/sites/{{ brief.header.canonical_site_id }}/review/title" class="action-form">
+      <label>
+        <span class="field-label">Action</span>
+        <select name="action">
+          {% for value in ["buy_title_now", "title_ordered", "title_reviewed"] %}
+          <option value="{{ value }}">{{ value.replace("_", " ") }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        <span class="field-label">Your name</span>
+        <input type="text" name="actor_name" value="LDN" />
+      </label>
+
+      <label>
+        <span class="field-label">Title number</span>
+        <input type="text" name="title_number" placeholder="Optional title reference" />
+      </label>
+
+      <label>
+        <span class="field-label">Reason</span>
+        <textarea name="reason_text" rows="3" placeholder="Record why this title action is being taken."></textarea>
+      </label>
+
+      <button type="submit" class="button-secondary">Record title action</button>
+    </form>
+  </section>
+
+  <section class="review-rail-block">
+    <div class="block-header">
+      <p class="block-kicker">Activity</p>
+      <h3>Review history</h3>
+    </div>
+
+    <dl class="metric-grid">
+      <div><dt>Notes logged</dt><dd>{{ review_state.note_count or 0 }}</dd></div>
+      <div><dt>Overrides logged</dt><dd>{{ review_state.override_count or 0 }}</dd></div>
+    </dl>
+
+    <div class="rail-callout">
+      <span class="mini-label">Latest override activity</span>
+      <p>
+        {% if latest_override %}
+        {{ latest_override.override_key or "override" }}{% if latest_override.override_value and latest_override.override_value.value %} · {{ latest_override.override_value.value }}{% endif %}
+        {% else %}
+        Not yet evidenced
+        {% endif %}
+      </p>
+    </div>
+
+    {% if brief.due_diligence.review_events %}
+    <ul class="activity-list">
+      {% for row in brief.due_diligence.review_events[:10] %}
+      <li>
+        <strong>{{ row.event_type }}</strong>
+        <p>
+          {{ row.actor_name or "LDN" }}
+          {% if row.review_status %} · {{ row.review_status }}{% endif %}
+          {% if row.reason_text %} · {{ row.reason_text }}{% endif %}
+          {% if row.note_text %} · {{ row.note_text }}{% endif %}
+        </p>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="evidence-empty">Not yet evidenced</p>
+    {% endif %}
+  </section>
+</section>

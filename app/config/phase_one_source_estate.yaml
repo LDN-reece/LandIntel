@@ -1,0 +1,473 @@
+version: 1
+generated_from:
+  google_drive_root: "https://drive.google.com/drive/folders/1PAggi0Y4DU8HpkekW_07xGNaCM4qasVy"
+  google_drive_scotland: "https://drive.google.com/drive/folders/1aXGeNM6AeqJ6IDH-jaVrZkhmjczYVTHt"
+  google_drive_data_architecture: "https://drive.google.com/drive/folders/1Epgh5LOwQhFYbydEMfwdC_-1EJF2Nn54"
+  local_downloads_reviewed_at: "2026-04-25"
+  rule: "No plaintext credentials in repo. Use GitHub Actions secrets only."
+
+discovery:
+  ldp:
+    source_family: ldp
+    search_url: "https://data.spatialhub.scot/api/3/action/package_search"
+    query: "local development plan allocation settlement"
+    source_status: explicitly_deferred
+    defer_reason_code: authority_adapter_not_validated
+    ranking_eligible: false
+    review_output_eligible: false
+  settlement:
+    source_family: settlement
+    search_url: "https://data.spatialhub.scot/api/3/action/package_search"
+    query: "settlement boundary local development plan"
+    source_status: explicitly_deferred
+    defer_reason_code: authority_adapter_not_validated
+    ranking_eligible: false
+    review_output_eligible: false
+
+sources:
+  - source_key: planning_applications_spatialhub
+    source_family: planning
+    source_name: "Planning Applications: Official - Scotland"
+    source_group: planning
+    phase_one_role: critical
+    source_status: live_api
+    orchestration_mode: existing_live_ingest
+    endpoint_url: "https://geo.spatialhub.scot/geoserver/sh_plnapp/wfs"
+    auth_env_vars: [IMPROVEMENT_SERVICE_AUTHKEY]
+    target_table: landintel.planning_application_records
+    reconciliation_path: "source_reconcile_state -> source_reconcile_queue -> canonical publish"
+    evidence_path: "site_source_links, site_reference_aliases, evidence_references"
+    signal_output: "planning_context, ownership_control commercial inference"
+    ranking_impact: "Planning context, resurfacing, control inference"
+    resurfacing_trigger: "new application, refusal, withdrawal, lapse, applicant/control change"
+    data_age_basis: "GitHub Actions ingest run plus SpatialHub package metadata"
+    drive_folder_url: "https://drive.google.com/drive/folders/1GTemFIRU096wgjjcEnMgTMKlBa_8Ch9J"
+    notes: "Already the planning spine. Must use IMPROVEMENT_SERVICE_AUTHKEY rather than BOUNDARY_AUTHKEY for general SpatialHub access."
+
+  - source_key: housing_land_supply_spatialhub
+    source_family: hla
+    source_name: "Housing Land Supply - Scotland"
+    source_group: future_context
+    phase_one_role: critical
+    source_status: live_api
+    orchestration_mode: existing_live_ingest
+    endpoint_url: "https://data.spatialhub.scot/api/3/action/package_show?id=housing_land_supply-is"
+    auth_env_vars: [IMPROVEMENT_SERVICE_AUTHKEY]
+    target_table: landintel.hla_site_records
+    reconciliation_path: "source_reconcile_state -> source_reconcile_queue -> canonical publish"
+    evidence_path: "site_source_links, site_reference_aliases, evidence_references"
+    signal_output: "planning_context, future_context, stalled_site_angle"
+    ranking_impact: "Future planning context uplift and stalled-site flagging"
+    resurfacing_trigger: "site added, removed, delayed, effective-status change"
+    data_age_basis: "SpatialHub package metadata and latest successful ingest_hla run"
+    drive_folder_url: "https://drive.google.com/drive/folders/1W5tm_rleO9znAkFgUqHyeKmqhRUnVBBk"
+    static_assets:
+      - asset_key: housing_land_supply_zip
+        file_name: Housing_Land_Supply_-_Scotland.zip
+        layer_names: [pub_hlsPolygon, pub_hls22to23Polygon]
+        feature_count: 9132
+        modified_at: "2026-03-01T21:34:58Z"
+
+  - source_key: ldp_authority_discovery
+    source_family: ldp
+    source_name: "Authority LDP discovery and monitoring"
+    source_group: policy
+    phase_one_role: critical
+    source_status: explicitly_deferred
+    orchestration_mode: authority_discovery
+    endpoint_url: "https://data.spatialhub.scot/api/3/action/package_search"
+    target_table: landintel.authority_source_registry
+    reconciliation_path: "deferred until authority adapter validated"
+    evidence_path: "registry audit rows only until promoted"
+    signal_output: "none until promoted, then planning_context/future_context"
+    ranking_impact: "No live ranking until promoted authority-by-authority"
+    resurfacing_trigger: "document/package change, allocation change, adapter promotion"
+    data_age_basis: "Authority source checked timestamp and document modified timestamp"
+    drive_folder_url: "https://drive.google.com/drive/folders/1PCafGI44c_F5jl_budLooGzgBK6qSG03"
+    notes: "Drive contains Council LDP URLs and Glasgow sample data. Needs authority-specific polygon adapters before ranking."
+
+  - source_key: settlement_boundary_authority_discovery
+    source_family: settlement
+    source_name: "Settlement boundary discovery and monitoring"
+    source_group: policy
+    phase_one_role: critical
+    source_status: explicitly_deferred
+    orchestration_mode: authority_discovery
+    endpoint_url: "https://data.spatialhub.scot/api/3/action/package_search"
+    target_table: landintel.authority_source_registry
+    reconciliation_path: "deferred until authority adapter validated, then direct spatial assignment"
+    evidence_path: "registry audit rows only until promoted"
+    signal_output: "none until promoted, then settlement_position"
+    ranking_impact: "No live ranking until promoted authority-by-authority"
+    resurfacing_trigger: "boundary dataset refresh, promotion, inside/outside percentage change"
+    data_age_basis: "Authority source checked timestamp and source modified timestamp"
+    notes: "Critical edge. Must show percentages and never predict planning outcome."
+
+  - source_key: employment_land_supply_spatialhub
+    source_family: ela
+    source_name: "Employment Land Supply - Scotland"
+    source_group: future_context
+    phase_one_role: target_live
+    source_status: live_target
+    orchestration_mode: spatialhub_wfs
+    endpoint_url: "https://geo.spatialhub.scot/geoserver/sh_els/wfs"
+    auth_env_vars: [IMPROVEMENT_SERVICE_AUTHKEY]
+    target_table: landintel.ela_site_records
+    reconciliation_path: "source_reconcile_state -> source_reconcile_queue -> canonical publish"
+    evidence_path: "site_source_links, site_reference_aliases, evidence_references"
+    signal_output: "redevelopment_angle, planning_context"
+    ranking_impact: "Change-of-use/redevelopment angle uplift; employment-protection friction where applicable"
+    resurfacing_trigger: "site added, removed, employment status changed"
+    data_age_basis: "SpatialHub sh_els layer sh_date_up plus ingest run"
+    drive_folder_url: "https://drive.google.com/drive/folders/17UxQYtqbGES-6GqxPU_JV8f-dlJZlJqX"
+    static_assets:
+      - asset_key: employment_land_supply_zip
+        file_name: Employment_Land_Supply_-_Scotland.zip
+        layer_names: [pub_els]
+        feature_count: 1799
+        modified_at: "2026-03-01T21:38:01Z"
+
+  - source_key: vacant_derelict_land_spatialhub
+    source_family: vdl
+    source_name: "Vacant and Derelict Land - Scotland"
+    source_group: future_context
+    phase_one_role: target_live
+    source_status: live_target
+    orchestration_mode: spatialhub_wfs_and_static_register
+    endpoint_url: "https://geo.spatialhub.scot/geoserver/sh_vdl/wfs"
+    auth_env_vars: [IMPROVEMENT_SERVICE_AUTHKEY]
+    target_table: landintel.vdl_site_records
+    reconciliation_path: "source_reconcile_state -> source_reconcile_queue -> canonical publish"
+    evidence_path: "site_source_links, site_reference_aliases, evidence_references"
+    signal_output: "redevelopment_angle, stalled_site_angle"
+    ranking_impact: "Brownfield/stalled-site uplift only"
+    resurfacing_trigger: "site added, removed, derelict/vacant status changed"
+    data_age_basis: "2025 SVDL register plus SpatialHub layer sh_date_up"
+    drive_folder_url: "https://drive.google.com/drive/folders/1XaUqMHQuBnLOtMDFIVbvTqqaO82xzTfn"
+    static_assets:
+      - asset_key: vacant_derelict_land_zip
+        file_name: Vacant_and_Derelict_Land_-_Scotland.zip
+        layer_names: [pub_vdlPolygon]
+        feature_count: 3154
+        modified_at: "2026-03-01T21:57:49Z"
+      - asset_key: vacant_derelict_land_csv
+        file_name: Vacant_and_Derelict_Land_-_Scotland.csv
+        modified_at: "2026-03-14T22:17:57Z"
+
+  - source_key: sepa_flood_maps
+    source_family: sepa_flood
+    source_name: "SEPA Flood Maps"
+    source_group: constraints
+    phase_one_role: target_live
+    source_status: live_api
+    orchestration_mode: arcgis_mapserver
+    endpoint_url: "https://map.sepa.org.uk/server/rest/services/Open/Flood_Maps/MapServer"
+    target_table: public.constraint_source_features
+    reconciliation_path: "constraint_source_features -> constraints_site_anchor() -> measurements/summaries"
+    evidence_path: "evidence_references, site_constraint_measurements, site_constraint_group_summaries"
+    signal_output: "constraint_severity with flood facts"
+    ranking_impact: "Constraints drag only"
+    resurfacing_trigger: "flood layer refresh, severity band or overlap change"
+    data_age_basis: "SEPA ArcGIS service revision date and GitHub Actions probe"
+    notes: "Current official service shows revision date 2025-02-25 and layers 0-8 for river/surface/coastal high-medium-low."
+
+  - source_key: coal_authority_layers
+    source_family: coal_authority
+    source_name: "Coal Authority mining constraints"
+    source_group: constraints
+    phase_one_role: target_live
+    source_status: live_target
+    orchestration_mode: arcgis_featureserver
+    endpoint_url: "https://services2.arcgis.com/fq3IIWzrdf1xBoPI/arcgis/rest/services/COAL_AUTHORITY/FeatureServer"
+    target_table: public.constraint_source_features
+    reconciliation_path: "constraint_source_features -> constraints_site_anchor() -> measurements/summaries"
+    evidence_path: "evidence_references, site_constraint_measurements, site_constraint_group_summaries"
+    signal_output: "constraint_severity with mining facts"
+    ranking_impact: "Mining-risk constraints drag only"
+    resurfacing_trigger: "dataset refresh or overlap change"
+    data_age_basis: "Coal Authority FeatureServer metadata and user-guide documents"
+    drive_folder_url: "https://drive.google.com/drive/folders/12mdo8gYUCIpYssucu1RnBlP0-yFZQjwR"
+    notes: "Drive has current user guides. Official service found has 2024 Coal Authority layers; verify against national layer availability before marking complete."
+
+  - source_key: bgs_boreholes_ogc
+    source_family: bgs
+    source_name: "BGS Borehole and AGS records"
+    source_group: constraints
+    phase_one_role: context
+    source_status: live_api
+    orchestration_mode: ogc_api_features
+    endpoint_url: "https://ogcapi.bgs.ac.uk/collections"
+    target_table: landintel.bgs_records
+    reconciliation_path: "canonical site bbox query with evidence only"
+    evidence_path: "evidence_references"
+    signal_output: "ground_context"
+    ranking_impact: "Ground context only, no false certainty"
+    resurfacing_trigger: "new nearby borehole/AGS records or dataset refresh"
+    data_age_basis: "BGS OGC response and SOBI static zip date"
+    drive_folder_url: "https://drive.google.com/drive/folders/1GsOHHKJ_BpwTLly70qLlPnfJCVTiWxFw"
+
+  - source_key: hes_designations
+    source_family: hes
+    source_name: "Historic Environment Scotland designations"
+    source_group: constraints
+    phase_one_role: target_live
+    source_status: live_target
+    orchestration_mode: wfs_capabilities
+    endpoint_url: "https://inspire.hes.scot/arcgis/services/HES/HES_Designations/MapServer/WFSServer"
+    target_table: public.constraint_source_features
+    reconciliation_path: "generic constraint pipeline against canonical anchor"
+    evidence_path: "evidence_references, site_constraint_measurements, site_constraint_group_summaries"
+    signal_output: "constraint_severity with heritage facts"
+    ranking_impact: "Heritage constraint drag only"
+    resurfacing_trigger: "designation or overlap change"
+    data_age_basis: "HES WFS capabilities and layer metadata"
+
+  - source_key: naturescot_designations
+    source_family: naturescot
+    source_name: "NatureScot protected areas, landscape and habitats"
+    source_group: constraints
+    phase_one_role: target_live
+    source_status: live_target
+    orchestration_mode: multi_wfs
+    endpoint_url: "https://ogc.nature.scot/geoserver/protectedareas/wfs"
+    target_table: public.constraint_source_features
+    reconciliation_path: "generic constraint pipeline against canonical anchor"
+    evidence_path: "evidence_references, site_constraint_measurements, site_constraint_group_summaries"
+    signal_output: "constraint_severity with environmental/landscape facts"
+    ranking_impact: "Environmental and landscape constraint drag only"
+    resurfacing_trigger: "designation refresh or overlap change"
+    data_age_basis: "NatureScot WFS capabilities and layer metadata"
+
+  - source_key: contaminated_land_spatialhub
+    source_family: contaminated_land
+    source_name: "Contaminated Land - Scotland"
+    source_group: constraints
+    phase_one_role: target_live
+    source_status: live_target
+    orchestration_mode: spatialhub_wfs
+    endpoint_url: "https://geo.spatialhub.scot/geoserver/sh_cntml/wfs"
+    auth_env_vars: [IMPROVEMENT_SERVICE_AUTHKEY]
+    target_table: public.constraint_source_features
+    reconciliation_path: "generic constraint pipeline against canonical anchor"
+    evidence_path: "evidence_references, site_constraint_measurements, site_constraint_group_summaries"
+    signal_output: "constraint_severity and abnormal friction facts"
+    ranking_impact: "Constraints drag only"
+    resurfacing_trigger: "dataset refresh or overlap change"
+    data_age_basis: "SpatialHub sh_cntml layer sh_date_up"
+    drive_folder_url: "https://drive.google.com/drive/folders/1eYehS61GKHrKiwmlrORTUh_8Dw0E8l0x"
+    static_assets:
+      - asset_key: contaminated_land_zip
+        file_name: Contaminated_Land_-_Scotland.zip
+        layer_names: [pub_cntml]
+        feature_count: 38
+        modified_at: "2026-03-01T21:40:50Z"
+
+  - source_key: tpo_spatialhub
+    source_family: tpo
+    source_name: "Tree Preservation Orders - Scotland"
+    source_group: constraints
+    phase_one_role: target_live
+    source_status: live_target
+    orchestration_mode: spatialhub_wfs
+    endpoint_url: "https://geo.spatialhub.scot/geoserver/sh_tpo/wfs"
+    auth_env_vars: [IMPROVEMENT_SERVICE_AUTHKEY]
+    target_table: public.constraint_source_features
+    reconciliation_path: "generic constraint pipeline against canonical anchor"
+    evidence_path: "evidence_references, site_constraint_measurements, site_constraint_group_summaries"
+    signal_output: "constraint_severity with layout-friction facts"
+    ranking_impact: "Constraints and geometry drag only"
+    resurfacing_trigger: "dataset refresh or overlap change"
+    data_age_basis: "SpatialHub sh_tpo layer sh_date_up"
+    drive_folder_url: "https://drive.google.com/drive/folders/1sxh3gfmZLIJ5yLUD_k0njIYDaWtn_J6x"
+    static_assets:
+      - asset_key: tpo_zip
+        file_name: Tree_Preservation_Orders_-_Scotland.zip
+        layer_names: [pub_tpopnt, pub_tpopol]
+        feature_count: 10870
+        modified_at: "2026-03-01T21:46:50Z"
+
+  - source_key: culverts_spatialhub
+    source_family: culverts
+    source_name: "Culverts - Scotland"
+    source_group: constraints
+    phase_one_role: target_live
+    source_status: live_target
+    orchestration_mode: spatialhub_wfs
+    endpoint_url: "https://geo.spatialhub.scot/geoserver/sh_clvt/wfs"
+    auth_env_vars: [IMPROVEMENT_SERVICE_AUTHKEY]
+    target_table: public.constraint_source_features
+    reconciliation_path: "generic constraint pipeline against canonical anchor"
+    evidence_path: "evidence_references, site_constraint_measurements, site_constraint_group_summaries"
+    signal_output: "utilities_burden and constraint_severity"
+    ranking_impact: "Utilities and constraints drag only"
+    resurfacing_trigger: "dataset refresh or overlap change"
+    data_age_basis: "SpatialHub sh_clvt layer sh_date_up"
+    drive_folder_url: "https://drive.google.com/drive/folders/1wyRZUYOlTUfTIhQ_XemLn3pJOrzLiV7C"
+    static_assets:
+      - asset_key: culverts_zip
+        file_name: Culverts_-_Scotland.zip
+        layer_names: [pub_clvtlin, pub_clvtpnt, pub_clvtos]
+        feature_count: 34272
+        modified_at: "2026-03-01T22:02:49Z"
+
+  - source_key: conservation_areas_spatialhub
+    source_family: conservation_areas
+    source_name: "Conservation Areas - Scotland"
+    source_group: constraints
+    phase_one_role: target_live
+    source_status: live_target
+    orchestration_mode: spatialhub_wfs
+    endpoint_url: "https://geo.spatialhub.scot/geoserver/sh_coar/wfs"
+    auth_env_vars: [IMPROVEMENT_SERVICE_AUTHKEY]
+    target_table: public.constraint_source_features
+    reconciliation_path: "generic constraint pipeline against canonical anchor"
+    evidence_path: "evidence_references, site_constraint_measurements, site_constraint_group_summaries"
+    signal_output: "constraint_severity with heritage/planning sensitivity facts"
+    ranking_impact: "Constraints drag only"
+    resurfacing_trigger: "dataset refresh or overlap change"
+    data_age_basis: "SpatialHub sh_coar layer sh_date_up"
+    drive_folder_url: "https://drive.google.com/drive/folders/1hrIsM2AOBTku2hB3xEWmjNhFYlKh2BeN"
+    static_assets:
+      - asset_key: conservation_areas_zip
+        file_name: Conservation_Areas_-_Scotland.zip
+        layer_names: [pub_coar]
+        feature_count: 681
+        modified_at: "2026-03-01T22:26:23Z"
+
+  - source_key: green_belt_spatialhub
+    source_family: greenbelt
+    source_name: "Green Belt - Scotland"
+    source_group: constraints
+    phase_one_role: target_live
+    source_status: live_target
+    orchestration_mode: spatialhub_static_or_wfs
+    endpoint_url: "https://geo.spatialhub.scot/geoserver/sh_grnblt/wfs"
+    auth_env_vars: [IMPROVEMENT_SERVICE_AUTHKEY]
+    target_table: public.constraint_source_features
+    reconciliation_path: "generic constraint pipeline against canonical anchor"
+    evidence_path: "evidence_references, site_constraint_measurements, site_constraint_group_summaries"
+    signal_output: "constraint_severity / planning sensitivity facts"
+    ranking_impact: "Policy/constraint drag only, no auto-kill"
+    resurfacing_trigger: "green belt boundary or policy refresh"
+    data_age_basis: "SpatialHub sh_grnblt layer sh_date_up"
+    drive_folder_url: "https://drive.google.com/drive/folders/1k8ZI_6_IdWNJJMljpTetB3QIhLU6NT-5"
+    static_assets:
+      - asset_key: green_belt_zip_latest_local
+        file_name: Green_Belt_-_Scotland (1).zip
+        layer_names: [pub_grnblt]
+        feature_count: 114
+        modified_at: "2026-04-21T09:42:01Z"
+
+  - source_key: local_authority_boundaries_spatialhub
+    source_family: local_authority_boundaries
+    source_name: "Local Authority Boundaries - Scotland"
+    source_group: location
+    phase_one_role: critical
+    source_status: static_snapshot
+    orchestration_mode: existing_boundary_load
+    endpoint_url: "https://data.spatialhub.scot/api/3/action/package_show?id=local_authority_boundaries-is"
+    auth_env_vars: [IMPROVEMENT_SERVICE_AUTHKEY]
+    target_table: public.authority_aoi
+    reconciliation_path: "authority AOI used for ingest clipping and admin anchoring"
+    evidence_path: "source registry"
+    signal_output: "authority context"
+    ranking_impact: "Review context and source scoping"
+    resurfacing_trigger: "boundary dataset refresh"
+    data_age_basis: "Static zip modified 2026-03-01 plus load_boundaries run"
+    drive_folder_url: "https://drive.google.com/drive/folders/1UAoHn2SVcRxDpuC9QIbJsxcssCnq-0SY"
+    static_assets:
+      - asset_key: local_authority_boundaries_zip
+        file_name: Local_Authority_Boundaries_-_Scotland.zip
+        layer_names: [pub_las]
+        feature_count: 32
+        modified_at: "2026-03-01T21:53:56Z"
+
+  - source_key: local_landscape_areas_spatialhub
+    source_family: local_landscape_areas
+    source_name: "Local Landscape Areas - Scotland"
+    source_group: constraints
+    phase_one_role: context
+    source_status: static_snapshot
+    orchestration_mode: static_spatial_snapshot
+    target_table: public.constraint_source_features
+    ranking_impact: "Landscape sensitivity context"
+    resurfacing_trigger: "dataset refresh or overlap change"
+    drive_folder_url: "https://drive.google.com/drive/folders/1xZOwtoJvliUegfD5LznXiRzdAP1qd6rg"
+    static_assets:
+      - asset_key: local_landscape_areas_zip
+        file_name: Local_Landscape_Areas_-_Scotland.zip
+        layer_names: [pub_llandd]
+        feature_count: 475
+        modified_at: "2026-03-01T22:18:01Z"
+
+  - source_key: local_nature_spatialhub
+    source_family: local_nature
+    source_name: "Local Nature Reserves and Conservation Sites - Scotland"
+    source_group: constraints
+    phase_one_role: context
+    source_status: static_snapshot
+    orchestration_mode: static_spatial_snapshot
+    target_table: public.constraint_source_features
+    ranking_impact: "Environmental sensitivity context"
+    resurfacing_trigger: "dataset refresh or overlap change"
+    drive_folder_url: "https://drive.google.com/drive/folders/1O79oh3VChYiTgNwewlD8OjGhD88JMjod"
+    static_assets:
+      - asset_key: local_nature_reserves_zip
+        file_name: Local_Nature_Reserves_-_Scotland.zip
+        layer_names: [pub_lnatr]
+        feature_count: 119
+        modified_at: "2026-03-01T22:10:24Z"
+      - asset_key: local_nature_conservation_sites_zip
+        file_name: Local_Nature_Conservation_Sites_-_Scotland.zip
+        layer_names: [pub_lnatcsPolygon, pub_lnatcs_NULL]
+        feature_count: 3593
+        modified_at: "2026-03-01T22:10:13Z"
+
+  - source_key: forestry_woodland_spatialhub
+    source_family: forestry_woodland
+    source_name: "Forestry and Woodland Strategy - Scotland"
+    source_group: constraints
+    phase_one_role: context
+    source_status: static_snapshot
+    orchestration_mode: static_spatial_snapshot
+    target_table: public.constraint_source_features
+    ranking_impact: "Woodland/landscape context"
+    resurfacing_trigger: "dataset refresh or overlap change"
+    drive_folder_url: "https://drive.google.com/drive/folders/18E1C6PZNfQznTnGFWl8F2vCXsq3zwTWV"
+    static_assets:
+      - asset_key: forestry_woodland_zip
+        file_name: Forestry_and_Woodland_Strategy_-_Scotland.zip
+        layer_names: [pub_fws]
+        feature_count: 22150
+        modified_at: "2026-03-01T22:05:57Z"
+
+  - source_key: sgn_asset_list
+    source_family: sgn_assets
+    source_name: "SGN Asset List"
+    source_group: utilities
+    phase_one_role: context
+    source_status: static_snapshot
+    orchestration_mode: static_catalogue
+    target_table: landintel.source_estate_registry
+    ranking_impact: "Utilities context only, no Phase One appraisal burden"
+    resurfacing_trigger: "catalogue update"
+    drive_folder_url: "https://drive.google.com/drive/folders/1NcGc02knKX70eOpEjH60SV4emwE-4Fgu"
+
+  - source_key: council_asset_register_spatialhub
+    source_family: council_asset_register
+    source_name: "Council Asset Register - Scotland"
+    source_group: ownership_control
+    phase_one_role: context
+    source_status: static_snapshot
+    orchestration_mode: static_spatial_snapshot
+    target_table: landintel.site_signals
+    signal_output: "ownership_control commercial inference only"
+    ranking_impact: "Likely public-sector control warning"
+    resurfacing_trigger: "asset register refresh"
+    drive_folder_url: "https://drive.google.com/drive/folders/1z5ODbk3OuTffRREDhDwNKCW0Ek6OmBVW"
+    static_assets:
+      - asset_key: council_asset_register_zip
+        file_name: Council_Asset_Register_-_Scotland.zip
+        layer_names: [pub_car]
+        feature_count: 43916
+        modified_at: "2026-03-01T22:01:26Z"

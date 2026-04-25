@@ -41,9 +41,9 @@ on:
           - full-refresh-core-sources
 
 # Automated schedules are intentionally paused during incremental reconcile burn-in.
-# Source-estate maintenance is manual-only during burn-in because it registers,
-# probes, discovers, and audits sources. It does not promote unvalidated LDP or
-# settlement feeds into live ranking.
+# Push runs are validation-only. Source-estate maintenance is manual-only during
+# burn-in because it registers, probes, discovers, and audits sources. It does
+# not promote unvalidated LDP or settlement feeds into live ranking.
 
 concurrency:
   group: landintel-sources-${{ github.event_name }}-${{ inputs.command || 'manual' }}
@@ -130,7 +130,7 @@ jobs:
           set -euo pipefail
           selected_command="${{ inputs.command }}"
           if [ -z "$selected_command" ]; then
-            selected_command="source-estate-maintenance"
+            selected_command="validate-only"
           fi
           echo "SELECTED_COMMAND=${selected_command}" >> "$GITHUB_ENV"
 
@@ -165,6 +165,8 @@ jobs:
           if [ "$SELECTED_COMMAND" = "sync-source-catalog" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_catalog_sync sync-source-catalog
+          elif [ "$SELECTED_COMMAND" = "validate-only" ]; then
+            echo "Push validation only. No Supabase write command selected."
           elif [ "$SELECTED_COMMAND" = "run-migrations" ]; then
             python -m src.source_phase_runner run-migrations
           elif [ "$SELECTED_COMMAND" = "audit-source-footprint" ]; then

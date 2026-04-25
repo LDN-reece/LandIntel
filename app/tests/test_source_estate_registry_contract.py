@@ -58,6 +58,10 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
             manifest["spatial_hub"]["sources"]["hla"]["dataset_id"],
             "housing_land_supply-is",
         )
+        self.assertIn("source_record_id", manifest["spatial_hub"]["hla"]["field_mappings"])
+        self.assertIn("constraint_reason", manifest["spatial_hub"]["hla"]["field_mappings"])
+        self.assertIn("source_record_id", manifest["spatial_hub"]["planning_history"]["field_mappings"])
+        self.assertIn("refusal_reason", manifest["spatial_hub"]["planning_history"]["field_mappings"])
 
     def test_source_estate_schema_exposes_live_matrix(self) -> None:
         sql = (REPO_ROOT / "sql" / "043_phase_one_source_estate_registry.sql").read_text()

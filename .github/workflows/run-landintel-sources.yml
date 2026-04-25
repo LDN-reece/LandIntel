@@ -1,6 +1,18 @@
 name: Run LandIntel Sources
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/run-landintel-sources.yml"
+      - "app/config/phase_one_source_estate.yaml"
+      - "app/sql/042_source_freshness.sql"
+      - "app/sql/043_phase_one_source_estate_registry.sql"
+      - "app/src/source_estate_registry.py"
+      - "app/tests/test_source_estate_registry_contract.py"
+  schedule:
+    - cron: "17 5 * * 1"
   workflow_dispatch:
     inputs:
       command:
@@ -13,6 +25,7 @@ on:
           - sync-source-catalog
           - audit-source-footprint
           - audit-source-freshness
+          - source-estate-maintenance
           - register-source-estate
           - probe-source-estate
           - audit-source-estate
@@ -28,8 +41,9 @@ on:
           - ingest-bgs
           - full-refresh-core-sources
 
-# Automated schedules are intentionally paused during incremental reconcile burn-in.
-# Resume hourly and weekly pulses only after the full manual workflow set is proven.
+# Source-estate maintenance is allowed to run automatically because it registers,
+# probes, discovers, and audits sources. It does not promote unvalidated LDP or
+# settlement feeds into live ranking.
 
 concurrency:
   group: landintel-sources-${{ github.event_name }}-${{ github.event.inputs.command || github.event.schedule || 'manual' }}
@@ -114,7 +128,10 @@ jobs:
       - name: Resolve selected command
         run: |
           set -euo pipefail
-          selected_command="${{ inputs.command }}"
+          selected_command="${{ github.event.inputs.command || '' }}"
+          if [ -z "$selected_command" ]; then
+            selected_command="source-estate-maintenance"
+          fi
           echo "SELECTED_COMMAND=${selected_command}" >> "$GITHUB_ENV"
 
       - name: Show selected command
@@ -155,6 +172,14 @@ jobs:
             python -m src.source_reconcile_audit audit-source-footprint
           elif [ "$SELECTED_COMMAND" = "audit-source-freshness" ]; then
             python -m src.source_phase_runner run-migrations
+            python -m src.source_freshness_audit audit-source-freshness
+          elif [ "$SELECTED_COMMAND" = "source-estate-maintenance" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_estate_registry register-source-estate
+            python -m src.source_estate_registry probe-source-estate
+            python -m src.source_estate_registry discover-ldp-sources
+            python -m src.source_estate_registry discover-settlement-sources
+            python -m src.source_estate_registry audit-source-estate
             python -m src.source_freshness_audit audit-source-freshness
           elif [ "$SELECTED_COMMAND" = "register-source-estate" ]; then
             python -m src.source_phase_runner run-migrations

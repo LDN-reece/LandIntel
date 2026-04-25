@@ -66,6 +66,18 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         self.assertIn("IMPROVEMENT_SERVICE_AUTHKEY", workflow)
         self.assertIn("schedule:", workflow)
         self.assertIn("app/config/phase_one_source_estate.yaml", workflow)
+        self.assertIn("src/source_policy_discovery.py", workflow)
+        self.assertIn("discover-ldp-geonetwork", workflow)
+        self.assertIn("discover-settlement-geonetwork", workflow)
+
+    def test_policy_discovery_uses_geonetwork_and_registers_topography(self) -> None:
+        runner = (REPO_ROOT / "src" / "source_policy_discovery.py").read_text()
+
+        self.assertIn("geonetwork/srv/api/search/records/_search", runner)
+        self.assertIn("topography_os_terrain_50", runner)
+        self.assertIn("topography_scottish_lidar", runner)
+        self.assertIn("adopted_roads_authority_discovery", runner)
+        self.assertIn("utilities_water_electric_discovery", runner)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ on:
       - "app/sql/042_source_freshness.sql"
       - "app/sql/043_phase_one_source_estate_registry.sql"
       - "app/src/source_estate_registry.py"
+      - "app/src/source_policy_discovery.py"
       - "app/tests/test_source_estate_registry_contract.py"
   schedule:
     - cron: "17 5 * * 1"
@@ -123,7 +124,7 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
       - name: Compile critical runners
-        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_estate_registry.py
+        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_estate_registry.py src/source_policy_discovery.py
 
       - name: Resolve selected command
         run: |
@@ -176,9 +177,10 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "source-estate-maintenance" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate
+            python -m src.source_policy_discovery register-supplemental-sources
             python -m src.source_estate_registry probe-source-estate
-            python -m src.source_estate_registry discover-ldp-sources
-            python -m src.source_estate_registry discover-settlement-sources
+            python -m src.source_policy_discovery discover-ldp-geonetwork
+            python -m src.source_policy_discovery discover-settlement-geonetwork
             python -m src.source_estate_registry audit-source-estate
             python -m src.source_freshness_audit audit-source-freshness
           elif [ "$SELECTED_COMMAND" = "register-source-estate" ]; then
@@ -193,11 +195,13 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "discover-ldp-sources" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate
-            python -m src.source_estate_registry discover-ldp-sources
+            python -m src.source_policy_discovery register-supplemental-sources
+            python -m src.source_policy_discovery discover-ldp-geonetwork
           elif [ "$SELECTED_COMMAND" = "discover-settlement-sources" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate
-            python -m src.source_estate_registry discover-settlement-sources
+            python -m src.source_policy_discovery register-supplemental-sources
+            python -m src.source_policy_discovery discover-settlement-geonetwork
           elif [ "$SELECTED_COMMAND" = "process-reconcile-queue" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000

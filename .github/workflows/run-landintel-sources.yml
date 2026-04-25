@@ -12,8 +12,6 @@ on:
       - "app/src/source_estate_registry.py"
       - "app/src/source_policy_discovery.py"
       - "app/tests/test_source_estate_registry_contract.py"
-  schedule:
-    - cron: "17 5 * * 1"
   workflow_dispatch:
     inputs:
       command:
@@ -42,12 +40,13 @@ on:
           - ingest-bgs
           - full-refresh-core-sources
 
-# Source-estate maintenance is allowed to run automatically because it registers,
+# Automated schedules are intentionally paused during incremental reconcile burn-in.
+# Source-estate maintenance is manual-only during burn-in because it registers,
 # probes, discovers, and audits sources. It does not promote unvalidated LDP or
 # settlement feeds into live ranking.
 
 concurrency:
-  group: landintel-sources-${{ github.event_name }}-${{ github.event.inputs.command || github.event.schedule || 'manual' }}
+  group: landintel-sources-${{ github.event_name }}-${{ inputs.command || 'manual' }}
   cancel-in-progress: false
 
 jobs:
@@ -129,7 +128,7 @@ jobs:
       - name: Resolve selected command
         run: |
           set -euo pipefail
-          selected_command="${{ github.event.inputs.command || '' }}"
+          selected_command="${{ inputs.command }}"
           if [ -z "$selected_command" ]; then
             selected_command="source-estate-maintenance"
           fi

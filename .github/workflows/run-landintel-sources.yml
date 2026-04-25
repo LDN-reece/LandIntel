@@ -6,12 +6,12 @@ on:
       - main
     paths:
       - ".github/workflows/run-landintel-sources.yml"
-      - "app/config/phase_one_source_estate.yaml"
-      - "app/sql/042_source_freshness.sql"
-      - "app/sql/043_phase_one_source_estate_registry.sql"
-      - "app/src/source_estate_registry.py"
-      - "app/src/source_policy_discovery.py"
-      - "app/tests/test_source_estate_registry_contract.py"
+      - "app/config/**"
+      - "app/docs/**"
+      - "app/sql/**"
+      - "app/sql_checks/**"
+      - "app/src/**"
+      - "app/tests/**"
   workflow_dispatch:
     inputs:
       command:

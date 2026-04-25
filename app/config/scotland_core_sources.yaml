@@ -1,126 +1,128 @@
 spatial_hub:
   package_show_base_url: https://data.spatialhub.scot/api/3/action/package_show?id=
-  authkey_env: BOUNDARY_AUTHKEY
+  authkey_env: IMPROVEMENT_SERVICE_AUTHKEY
+  planning_history: &spatial_hub_planning_history
+    source_name: "Planning Applications: Official - Scotland"
+    publisher: "Improvement Service"
+    dataset_id: planning_applications_official-is
+    metadata_uuid: spatialhub:planning_applications_official-is
+    resource_name_contains: Polygons
+    authority_field_candidates:
+      - local_auth
+    field_mappings:
+      source_record:
+        - reference
+        - application_reference
+        - app_reference
+        - planning_ref
+        - objectid
+      planning_reference:
+        - reference
+        - application_reference
+        - app_reference
+        - planning_ref
+      application_type:
+        - application_type
+        - app_type
+        - development_type
+        - category
+      proposal_text:
+        - proposal
+        - proposal_text
+        - description
+        - development_description
+      application_status:
+        - status
+        - application_status
+        - state
+      decision:
+        - decision
+        - decision_status
+        - final_decision
+      lodged_date:
+        - lodged_date
+        - valid_date
+        - received_date
+        - application_date
+      decision_date:
+        - decision_date
+        - decided_date
+        - final_decision_date
+      appeal_status:
+        - appeal_status
+        - appeal
+        - appeal_decision
+      refusal_reason_text:
+        - refusal_reason
+        - refusal_reasons
+        - decision_comment
+        - comments
+  hla: &spatial_hub_hla
+    source_name: "Housing Land Supply - Scotland"
+    publisher: "Improvement Service"
+    dataset_id: housing_land_supply-is
+    metadata_uuid: spatialhub:housing_land_supply-is
+    authority_field_candidates:
+      - local_auth
+      - local_authority
+      - authority_name
+      - council_name
+      - council
+    field_mappings:
+      source_record:
+        - site_reference
+        - site_ref
+        - site_code
+        - reference
+        - key_name
+        - objectid
+      site_reference:
+        - site_reference
+        - site_ref
+        - site_code
+        - reference
+        - key_name
+      site_name:
+        - site_name
+        - name
+        - site
+      effectiveness_status:
+        - effectiveness_status
+        - effectiveness
+        - effective_status
+        - effective
+      programming_horizon:
+        - programming_horizon
+        - programming
+        - horizon
+        - phase
+      constraint_reasons:
+        - constraint_reasons
+        - constraints
+        - constraint_reason
+        - main_constraint
+      developer_name:
+        - developer_name
+        - developer
+        - builder
+      remaining_capacity:
+        - remaining_capacity
+        - remain_capacity
+        - remaining
+      completions:
+        - completions
+        - completion_total
+        - completed_units
+      tenure:
+        - tenure
+        - site_tenure
+      brownfield_indicator:
+        - brownfield_indicator
+        - brownfield
+        - previously_developed_land
   sources:
-    planning_history:
-      source_name: "Planning Applications: Official - Scotland"
-      publisher: "Improvement Service"
-      dataset_id: planning_applications_official-is
-      metadata_uuid: spatialhub:planning_applications_official-is
-      resource_name_contains: Polygons
-      authority_field_candidates:
-        - local_auth
-      field_mappings:
-        source_record:
-          - reference
-          - application_reference
-          - app_reference
-          - planning_ref
-          - objectid
-        planning_reference:
-          - reference
-          - application_reference
-          - app_reference
-          - planning_ref
-        application_type:
-          - application_type
-          - app_type
-          - development_type
-          - category
-        proposal_text:
-          - proposal
-          - proposal_text
-          - description
-          - development_description
-        application_status:
-          - status
-          - application_status
-          - state
-        decision:
-          - decision
-          - decision_status
-          - final_decision
-        lodged_date:
-          - lodged_date
-          - valid_date
-          - received_date
-          - application_date
-        decision_date:
-          - decision_date
-          - decided_date
-          - final_decision_date
-        appeal_status:
-          - appeal_status
-          - appeal
-          - appeal_decision
-        refusal_reason_text:
-          - refusal_reason
-          - refusal_reasons
-          - decision_comment
-          - comments
-    hla:
-      source_name: "Housing Land Supply - Scotland"
-      publisher: "Improvement Service"
-      dataset_id: housing_land_supply-is
-      metadata_uuid: spatialhub:housing_land_supply-is
-      authority_field_candidates:
-        - local_auth
-        - local_authority
-        - authority_name
-        - council_name
-        - council
-      field_mappings:
-        source_record:
-          - site_reference
-          - site_ref
-          - site_code
-          - reference
-          - key_name
-          - objectid
-        site_reference:
-          - site_reference
-          - site_ref
-          - site_code
-          - reference
-          - key_name
-        site_name:
-          - site_name
-          - name
-          - site
-        effectiveness_status:
-          - effectiveness_status
-          - effectiveness
-          - effective_status
-          - effective
-        programming_horizon:
-          - programming_horizon
-          - programming
-          - horizon
-          - phase
-        constraint_reasons:
-          - constraint_reasons
-          - constraints
-          - constraint_reason
-          - main_constraint
-        developer_name:
-          - developer_name
-          - developer
-          - builder
-        remaining_capacity:
-          - remaining_capacity
-          - remain_capacity
-          - remaining
-        completions:
-          - completions
-          - completion_total
-          - completed_units
-        tenure:
-          - tenure
-          - site_tenure
-        brownfield_indicator:
-          - brownfield_indicator
-          - brownfield
-          - previously_developed_land
+    planning_history: *spatial_hub_planning_history
+    hla: *spatial_hub_hla
 bgs:
   base_url: https://ogcapi.bgs.ac.uk
   collections:

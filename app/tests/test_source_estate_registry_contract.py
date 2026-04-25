@@ -44,6 +44,21 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         self.assertNotIn("eyJ0eXAiOiJKV1Qi", manifest_text)
         self.assertNotIn("Bother158631", manifest_text)
 
+    def test_core_spatial_hub_manifest_exposes_hla_source(self) -> None:
+        manifest_path = REPO_ROOT / "config" / "scotland_core_sources.yaml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+
+        self.assertEqual(manifest["spatial_hub"]["authkey_env"], "IMPROVEMENT_SERVICE_AUTHKEY")
+        self.assertIn("planning_history", manifest["spatial_hub"])
+        self.assertIn("hla", manifest["spatial_hub"])
+        self.assertIn("sources", manifest["spatial_hub"])
+        self.assertIn("planning_history", manifest["spatial_hub"]["sources"])
+        self.assertIn("hla", manifest["spatial_hub"]["sources"])
+        self.assertEqual(
+            manifest["spatial_hub"]["sources"]["hla"]["dataset_id"],
+            "housing_land_supply-is",
+        )
+
     def test_source_estate_schema_exposes_live_matrix(self) -> None:
         sql = (REPO_ROOT / "sql" / "043_phase_one_source_estate_registry.sql").read_text()
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import unittest
 
 
@@ -54,6 +55,30 @@ class SourceFreshnessContractTests(unittest.TestCase):
         self.assertIn("analytics.v_source_freshness_matrix", runner)
         self.assertIn("blocked_sources", runner)
         self.assertIn("unknown_sources", runner)
+
+    def test_raw_sql_migrations_escape_literal_percent_for_psycopg(self) -> None:
+        offenders: list[str] = []
+        for path in sorted((REPO_ROOT / "sql").glob("*.sql")):
+            sql = path.read_text()
+            index = 0
+            while index < len(sql):
+                if sql[index] != "%":
+                    index += 1
+                    continue
+                next_char = sql[index + 1 : index + 2]
+                if next_char in {"%", "s", "b", "t"}:
+                    index += 2
+                    continue
+                line_number = sql.count("\n", 0, index) + 1
+                line = sql.splitlines()[line_number - 1].strip()
+                offenders.append(f"{path.name}:{line_number}: {line}")
+                index += 1
+
+        self.assertEqual(
+            [],
+            offenders,
+            "Raw migration scripts run through psycopg; literal percent signs must be escaped as %%.",
+        )
 
 
 if __name__ == "__main__":

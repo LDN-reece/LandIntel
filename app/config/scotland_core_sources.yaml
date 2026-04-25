@@ -10,6 +10,12 @@ spatial_hub:
     authority_field_candidates:
       - local_auth
     field_mappings:
+      source_record_id:
+        - reference
+        - application_reference
+        - app_reference
+        - planning_ref
+        - objectid
       source_record:
         - reference
         - application_reference
@@ -57,6 +63,11 @@ spatial_hub:
         - refusal_reasons
         - decision_comment
         - comments
+      refusal_reason:
+        - refusal_reason
+        - refusal_reasons
+        - decision_comment
+        - comments
   hla: &spatial_hub_hla
     source_name: "Housing Land Supply - Scotland"
     publisher: "Improvement Service"
@@ -69,6 +80,13 @@ spatial_hub:
       - council_name
       - council
     field_mappings:
+      source_record_id:
+        - site_reference
+        - site_ref
+        - site_code
+        - reference
+        - key_name
+        - objectid
       source_record:
         - site_reference
         - site_ref
@@ -97,6 +115,11 @@ spatial_hub:
         - horizon
         - phase
       constraint_reasons:
+        - constraint_reasons
+        - constraints
+        - constraint_reason
+        - main_constraint
+      constraint_reason:
         - constraint_reasons
         - constraints
         - constraint_reason

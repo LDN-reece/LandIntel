@@ -56,6 +56,22 @@ class SourceFreshnessContractTests(unittest.TestCase):
         self.assertIn("blocked_sources", runner)
         self.assertIn("unknown_sources", runner)
 
+    def test_rerunnable_migration_preflight_drops_late_analytics_dependents(self) -> None:
+        preflight_path = REPO_ROOT / "sql" / "032z_rerunnable_analytics_dependency_drops.sql"
+        preflight = preflight_path.read_text()
+        migration_names = [path.name for path in sorted((REPO_ROOT / "sql").glob("*.sql"))]
+
+        self.assertIn("drop view if exists analytics.v_phase_one_source_estate_matrix;", preflight)
+        self.assertIn("drop view if exists analytics.v_live_source_coverage_freshness;", preflight)
+        self.assertLess(
+            migration_names.index(preflight_path.name),
+            migration_names.index("033_landintel_live_audit_views.sql"),
+        )
+        self.assertLess(
+            migration_names.index(preflight_path.name),
+            migration_names.index("042_source_freshness.sql"),
+        )
+
     def test_raw_sql_migrations_escape_literal_percent_for_psycopg(self) -> None:
         offenders: list[str] = []
         for path in sorted((REPO_ROOT / "sql").glob("*.sql")):

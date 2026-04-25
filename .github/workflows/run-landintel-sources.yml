@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - ".github/workflows/run-landintel-sources.yml"
+      - "app/config/phase_one_source_estate.yaml"
       - "app/config/**"
       - "app/docs/**"
       - "app/sql/**"

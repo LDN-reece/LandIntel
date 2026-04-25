@@ -299,7 +299,7 @@ select
         else 'unknown'
     end as source_freshness_status,
     case
-        when family.ranking_policy like 'deferred%' and coalesce(rollup.deferred_count, 0) > 0 then 'pass_deferred_monitored'
+        when family.ranking_policy like 'deferred%%' and coalesce(rollup.deferred_count, 0) > 0 then 'pass_deferred_monitored'
         when coalesce(rollup.has_current_ranking_source, false) then 'pass_current'
         when family.phase_one_role = 'context' and coalesce(rollup.current_count, 0) > 0 then 'pass_context_current'
         when family.phase_one_role = 'context' and coalesce(rollup.manual_snapshot_count, 0) > 0 then 'pass_context_manual_snapshot'

@@ -55,6 +55,7 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         workflow = (REPO_ROOT.parent / ".github" / "workflows" / "run-landintel-sources.yml").read_text()
 
         for command in (
+            "source-estate-maintenance",
             "register-source-estate",
             "probe-source-estate",
             "audit-source-estate",
@@ -63,6 +64,8 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         ):
             self.assertIn(command, workflow)
         self.assertIn("IMPROVEMENT_SERVICE_AUTHKEY", workflow)
+        self.assertIn("schedule:", workflow)
+        self.assertIn("app/config/phase_one_source_estate.yaml", workflow)
 
 
 if __name__ == "__main__":

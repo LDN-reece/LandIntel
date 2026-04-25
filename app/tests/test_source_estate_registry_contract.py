@@ -64,7 +64,11 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         ):
             self.assertIn(command, workflow)
         self.assertIn("IMPROVEMENT_SERVICE_AUTHKEY", workflow)
-        self.assertIn("schedule:", workflow)
+        self.assertIn(
+            "Automated schedules are intentionally paused during incremental reconcile burn-in.",
+            workflow,
+        )
+        self.assertNotIn("schedule:", workflow)
         self.assertIn("app/config/phase_one_source_estate.yaml", workflow)
         self.assertIn("src/source_policy_discovery.py", workflow)
         self.assertIn("discover-ldp-geonetwork", workflow)

@@ -132,6 +132,8 @@ class IncrementalReconcileContractTests(unittest.TestCase):
             "- refresh-affected-sites",
             "- weekly-reconcile-maintenance",
             "- full-reconcile-canonical-sites",
+            "- publish-planning-links",
+            "- full-ingest-planning-history",
         ):
             self.assertIn(command_name, WORKFLOW)
 
@@ -165,6 +167,17 @@ class IncrementalReconcileContractTests(unittest.TestCase):
             'python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py',
         ):
             self.assertIn(snippet, WORKFLOW)
+
+    def test_planning_history_command_does_not_run_full_wfs_ingest(self) -> None:
+        planning_branch = WORKFLOW.split('elif [ "$SELECTED_COMMAND" = "ingest-planning-history" ]; then', 1)[1]
+        planning_branch = planning_branch.split('elif [ "$SELECTED_COMMAND" = "full-ingest-planning-history" ]; then', 1)[0]
+
+        self.assertIn("Skipping full SpatialHub planning ingest", planning_branch)
+        self.assertIn("reconcile-catchup-scan --source-family planning", planning_branch)
+        self.assertNotIn("python -m src.source_phase_runner ingest-planning-history", planning_branch)
+        self.assertIn('elif [ "$SELECTED_COMMAND" = "full-ingest-planning-history" ]; then', WORKFLOW)
+        self.assertIn("Full SpatialHub planning ingest explicitly requested", WORKFLOW)
+        self.assertIn("full-refresh-core-sources is disabled during incremental source burn-in", WORKFLOW)
 
 
 if __name__ == "__main__":

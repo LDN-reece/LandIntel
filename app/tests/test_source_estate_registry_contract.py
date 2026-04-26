@@ -112,6 +112,28 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden_snippet, workflow)
 
+    def test_legacy_lean_runner_is_retired(self) -> None:
+        runner = (REPO_ROOT / "src" / "lean_ops.py").read_text()
+
+        self.assertIn("Retired lean operations entrypoint", runner)
+        self.assertIn("RETIREMENT_MESSAGE", runner)
+        self.assertIn("No Supabase writes are available from this entrypoint.", runner)
+        self.assertNotIn("LandIntelPipeline", runner)
+        self.assertNotIn("cleanup_operational_footprint", runner)
+        self.assertNotIn("ingest_ros_cadastral_lean", runner)
+        self.assertNotIn("full_refresh_lean", runner)
+
+    def test_legacy_lean_runbooks_are_retired(self) -> None:
+        root_runbook = (REPO_ROOT.parent / "GITHUB_ACTIONS_RUNBOOK.md").read_text()
+        lean_runbook = (REPO_ROOT / "docs" / "github-actions-lean-runbook.md").read_text()
+
+        for document in (root_runbook, lean_runbook):
+            self.assertIn("Run LandIntel Lean", document)
+            self.assertIn("retired", document.lower())
+            self.assertIn("Run LandIntel Sources", document)
+        self.assertIn("Old full-refresh, lean parcel, and local execution paths are intentionally blocked.", root_runbook)
+        self.assertIn("Do not use it for source orchestration", lean_runbook)
+
     def test_policy_discovery_uses_geonetwork_and_registers_topography(self) -> None:
         runner = (REPO_ROOT / "src" / "source_policy_discovery.py").read_text()
 

@@ -1,0 +1,163 @@
+{% set source_rows = brief.due_diligence.sources or [] %}
+{% set source_families = detail.summary.source_families_present or [] %}
+{% set parcel_rows = brief.due_diligence.parcel_rows or [] %}
+{% set geometry = brief.due_diligence.geometry_diagnostics or {} %}
+{% set title = brief.due_diligence.title or {} %}
+{% set planning_ready = brief.due_diligence.planning_records or brief.due_diligence.hla_records or brief.due_diligence.ldp_records or brief.due_diligence.vdl_records %}
+{% set constraint_ready = brief.due_diligence.flood_records or brief.due_diligence.constraint_group_summaries or brief.due_diligence.constraint_friction_facts %}
+{% set geometry_ready = geometry.original_area_acres or geometry.component_count or parcel_rows %}
+{% set title_ready = title.title_reviewed_flag or title.title_numbers or title.title_state %}
+{% set last_change = detail.change_log[0] if detail.change_log else {} %}
+
+<section class="map-shell">
+  <div class="map-shell-header">
+    <div>
+      <p class="section-kicker">Site intelligence</p>
+      <h2>Observation surface</h2>
+    </div>
+    <p class="map-shell-copy">Only evidenced operational state is surfaced here.</p>
+  </div>
+
+  <div class="map-surface">
+    <div class="map-layer-rail" data-layer-toggle-group="site-intelligence">
+      <button type="button" class="layer-toggle" data-layer-target="boundary" data-layer-enabled="{{ 'true' if geometry_ready else 'false' }}" {% if not geometry_ready %}disabled{% endif %}>Boundary</button>
+      <button type="button" class="layer-toggle" data-layer-target="planning" data-layer-enabled="{{ 'true' if planning_ready else 'false' }}" {% if not planning_ready %}disabled{% endif %}>Planning</button>
+      <button type="button" class="layer-toggle" data-layer-target="constraints" data-layer-enabled="{{ 'true' if constraint_ready else 'false' }}" {% if not constraint_ready %}disabled{% endif %}>Constraints</button>
+      <button type="button" class="layer-toggle" data-layer-target="title" data-layer-enabled="{{ 'true' if title_ready else 'false' }}" {% if not title_ready %}disabled{% endif %}>Title</button>
+      <button type="button" class="layer-toggle" data-layer-target="coverage" data-layer-enabled="{{ 'true' if source_rows else 'false' }}" {% if not source_rows %}disabled{% endif %}>Coverage</button>
+    </div>
+
+    <div class="map-observation-stage">
+      <div class="map-stage-readout">
+        <p class="stage-eyebrow">Operational reading</p>
+        <h3>{{ brief.header.site_name }}</h3>
+        <p>{{ brief.header.authority_name or "Unknown authority" }}</p>
+      </div>
+
+      <div class="stage-module-grid">
+        <article class="stage-module" data-layer-group="site-intelligence" data-layer-panel="boundary">
+          <span class="mini-label">Boundary layer</span>
+          <strong>{% if geometry_ready %}Core geometry held{% else %}Not yet evidenced{% endif %}</strong>
+          <p>
+            {% if geometry_ready %}
+            Boundary and parcel geometry exist in the core record, but no frontend-safe overlay is rendered in this phase.
+            {% else %}
+            No geometry-ready boundary evidence has surfaced into this interface yet.
+            {% endif %}
+          </p>
+        </article>
+
+        <article class="stage-module" data-layer-group="site-intelligence" data-layer-panel="planning">
+          <span class="mini-label">Planning layer</span>
+          <strong>{% if planning_ready %}Source-backed{% else %}Awaiting source coverage{% endif %}</strong>
+          <p>
+            {% if planning_ready %}
+            Planning, policy, or brownfield context is linked and available for due diligence review.
+            {% else %}
+            Planning context has not yet surfaced into the current evidence stack.
+            {% endif %}
+          </p>
+        </article>
+
+        <article class="stage-module" data-layer-group="site-intelligence" data-layer-panel="constraints">
+          <span class="mini-label">Constraint layer</span>
+          <strong>{% if constraint_ready %}Source-backed{% else %}Awaiting source coverage{% endif %}</strong>
+          <p>
+            {% if constraint_ready %}
+            Constraint and friction signals are linked for analyst review.
+            {% else %}
+            Constraint coverage is not yet sufficiently surfaced for this view.
+            {% endif %}
+          </p>
+        </article>
+
+        <article class="stage-module" data-layer-group="site-intelligence" data-layer-panel="title">
+          <span class="mini-label">Title layer</span>
+          <strong>{{ title.title_state or "Title review required" }}</strong>
+          <p>
+            {% if title.title_reviewed_flag %}
+            Title has been reviewed and the control posture is backed by review evidence.
+            {% else %}
+            Title review is still required before legal certainty replaces commercial inference.
+            {% endif %}
+          </p>
+        </article>
+
+        <article class="stage-module" data-layer-group="site-intelligence" data-layer-panel="coverage">
+          <span class="mini-label">Coverage posture</span>
+          <strong>{% if source_families %}{{ source_families|length }} source families live{% else %}Awaiting source coverage{% endif %}</strong>
+          <p>
+            {% if source_rows %}
+            {{ source_rows|length }} linked evidence stream(s) are currently surfaced into the review workspace.
+            {% else %}
+            No linked evidence source is currently surfaced into this view.
+            {% endif %}
+          </p>
+        </article>
+      </div>
+
+      <p class="stage-footnote">
+        This surface is intentionally non-evidentiary in its background treatment. It does not infer boundaries, imagery, or parcel outlines that are not explicitly surfaced in the current frontend payload.
+      </p>
+    </div>
+
+    <aside class="map-evidence-stack">
+      <article class="availability-module">
+        <span class="mini-label">Source coverage</span>
+        <strong>{% if source_families %}{{ source_families|join(", ") }}{% else %}Awaiting source coverage{% endif %}</strong>
+        <p>{% if source_rows %}{{ source_rows|length }} evidence link group(s) are live.{% else %}No source groups are surfaced yet.{% endif %}</p>
+      </article>
+
+      <article class="availability-module">
+        <span class="mini-label">Geometry posture</span>
+        <strong>{{ brief.due_diligence.assessment.geometry_quality or "Not yet evidenced" }}</strong>
+        <p>
+          {% if geometry.component_count %}
+          {{ geometry.component_count }} component(s) held in the geometry record.
+          {% elif parcel_rows %}
+          Parcel linkage exists, but overlay-ready geometry is not exposed here.
+          {% else %}
+          Not yet evidenced.
+          {% endif %}
+        </p>
+      </article>
+
+      <article class="availability-module">
+        <span class="mini-label">Control posture</span>
+        <strong>{{ title.ownership_control_fact_label or brief.due_diligence.assessment.ownership_control_fact_label or "Title review required" }}</strong>
+        <p>
+          {% if title.title_numbers %}
+          Title references linked: {{ title.title_numbers|join(", ") }}.
+          {% else %}
+          Title review required.
+          {% endif %}
+        </p>
+      </article>
+
+      <article class="availability-module">
+        <span class="mini-label">Latest trigger</span>
+        <strong>{{ last_change.source_family or "system" }}</strong>
+        <p>{{ last_change.event_summary or "Awaiting source coverage" }}</p>
+      </article>
+    </aside>
+
+    <div class="map-metadata-plate">
+      <div>
+        <span class="mini-label">Area</span>
+        <strong>{{ "%.2f"|format(brief.header.area_acres or 0) }} acres</strong>
+      </div>
+      <div>
+        <span class="mini-label">Parcels</span>
+        <strong>{{ parcel_rows|length }}</strong>
+      </div>
+      <div>
+        <span class="mini-label">Title state</span>
+        <strong>{{ title.title_state or "Title review required" }}</strong>
+      </div>
+      <div>
+        <span class="mini-label">Geometry quality</span>
+        <strong>{{ brief.due_diligence.assessment.geometry_quality or "Not yet evidenced" }}</strong>
+      </div>
+    </div>
+  </div>
+</section>

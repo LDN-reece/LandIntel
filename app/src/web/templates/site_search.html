@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+
+{% block title %}Opportunity Queue | LandIntel{% endblock %}
+{% block body_class %}app-body queue-body{% endblock %}
+
+{% block content %}
+{% set queue_order = ["New Candidates", "Needs Review", "Strong Candidates", "Watchlist / Resurfaced"] %}
+
+<section class="queue-page">
+  <header class="queue-page-header">
+    <div class="queue-page-title">
+      <p class="page-kicker">Phase One queue</p>
+      <h1>Operational queue dashboard</h1>
+      <p class="page-subtitle">
+        Live candidate review surface for LandIntel Phase One.
+      </p>
+    </div>
+
+    <dl class="queue-page-metrics" aria-label="Queue totals">
+      <div>
+        <dt>Visible sites</dt>
+        <dd>{{ results|length }}</dd>
+      </div>
+      <div>
+        <dt>Strong candidates</dt>
+        <dd>{{ grouped_results.get("Strong Candidates", [])|length }}</dd>
+      </div>
+      <div>
+        <dt>Needs review</dt>
+        <dd>{{ grouped_results.get("Needs Review", [])|length }}</dd>
+      </div>
+    </dl>
+  </header>
+
+  <form method="get" action="/" class="queue-filter-rail">
+    <label class="search-field">
+      <span class="field-label">Search</span>
+      <input
+        type="text"
+        name="q"
+        value="{{ filters.query or '' }}"
+        placeholder="Site, code, authority, change trigger"
+      />
+    </label>
+
+    <label>
+      <span class="field-label">Queue</span>
+      <select name="queue_name">
+        <option value="">All queues</option>
+        {% for value in options.queues %}
+        <option value="{{ value }}" {% if filters.queue_name == value %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>
+      <span class="field-label">Authority</span>
+      <select name="authority_name">
+        <option value="">All authorities</option>
+        {% for authority in options.authorities %}
+        <option value="{{ authority }}" {% if filters.authority_name == authority %}selected{% endif %}>{{ authority }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>
+      <span class="field-label">Review status</span>
+      <select name="review_status">
+        <option value="">Any status</option>
+        {% for value in options.review_statuses %}
+        <option value="{{ value }}" {% if filters.review_status == value %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>
+      <span class="field-label">Resurfaced</span>
+      <select name="resurfaced_only">
+        <option value="">All</option>
+        <option value="true" {% if filters.resurfaced_only is sameas true %}selected{% endif %}>Yes</option>
+        <option value="false" {% if filters.resurfaced_only is sameas false %}selected{% endif %}>No</option>
+      </select>
+    </label>
+
+    <div class="filter-actions">
+      <button type="submit" class="button-primary">Apply</button>
+      <a href="/" class="button-quiet">Reset</a>
+    </div>
+
+    <details class="filter-drawer" data-persist-id="queue-advanced-filters">
+      <summary>Advanced filters</summary>
+      <div class="advanced-filter-grid">
+        <label>
+          <span class="field-label">Source route</span>
+          <select name="source_route">
+            <option value="">Any</option>
+            {% for value in options.source_routes %}
+            <option value="{{ value }}" {% if filters.source_route == value %}selected{% endif %}>{{ value.replace('-', ' ') }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>
+          <span class="field-label">Size</span>
+          <select name="size_band">
+            <option value="">Any</option>
+            {% for value in options.size_bands %}
+            <option value="{{ value }}" {% if filters.size_band == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>
+          <span class="field-label">Planning context</span>
+          <select name="planning_context_band">
+            <option value="">Any</option>
+            {% for value in options.planning_context_bands %}
+            <option value="{{ value }}" {% if filters.planning_context_band == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>
+          <span class="field-label">Settlement position</span>
+          <select name="settlement_position">
+            <option value="">Any</option>
+            {% for value in options.settlement_positions %}
+            <option value="{{ value }}" {% if filters.settlement_position == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>
+          <span class="field-label">Location</span>
+          <select name="location_band">
+            <option value="">Any</option>
+            {% for value in options.location_bands %}
+            <option value="{{ value }}" {% if filters.location_band == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>
+          <span class="field-label">Constraints</span>
+          <select name="constraint_severity">
+            <option value="">Any</option>
+            {% for value in options.constraint_severities %}
+            <option value="{{ value }}" {% if filters.constraint_severity == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>
+          <span class="field-label">Access</span>
+          <select name="access_strength">
+            <option value="">Any</option>
+            {% for value in options.access_strengths %}
+            <option value="{{ value }}" {% if filters.access_strength == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>
+          <span class="field-label">Geometry</span>
+          <select name="geometry_quality">
+            <option value="">Any</option>
+            {% for value in options.geometry_qualities %}
+            <option value="{{ value }}" {% if filters.geometry_quality == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>
+          <span class="field-label">Ownership / control</span>
+          <select name="ownership_control_state">
+            <option value="">Any</option>
+            {% for value in options.ownership_control_states %}
+            <option value="{{ value }}" {% if filters.ownership_control_state == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>
+          <span class="field-label">Title state</span>
+          <select name="title_state">
+            <option value="">Any</option>
+            {% for value in options.title_states %}
+            <option value="{{ value }}" {% if filters.title_state == value %}selected{% endif %}>{{ value.replace('_', ' ') }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+    </details>
+  </form>
+
+  <section class="queue-overview-strip" aria-label="Queue overview">
+    {% for queue_name in queue_order %}
+    {% set queue_rows = grouped_results.get(queue_name, []) %}
+    <article class="queue-overview-item">
+      <p class="overview-label">{{ queue_name }}</p>
+      <p class="overview-value">{{ queue_rows|length }}</p>
+      <p class="overview-copy">
+        {% if queue_name == "New Candidates" %}
+        Freshly surfaced opportunities awaiting first pass.
+        {% elif queue_name == "Needs Review" %}
+        Analyst attention required before escalation or rejection.
+        {% elif queue_name == "Strong Candidates" %}
+        Highest-conviction live candidates in the current queue.
+        {% else %}
+        Changed, resurfaced, or parked opportunities worth tracking.
+        {% endif %}
+      </p>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="queue-ledger-surface">
+    {% if not results %}
+    <div class="ledger-empty-state">
+      <p class="empty-title">No live opportunities match the current filter set.</p>
+      <p class="empty-copy">Reset the filter rail or widen the authority and status scope.</p>
+    </div>
+    {% endif %}
+
+    {% for queue_name in queue_order %}
+    {% set queue_rows = grouped_results.get(queue_name, []) %}
+    <section class="queue-ledger-section">
+      <header class="queue-ledger-header">
+        <div>
+          <p class="section-kicker">Queue</p>
+          <h2>{{ queue_name }}</h2>
+          <p class="section-copy">
+            {% if queue_name == "New Candidates" %}
+            Fresh opportunities surfaced by the live Phase One ranking and review surface.
+            {% elif queue_name == "Needs Review" %}
+            Workbench queue for analyst intervention, evidence gathering, or title action.
+            {% elif queue_name == "Strong Candidates" %}
+            Sites with the clearest current route to control-led commercial pursuit.
+            {% else %}
+            Sites that moved, resurfaced, stalled, or remain relevant without current progression.
+            {% endif %}
+          </p>
+        </div>
+
+        <div class="queue-ledger-count">
+          <span class="count-value">{{ queue_rows|length }}</span>
+          <span class="count-label">site(s)</span>
+        </div>
+      </header>
+
+      {% if not queue_rows %}
+      <div class="ledger-empty-state compact">
+        <p class="empty-title">No sites are currently sitting in this queue.</p>
+        <p class="empty-copy">The queue remains visible so the operating picture stays complete.</p>
+      </div>
+      {% endif %}
+
+      {% for site in queue_rows %}
+      <article class="queue-ledger-row">
+        <div class="queue-ledger-main">
+          <div class="row-identity">
+            <p class="row-kicker">{{ site.site_code }}{% if site.authority_name %} · {{ site.authority_name }}{% endif %}</p>
+            <h3><a href="/sites/{{ site.canonical_site_id }}">{{ site.site_name }}</a></h3>
+            <p class="row-meta">
+              {{ "%.2f"|format(site.area_acres or 0) }} acres
+              <span class="row-meta-divider"></span>
+              {{ site.source_route.replace('-', ' ') }}
+              <span class="row-meta-divider"></span>
+              Queue position {{ site.queue_position }}
+            </p>
+          </div>
+
+          <div class="row-narrative">
+            <div class="narrative-block">
+              <span class="mini-label">Why surfaced</span>
+              <p>{{ site.why_it_surfaced or "Not yet evidenced" }}</p>
+            </div>
+
+            <dl class="narrative-pair">
+              <div>
+                <dt>Key positive</dt>
+                <dd>{{ site.good_headline or "Not yet evidenced" }}</dd>
+              </div>
+              <div>
+                <dt>Key warning</dt>
+                <dd>{{ site.bad_headline or site.ugly_headline or "Not yet evidenced" }}</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+
+        <div class="queue-ledger-side">
+          <div class="row-pill-stack">
+            <span class="status-pill tier">{{ site.overall_tier or "Unranked" }}</span>
+            <span class="status-pill quiet">{{ site.review_status or "New candidate" }}</span>
+          </div>
+
+          <dl class="row-fact-list">
+            <div>
+              <dt>Rank</dt>
+              <dd>
+                {% if site.overall_rank_score is not none %}
+                {{ "%.1f"|format(site.overall_rank_score) }}
+                {% else %}
+                Not yet evidenced
+                {% endif %}
+              </dd>
+            </div>
+            <div>
+              <dt>Last trigger</dt>
+              <dd>{{ site.last_change_summary or "Awaiting source coverage" }}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="queue-ledger-strip" aria-label="Signal strip">
+          <span><strong>Size</strong> {{ site.size_rank or "unknown" }}</span>
+          <span><strong>Planning</strong> {{ site.planning_context_band or "unknown" }}</span>
+          <span><strong>Location</strong> {{ site.location_band or "unknown" }}</span>
+          <span><strong>Constraints</strong> {{ site.constraint_severity or "unknown" }}</span>
+          <span><strong>Access</strong> {{ site.access_strength or "unknown" }}</span>
+          <span><strong>Geometry</strong> {{ site.geometry_quality or "unknown" }}</span>
+          <span><strong>Control</strong> {{ site.ownership_control_state or "unknown" }}</span>
+          <span><strong>Title</strong> {{ site.title_state or "commercial_inference" }}</span>
+        </div>
+      </article>
+      {% endfor %}
+    </section>
+    {% endfor %}
+  </section>
+</section>
+{% endblock %}

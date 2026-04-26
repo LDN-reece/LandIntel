@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}LandIntel Phase One{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='site-review.css') }}" />
+  </head>
+  <body class="{% block body_class %}app-body{% endblock %}">
+    <div class="app-frame">
+      <header class="frame-header">
+        <a href="/" class="brand-link" aria-label="LandIntel home">
+          <span class="brand-monogram">LDN</span>
+          <span class="brand-copy">
+            <span class="brand-eyebrow">Land Development Network</span>
+            <span class="brand-title">LandIntel Phase One</span>
+          </span>
+        </a>
+
+        <div class="frame-status" aria-label="Product posture">
+          <span class="frame-status-item">Internal intelligence</span>
+          <span class="frame-status-divider"></span>
+          <span class="frame-status-item">Human judgment preserved</span>
+        </div>
+      </header>
+
+      <main class="page-shell">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+
+    <script src="{{ url_for('static', path='site-review.js') }}" defer></script>
+    {% block page_scripts %}{% endblock %}
+  </body>
+</html>

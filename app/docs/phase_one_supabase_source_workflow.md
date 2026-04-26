@@ -4,9 +4,23 @@ This is the controlled GitHub Actions runbook for pushing the Phase One source e
 
 ## Operating Rule
 
-Do not manually patch the live database. All schema, source registration, discovery, ingestion, reconciliation, and audit work must run through the repository and GitHub Actions.
+Do not manually patch the live database. Do not run, store, or load source work locally. All schema, source registration, discovery, ingestion, reconciliation, refresh, and audit work must run through the repository and GitHub Actions.
+
+GitHub is the source of truth. Supabase is the orchestration and storage layer.
 
 Phase One is not complete until live Supabase proves populated source rows, linked canonical-site rows, evidence rows, signals, review-output rows, and change events.
+
+## Active and Retired Workflows
+
+Active workflow:
+
+- `Run LandIntel Sources`
+
+Retired workflow:
+
+- `Run LandIntel Lean (Retired)`
+
+The retired lean workflow is intentionally inert. It loads no Supabase secrets, performs no Supabase writes, and exists only to stop accidental use of the old lean source path.
 
 ## Required GitHub Secrets
 
@@ -50,11 +64,28 @@ Run in this order:
 - `publish-planning-links` publishes existing live planning records into the canonical-site reconcile queue and refreshes affected sites without running the long national SpatialHub WFS pull.
 - `ingest-planning-history` is a compatibility alias for `publish-planning-links` during burn-in. It must not run a full planning pull by default.
 - `full-ingest-planning-history` is the only command that runs the full SpatialHub planning WFS pull and should be used only when a deliberate full reload is needed.
-- `ingest-hla` loads Housing Land Supply/HLA records, then queues and refreshes affected canonical sites.
+- `ingest-hla` loads Housing Land Supply/HLA records as a supporting future-context and stalled-site evidence layer, then queues and refreshes affected canonical sites.
 - `process-reconcile-queue` resolves source records into canonical-site links.
 - `refresh-affected-sites` recalculates affected site outputs.
 - `ingest-bgs` loads BGS ground-context records against canonical sites.
 - Final audits prove live Supabase state after data movement.
+
+## HLA Positioning
+
+HLA is not the engine. It is one evidence source inside the wider site sourcing automation engine.
+
+Use HLA to:
+
+- identify stalled or delayed future supply
+- corroborate planning/future-context evidence
+- detect likely control, builder activity, or availability risk
+- explain why an opportunity may already be known or partially de-risked
+
+Do not use HLA to:
+
+- make HLA presence the sole source route unless HLA genuinely surfaced the site
+- promote a site solely because it appears in HLA
+- let HLA dominate parcel, planning movement, geometry, access, settlement, location, or constraint evidence
 
 ## LDP and Settlement Policy
 
@@ -85,7 +116,7 @@ After promotion:
 
 ## Topography
 
-Topography is now part of the source estate.
+Topography is part of the source estate.
 
 Primary baseline:
 
@@ -96,6 +127,22 @@ Higher-resolution override:
 - Scottish Remote Sensing LiDAR where coverage exists.
 
 All derived slope/terrain outputs must be labelled `indicative_only`. They may affect geometry/constraint warnings only. They must not create appraisal, pricing, spread, or viability conclusions.
+
+## Blocked Legacy Paths
+
+The active workflow must not expose:
+
+- `full-reconcile-canonical-sites`
+- `full-refresh-core-sources`
+
+The retired lean workflow must not expose:
+
+- `audit-operational-footprint`
+- `cleanup-operational-footprint`
+- `ingest-ros-cadastral-lean`
+- `full-refresh-lean`
+
+Contract tests enforce these boundaries.
 
 ## Completion Gate
 

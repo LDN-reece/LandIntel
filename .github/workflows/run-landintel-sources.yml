@@ -31,7 +31,9 @@ on:
           - audit-source-estate
           - discover-ldp-sources
           - discover-settlement-sources
+          - publish-planning-links
           - ingest-planning-history
+          - full-ingest-planning-history
           - ingest-hla
           - process-reconcile-queue
           - reconcile-catchup-scan
@@ -220,8 +222,21 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "full-reconcile-canonical-sites" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_phase_runner reconcile-canonical-sites
+          elif [ "$SELECTED_COMMAND" = "publish-planning-links" ]; then
+            python -m src.source_phase_runner run-migrations
+            echo "Publishing existing planning records into the canonical-site reconcile queue. No full SpatialHub planning pull is being run."
+            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning
+            python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000
+            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
           elif [ "$SELECTED_COMMAND" = "ingest-planning-history" ]; then
             python -m src.source_phase_runner run-migrations
+            echo "Planning applications are already populated. Skipping full SpatialHub planning ingest and publishing existing records instead."
+            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning
+            python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000
+            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
+          elif [ "$SELECTED_COMMAND" = "full-ingest-planning-history" ]; then
+            python -m src.source_phase_runner run-migrations
+            echo "Full SpatialHub planning ingest explicitly requested. This is the only planning command allowed to run the long WFS pull."
             python -m src.source_phase_runner ingest-planning-history
             python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning
             python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000
@@ -235,6 +250,9 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "ingest-bgs" ]; then
             python -m src.source_phase_runner run-migrations
             run_with_retries 3 30 python -m src.source_phase_runner ingest-bgs
+          elif [ "$SELECTED_COMMAND" = "full-refresh-core-sources" ]; then
+            echo "full-refresh-core-sources is disabled during incremental source burn-in because it would run the full planning WFS ingest. Run source-estate-maintenance, publish-planning-links, ingest-hla, and ingest-bgs as separate controlled commands."
+            exit 1
           else
             python -m src.source_phase_runner run-migrations
             python -m src.source_phase_runner "$SELECTED_COMMAND"

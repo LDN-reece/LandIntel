@@ -10,12 +10,20 @@ from __future__ import annotations
 
 from typing import Any
 import traceback
+import xml.etree.ElementTree as ET
 
 import geopandas as gpd
 
 from config.settings import Settings, get_settings
 from src.logging_config import configure_logging
-from src.source_expansion_runner import SourceExpansionRunner, build_parser
+from src.source_expansion_runner import (
+    SourceExpansionRunner,
+    _dedupe,
+    _feature_type_matches,
+    _tag_name,
+    _workspace_from_url,
+    build_parser,
+)
 
 
 class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
@@ -24,6 +32,39 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
     def __init__(self, settings: Settings, logger: Any) -> None:
         super().__init__(settings, logger)
         self.logger = logger.getChild("source_expansion_paged_wfs")
+
+    def _wfs_feature_types(self, source: dict[str, Any]) -> list[str]:
+        endpoint_url = str(source["endpoint_url"])
+        response = self.client.get(
+            endpoint_url,
+            params={"service": "WFS", "request": "GetCapabilities", **self._auth_params(source)},
+        )
+        response.raise_for_status()
+        root = ET.fromstring(response.text.encode("utf-8"))
+        names: list[str] = []
+        for node in root.iter():
+            if not _tag_name(node.tag).lower().endswith("featuretype"):
+                continue
+            for child in list(node):
+                if _tag_name(child.tag).lower() == "name" and child.text and child.text.strip():
+                    names.append(child.text.strip())
+
+        names = _dedupe(names)
+        hints = self._layer_hints(source)
+        matched = [name for name in names if any(_feature_type_matches(name, hint) for hint in hints)]
+        if matched:
+            return _dedupe(matched)
+
+        if source.get("source_family") == "vdl" and names:
+            # VDL's old static export used pub_vdlPolygon, but the live WFS can
+            # rename the advertised type. Capabilities is the authority here.
+            return names
+
+        if names and not hints:
+            return names
+
+        workspace = _workspace_from_url(endpoint_url)
+        return [f"{workspace}:{hint}" if workspace else hint for hint in hints]
 
     def _fetch_wfs_source_frames(self, source: dict[str, Any]) -> list[gpd.GeoDataFrame]:
         endpoint_url = str(source["endpoint_url"])

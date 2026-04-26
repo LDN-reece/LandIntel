@@ -38,6 +38,83 @@ create table if not exists landintel.vdl_site_records (
     updated_at timestamptz not null default now()
 );
 
+create table if not exists landintel.source_expansion_events (
+    id uuid primary key default gen_random_uuid(),
+    command_name text not null,
+    source_key text,
+    source_family text not null,
+    status text not null,
+    raw_rows bigint not null default 0,
+    linked_rows bigint not null default 0,
+    measured_rows bigint not null default 0,
+    evidence_rows bigint not null default 0,
+    signal_rows bigint not null default 0,
+    change_event_rows bigint not null default 0,
+    summary text,
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now()
+);
+
+create table if not exists landintel.site_signals (
+    id uuid primary key default gen_random_uuid(),
+    canonical_site_id uuid references landintel.canonical_sites(id) on delete cascade,
+    signal_family text not null,
+    signal_name text not null,
+    signal_value_text text,
+    signal_value_numeric numeric,
+    confidence numeric,
+    source_family text,
+    source_record_id text,
+    fact_label text not null default 'evidence_fact',
+    evidence_metadata jsonb not null default '{}'::jsonb,
+    metadata jsonb not null default '{}'::jsonb,
+    current_flag boolean not null default true,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists landintel.site_change_events (
+    id uuid primary key default gen_random_uuid(),
+    canonical_site_id uuid references landintel.canonical_sites(id) on delete cascade,
+    source_family text,
+    source_record_id text,
+    change_type text not null,
+    change_summary text not null,
+    previous_signature text,
+    current_signature text,
+    triggered_refresh boolean not null default false,
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now()
+);
+
+alter table landintel.site_signals
+    add column if not exists canonical_site_id uuid references landintel.canonical_sites(id) on delete cascade,
+    add column if not exists signal_family text,
+    add column if not exists signal_name text,
+    add column if not exists signal_value_text text,
+    add column if not exists signal_value_numeric numeric,
+    add column if not exists confidence numeric,
+    add column if not exists source_family text,
+    add column if not exists source_record_id text,
+    add column if not exists fact_label text not null default 'evidence_fact',
+    add column if not exists evidence_metadata jsonb not null default '{}'::jsonb,
+    add column if not exists metadata jsonb not null default '{}'::jsonb,
+    add column if not exists current_flag boolean not null default true,
+    add column if not exists created_at timestamptz not null default now(),
+    add column if not exists updated_at timestamptz not null default now();
+
+alter table landintel.site_change_events
+    add column if not exists canonical_site_id uuid references landintel.canonical_sites(id) on delete cascade,
+    add column if not exists source_family text,
+    add column if not exists source_record_id text,
+    add column if not exists change_type text,
+    add column if not exists change_summary text,
+    add column if not exists previous_signature text,
+    add column if not exists current_signature text,
+    add column if not exists triggered_refresh boolean not null default false,
+    add column if not exists metadata jsonb not null default '{}'::jsonb,
+    add column if not exists created_at timestamptz not null default now();
+
 create unique index if not exists ela_site_records_source_uidx
     on landintel.ela_site_records (source_family, source_record_id);
 
@@ -58,89 +135,12 @@ create index if not exists ela_site_records_geometry_gix
 create index if not exists vdl_site_records_geometry_gix
     on landintel.vdl_site_records using gist (geometry);
 
-create table if not exists landintel.source_expansion_events (
-    id uuid primary key default gen_random_uuid(),
-    command_name text not null,
-    source_key text,
-    source_family text not null,
-    status text not null,
-    raw_rows bigint not null default 0,
-    linked_rows bigint not null default 0,
-    measured_rows bigint not null default 0,
-    evidence_rows bigint not null default 0,
-    signal_rows bigint not null default 0,
-    change_event_rows bigint not null default 0,
-    summary text,
-    metadata jsonb not null default '{}'::jsonb,
-    created_at timestamptz not null default now()
-);
-
 create index if not exists source_expansion_events_family_idx
     on landintel.source_expansion_events (source_family, created_at desc);
-
-create table if not exists landintel.site_signals (
-    id uuid primary key default gen_random_uuid(),
-    canonical_site_id uuid references landintel.canonical_sites(id) on delete cascade,
-    signal_family text not null,
-    signal_name text not null,
-    signal_value_text text,
-    signal_value_numeric numeric,
-    confidence numeric,
-    source_family text,
-    source_record_id text,
-    fact_label text not null default 'evidence_fact',
-    evidence_metadata jsonb not null default '{}'::jsonb,
-    metadata jsonb not null default '{}'::jsonb,
-    current_flag boolean not null default true,
-    created_at timestamptz not null default now(),
-    updated_at timestamptz not null default now()
-);
-
-alter table landintel.site_signals
-    add column if not exists canonical_site_id uuid references landintel.canonical_sites(id) on delete cascade,
-    add column if not exists signal_family text,
-    add column if not exists signal_name text,
-    add column if not exists signal_value_text text,
-    add column if not exists signal_value_numeric numeric,
-    add column if not exists confidence numeric,
-    add column if not exists source_family text,
-    add column if not exists source_record_id text,
-    add column if not exists fact_label text not null default 'evidence_fact',
-    add column if not exists evidence_metadata jsonb not null default '{}'::jsonb,
-    add column if not exists metadata jsonb not null default '{}'::jsonb,
-    add column if not exists current_flag boolean not null default true,
-    add column if not exists created_at timestamptz not null default now(),
-    add column if not exists updated_at timestamptz not null default now();
 
 create index if not exists site_signals_site_family_idx
     on landintel.site_signals (canonical_site_id, signal_family, signal_name)
     where canonical_site_id is not null and current_flag = true;
-
-create table if not exists landintel.site_change_events (
-    id uuid primary key default gen_random_uuid(),
-    canonical_site_id uuid references landintel.canonical_sites(id) on delete cascade,
-    source_family text,
-    source_record_id text,
-    change_type text not null,
-    change_summary text not null,
-    previous_signature text,
-    current_signature text,
-    triggered_refresh boolean not null default false,
-    metadata jsonb not null default '{}'::jsonb,
-    created_at timestamptz not null default now()
-);
-
-alter table landintel.site_change_events
-    add column if not exists canonical_site_id uuid references landintel.canonical_sites(id) on delete cascade,
-    add column if not exists source_family text,
-    add column if not exists source_record_id text,
-    add column if not exists change_type text,
-    add column if not exists change_summary text,
-    add column if not exists previous_signature text,
-    add column if not exists current_signature text,
-    add column if not exists triggered_refresh boolean not null default false,
-    add column if not exists metadata jsonb not null default '{}'::jsonb,
-    add column if not exists created_at timestamptz not null default now();
 
 create index if not exists site_change_events_site_idx
     on landintel.site_change_events (canonical_site_id, created_at desc)
@@ -238,8 +238,8 @@ values
     ('culverts', 'Culverts', 'Culverts - Scotland', 'culverts', 'drainage', 'culvert', 'mixed', 'intersection_and_distance', 25, true, '{"phase_one_source_expansion": true}'::jsonb),
     ('conservation_areas', 'Conservation areas', 'Conservation Areas - Scotland', 'conservation_areas', 'heritage', 'conservation_area', 'mixed', 'intersection', 0, true, '{"phase_one_source_expansion": true}'::jsonb),
     ('greenbelt', 'Green belt', 'Green Belt - Scotland', 'greenbelt', 'policy_constraint', 'greenbelt', 'polygon', 'intersection', 0, true, '{"phase_one_source_expansion": true}'::jsonb),
-    ('topography', 'Topography and slope', 'OS Terrain / Scottish LiDAR', 'topography', 'topography', 'slope', 'raster_derived', 'intersection', 0, true, '{"phase_one_source_expansion": true, "derived_area_label": "indicative_only"}'::jsonb),
-    ('os_features', 'OS NGD / OS Features', 'Ordnance Survey Features API', 'os_features', 'location_context', 'os_feature_context', 'mixed', 'intersection_and_distance', 25, true, '{"phase_one_source_expansion": true}'::jsonb),
+    ('topography', 'Topography and slope', 'OS Terrain and Scottish LiDAR', 'topography', 'topography', 'slope', 'raster_derived', 'intersection', 0, true, '{"phase_one_source_expansion": true, "derived_area_label": "indicative_only"}'::jsonb),
+    ('os_features', 'OS NGD and OS Features', 'Ordnance Survey Features API', 'os_features', 'location_context', 'os_feature_context', 'mixed', 'intersection_and_distance', 25, true, '{"phase_one_source_expansion": true}'::jsonb),
     ('os_places', 'OS Places', 'Ordnance Survey Places API', 'os_places', 'location_context', 'address_place_context', 'point', 'distance', 250, true, '{"phase_one_source_expansion": true}'::jsonb)
 on conflict (layer_key) do update set
     layer_name = excluded.layer_name,
@@ -284,23 +284,16 @@ begin
     where layer_key = p_layer_key;
 
     if v_layer_id is null then
-        raise exception 'Unknown constraint layer key: %', p_layer_key;
+        raise exception using message = concat('Unknown constraint layer key: ', p_layer_key);
     end if;
 
-    delete from public.site_commercial_friction_facts
-    where constraint_layer_id = v_layer_id;
-
-    delete from public.site_constraint_group_summaries
-    where constraint_layer_id = v_layer_id;
-
-    delete from public.site_constraint_measurements
-    where constraint_layer_id = v_layer_id;
-
+    delete from public.site_commercial_friction_facts where constraint_layer_id = v_layer_id;
+    delete from public.site_constraint_group_summaries where constraint_layer_id = v_layer_id;
+    delete from public.site_constraint_measurements where constraint_layer_id = v_layer_id;
     delete from landintel.evidence_references
     where source_family = v_source_family
       and metadata ->> 'constraint_layer_key' = p_layer_key
       and metadata ->> 'source_expansion_constraint' = 'true';
-
     delete from landintel.site_signals
     where source_family = v_source_family
       and metadata ->> 'constraint_layer_key' = p_layer_key;
@@ -344,10 +337,8 @@ begin
                 'source_expansion_constraint', true
             )
         from public.constraint_layer_registry as layer_row
-        join public.constraint_source_features as feature
-          on feature.constraint_layer_id = layer_row.id
-        join public.constraints_site_anchor() as anchor
-          on st_dwithin(anchor.geometry, feature.geometry, greatest(layer_row.buffer_distance_m, 0))
+        join public.constraint_source_features as feature on feature.constraint_layer_id = layer_row.id
+        join public.constraints_site_anchor() as anchor on st_dwithin(anchor.geometry, feature.geometry, greatest(layer_row.buffer_distance_m, 0))
         cross join lateral public.measure_constraint_feature(anchor.geometry, feature.geometry, layer_row.buffer_distance_m) as metric
         where layer_row.id = v_layer_id
           and (metric.intersects or metric.within_buffer)
@@ -386,8 +377,7 @@ begin
             (array_agg(feature.feature_name order by measurement.nearest_distance_m nulls last, measurement.overlap_area_sqm desc))[1],
             jsonb_build_object('constraint_layer_key', p_layer_key, 'source_expansion_constraint', true)
         from public.site_constraint_measurements as measurement
-        join public.constraint_source_features as feature
-          on feature.id = measurement.constraint_feature_id
+        join public.constraint_source_features as feature on feature.id = measurement.constraint_feature_id
         where measurement.constraint_layer_id = v_layer_id
         group by measurement.site_id, measurement.site_location_id
         returning id
@@ -463,8 +453,7 @@ begin
                 'nearest_distance_m', measurement.nearest_distance_m
             )
         from public.site_constraint_measurements as measurement
-        join public.constraint_source_features as feature
-          on feature.id = measurement.constraint_feature_id
+        join public.constraint_source_features as feature on feature.id = measurement.constraint_feature_id
         where measurement.constraint_layer_id = v_layer_id
         returning id
     )
@@ -518,8 +507,7 @@ begin
         select distinct summary.site_id::uuid as canonical_site_id
         from public.site_constraint_group_summaries as summary
         where summary.constraint_layer_id = v_layer_id
-    ),
-    inserted_events as (
+    ), inserted_events as (
         insert into landintel.site_change_events (
             canonical_site_id,
             source_family,
@@ -539,8 +527,7 @@ begin
             jsonb_build_object('constraint_layer_key', p_layer_key, 'source_expansion_constraint', true)
         from affected_sites
         returning id
-    ),
-    enqueued as (
+    ), enqueued as (
         insert into landintel.canonical_site_refresh_queue (
             canonical_site_id,
             refresh_scope,
@@ -611,55 +598,41 @@ with expected_sources(source_family, command_name, target_table, source_role) as
         ('os_features', 'ingest-os-features', 'public.constraint_source_features', 'location_context'),
         ('ldp', 'promote-ldp-authority-source', 'landintel.authority_source_registry', 'policy_deferred'),
         ('settlement', 'promote-settlement-authority-source', 'landintel.authority_source_registry', 'policy_deferred')
-),
-raw_counts as (
-    select 'ela'::text as source_family, count(*)::bigint as raw_row_count
-    from landintel.ela_site_records
+), raw_counts as (
+    select 'ela'::text as source_family, count(*)::bigint as raw_row_count from landintel.ela_site_records
     union all
-    select 'vdl'::text as source_family, count(*)::bigint as raw_row_count
-    from landintel.vdl_site_records
+    select 'vdl'::text as source_family, count(*)::bigint as raw_row_count from landintel.vdl_site_records
     union all
     select layer.source_family, count(feature.id)::bigint as raw_row_count
     from public.constraint_layer_registry as layer
-    left join public.constraint_source_features as feature
-      on feature.constraint_layer_id = layer.id
+    left join public.constraint_source_features as feature on feature.constraint_layer_id = layer.id
     group by layer.source_family
-),
-linked_counts as (
-    select 'ela'::text as source_family, count(*)::bigint as linked_row_count
-    from landintel.ela_site_records
-    where canonical_site_id is not null
+), linked_counts as (
+    select 'ela'::text as source_family, count(*)::bigint as linked_row_count from landintel.ela_site_records where canonical_site_id is not null
     union all
-    select 'vdl'::text as source_family, count(*)::bigint as linked_row_count
-    from landintel.vdl_site_records
-    where canonical_site_id is not null
+    select 'vdl'::text as source_family, count(*)::bigint as linked_row_count from landintel.vdl_site_records where canonical_site_id is not null
     union all
     select layer.source_family, count(distinct measurement.site_id)::bigint as linked_row_count
     from public.constraint_layer_registry as layer
-    left join public.site_constraint_measurements as measurement
-      on measurement.constraint_layer_id = layer.id
+    left join public.site_constraint_measurements as measurement on measurement.constraint_layer_id = layer.id
     group by layer.source_family
-),
-evidence_counts as (
+), evidence_counts as (
     select source_family, count(*)::bigint as evidence_row_count
     from landintel.evidence_references
     where source_family in (select source_family from expected_sources)
     group by source_family
-),
-signal_counts as (
+), signal_counts as (
     select source_family, count(*)::bigint as signal_row_count
     from landintel.site_signals
     where source_family in (select source_family from expected_sources)
       and current_flag = true
     group by source_family
-),
-change_counts as (
+), change_counts as (
     select source_family, count(*)::bigint as change_event_count
     from landintel.site_change_events
     where source_family in (select source_family from expected_sources)
     group by source_family
-),
-review_counts as (
+), review_counts as (
     select source_family, count(*)::bigint as review_output_row_count
     from landintel.site_source_links
     where source_family in ('ela', 'vdl')
@@ -667,11 +640,9 @@ review_counts as (
     union all
     select layer.source_family, count(summary.id)::bigint as review_output_row_count
     from public.constraint_layer_registry as layer
-    left join public.site_constraint_group_summaries as summary
-      on summary.constraint_layer_id = layer.id
+    left join public.site_constraint_group_summaries as summary on summary.constraint_layer_id = layer.id
     group by layer.source_family
-),
-latest_events as (
+), latest_events as (
     select distinct on (event.source_family)
         event.source_family,
         event.status as latest_event_status,
@@ -707,20 +678,13 @@ select
         else 'not_yet_populated'
     end as live_proof_status
 from expected_sources as expected
-left join raw_counts
-  on raw_counts.source_family = expected.source_family
-left join linked_counts
-  on linked_counts.source_family = expected.source_family
-left join evidence_counts
-  on evidence_counts.source_family = expected.source_family
-left join signal_counts
-  on signal_counts.source_family = expected.source_family
-left join change_counts
-  on change_counts.source_family = expected.source_family
-left join review_counts
-  on review_counts.source_family = expected.source_family
-left join latest_events
-  on latest_events.source_family = expected.source_family
+left join raw_counts on raw_counts.source_family = expected.source_family
+left join linked_counts on linked_counts.source_family = expected.source_family
+left join evidence_counts on evidence_counts.source_family = expected.source_family
+left join signal_counts on signal_counts.source_family = expected.source_family
+left join change_counts on change_counts.source_family = expected.source_family
+left join review_counts on review_counts.source_family = expected.source_family
+left join latest_events on latest_events.source_family = expected.source_family
 order by expected.source_role, expected.source_family;
 
 alter table if exists landintel.ela_site_records enable row level security;

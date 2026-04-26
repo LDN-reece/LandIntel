@@ -1,29 +1,45 @@
 # GitHub Actions source phase runbook
 
-This workflow is the next live source phase for the Scottish MVP.
+This is the repo-first operating runbook for LandIntel Phase One source orchestration.
 
-It does **not** replace the lean parcel workflow.
-It sits on top of the lean parcel base and populates the private `landintel` schema.
-It is the only source-intelligence workflow now. There is no separate runtime variant.
+Phase One source work must run through GitHub Actions and Supabase only. Nothing should be run, stored, loaded, or patched locally.
 
 ## Workflow to use
 
-GitHub Actions workflow name:
+Use one workflow only:
 
 - `Run LandIntel Sources`
 
+Retired workflow:
+
+- `Run LandIntel Lean (Retired)`
+
+The retired lean workflow is kept only as an audit marker. It loads no Supabase secrets, performs no Supabase writes, and must not be used for Phase One source work.
+
+## Strategic position
+
+LandIntel is not an HLA ingest tool.
+
+HLA is a useful supporting source, but it is not the sourcing spine and must not dominate opportunity generation. The source engine should prioritise parcel truth, planning movement, settlement/policy context, geometry, location, access, constraints, and overlooked evidence. HLA should validate, enrich, explain stalled-site context, and sometimes surface opportunities, but a site should not be treated as strong solely because it is in HLA.
+
 ## What this workflow currently does
 
-This first source phase is intentionally focused on the highest-value live inputs that can be wired cleanly now:
+The active workflow supports controlled Phase One source operations:
 
-1. `Planning Applications: Official - Scotland`
-2. `Housing Land Supply - Scotland`
-3. `BGS OpenGeoscience API` enrichment
-4. canonical site reconciliation across those records
+1. source estate registration and endpoint probing
+2. LDP and settlement discovery through Scottish SDI GeoNetwork
+3. planning link publishing from existing Supabase planning records
+4. Housing Land Supply ingest as a supporting evidence layer
+5. BGS enrichment
+6. incremental reconciliation to `canonical_site_id`
+7. affected-site refresh
+8. source, freshness, and footprint audits
 
-The runner resolves Spatial Hub downloads from the published resource pages and WFS capabilities, rather than trusting brittle CKAN `typeName` hints directly.
+The runner resolves Spatial Hub downloads from published resource pages and WFS capabilities, rather than trusting brittle CKAN `typeName` hints directly.
 
-This means the workflow now starts to build:
+## Live target tables and views
+
+The workflow builds and audits:
 
 - `landintel.planning_application_records`
 - `landintel.hla_site_records`
@@ -32,159 +48,86 @@ This means the workflow now starts to build:
 - `landintel.site_source_links`
 - `landintel.evidence_references`
 - `landintel.bgs_records`
-
-## What this workflow does not do yet
-
-Not in this first source phase:
-
-- live LDP ingestion
-- live settlement boundary ingestion
-- live flood ingestion
-- full score generation into `landintel.site_assessments`
-- TOID to title selective enrichment
-
-Those are the next source packs after this one.
+- `analytics.v_live_source_coverage`
+- `analytics.v_live_site_summary`
+- `analytics.v_live_site_sources`
+- `analytics.v_live_site_readiness`
 
 ## Required GitHub secrets
 
-Already required:
+Required now:
 
 - `SUPABASE_DB_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `BOUNDARY_AUTHKEY`
+- `IMPROVEMENT_SERVICE_AUTHKEY`
 
-Present for later phases but not yet heavily used in this workflow:
+Used by later promoted source packs:
 
 - `OS_API_KEY`
 - `ROS_CLIENT_ID`
 - `ROS_CLIENT_SECRET`
 
-## Exact run order
+## Controlled run order
 
-### 1. Audit the source footprint first
+Use this order for the current Phase One source estate:
 
-Run:
+1. `run-migrations`
+2. `source-estate-maintenance`
+3. `audit-source-estate`
+4. `audit-source-freshness`
+5. `publish-planning-links`
+6. `ingest-hla`
+7. `process-reconcile-queue`
+8. `refresh-affected-sites`
+9. `ingest-bgs`
+10. `audit-source-footprint`
+11. `audit-source-freshness`
+12. `audit-source-estate`
 
-- `command = audit-source-footprint`
+## Planning command rule
 
-This confirms the current counts in `landintel` before the new ingest phase.
+Use:
 
-### 2. Publish planning links without a full WFS pull
+- `publish-planning-links`
 
-Run:
+This uses planning application records already populated in Supabase, queues planning reconciliation, processes the queue, and refreshes affected sites. It does not run the full national SpatialHub planning WFS pull.
 
-- `command = publish-planning-links`
+`ingest-planning-history` is retained as a compatibility alias during burn-in and also skips the full WFS pull.
 
-This uses the planning application records already populated in Supabase, queues planning reconciliation, processes the queue, and refreshes affected sites. It does not run the full national SpatialHub planning WFS pull.
+Only use `full-ingest-planning-history` when a deliberate full SpatialHub planning reload is required.
 
-`command = ingest-planning-history` is retained as a compatibility alias during burn-in and also skips the full WFS pull.
+## Retired or blocked commands
 
-Only use `command = full-ingest-planning-history` when you deliberately want a full SpatialHub planning reload.
+Do not use these old command paths:
 
-### 3. Ingest Housing Land Supply
+- `full-reconcile-canonical-sites`
+- `full-refresh-core-sources`
+- `full-refresh-lean`
+- `ingest-ros-cadastral-lean`
+- `audit-operational-footprint`
+- `cleanup-operational-footprint`
 
-Run:
+`full-reconcile-canonical-sites` and `full-refresh-core-sources` are not exposed as dispatch options in the active workflow. Defensive branches remain only to fail direct/API-triggered attempts.
 
-- `command = ingest-hla`
+## How to browse results in Supabase
 
-This loads HLA records into `landintel.hla_site_records` for the configured target councils.
-
-### 4. Process source links
-
-Run:
-
-- `command = process-reconcile-queue`
-- `command = refresh-affected-sites`
-
-This publishes queued planning/HLA source rows into canonical-site links and refreshes the affected review outputs.
-
-### 5. Enrich reconciled sites with BGS evidence
-
-Run:
-
-- `command = ingest-bgs`
-
-This adds first-pass BGS evidence into `landintel.bgs_records` for the reconciled canonical sites.
-
-### 6. Audit the source footprint again
-
-Run:
-
-- `command = audit-source-footprint`
-
-This lets you confirm that records, canonical sites, and evidence were actually created.
-
-## One-shot refresh option
-
-Do not use the old one-shot command during incremental source burn-in:
-
-- `command = full-refresh-core-sources`
-
-It is disabled because it would run the full planning WFS ingest and can turn a normal planning publish into a multi-hour job.
-
-Run the controlled commands separately instead:
-
-1. `source-estate-maintenance`
-2. `publish-planning-links`
-3. `ingest-hla`
-4. `ingest-bgs`
-5. `audit-source-footprint`
-6. `audit-source-freshness`
-
-## Recommended first live test sequence
-
-Use this order the first time:
-
-1. `audit-source-footprint`
-2. `publish-planning-links`
-3. `ingest-hla`
-4. `process-reconcile-queue`
-5. `refresh-affected-sites`
-6. `ingest-bgs`
-7. `audit-source-footprint`
-
-This makes it much easier to see which step fails or under-loads.
-
-## How to browse the results in Supabase
-
-The live source truth is now split clearly:
+The live source truth is split clearly:
 
 - `landintel.*` = raw, reconciled, and provenance-aware source layer
 - `analytics.v_live_*` = analyst-facing browse and audit layer
 - `landintel.v_site_traceability` = deep lineage/debug view only
 
-### Start with these views
+Start with:
 
 1. `analytics.v_live_source_coverage`
-   Use this to see what data exists by authority and source family.
 2. `analytics.v_live_site_summary`
-   Use this to see what sites exist, why they exist, how complete they are, and whether they are review-ready.
 3. `analytics.v_live_site_sources`
-   Use this to see what planning/HLA/BGS/source records are attached to each site.
 4. `analytics.v_live_site_readiness`
-   Use this for the fastest readiness triage.
 5. `landintel.v_site_traceability`
-   Use this only for deep lineage and debugging.
 
-### Views that are not the live source audit truth
+Older parcel/operations views may still exist, but they are not the current live-source site audit surface.
 
-These older parcel/operations views may still be useful, but they are not the current live-source site audit surface:
+## Completion discipline
 
-- `analytics.v_frontend_authority_summary`
-- `analytics.v_frontend_authority_size_summary`
-- `analytics.v_ros_parcels_summary_by_authority_size`
-- `analytics.v_ingest_run_summary`
-
-## Strategic meaning of this phase
-
-This phase gets the MVP beyond parcel-only sourcing.
-
-It starts to answer:
-
-- what planning history exists
-- whether a site is already in HLA
-- whether prior ground investigation is visible in BGS
-- how those references start rolling into one `canonical_site`
-- whether the resulting site is partial, core, enriched, review-ready, or still blocked
-
-That is the bridge from a lean parcel base to a real evidence-led sourcing engine.
+Phase One is not complete because a workflow passes. A source is only complete when Supabase proves populated source rows, linked canonical-site rows or measurements, evidence rows, signals where applicable, review-facing output rows, and change/resurfacing events where the dataset changed.

@@ -93,6 +93,25 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         self.assertIn("discover-ldp-geonetwork", workflow)
         self.assertIn("discover-settlement-geonetwork", workflow)
 
+    def test_legacy_lean_workflow_is_retired(self) -> None:
+        workflow = (REPO_ROOT.parent / ".github" / "workflows" / "run-landintel-lean.yml").read_text()
+
+        self.assertIn("Run LandIntel Lean (Retired)", workflow)
+        self.assertIn("No Supabase secrets are loaded here.", workflow)
+        self.assertIn("No Supabase writes are performed here.", workflow)
+        self.assertIn("Run LandIntel Sources workflow", workflow)
+        for forbidden_snippet in (
+            "src.lean_ops",
+            "SUPABASE_DB_URL",
+            "SUPABASE_SERVICE_ROLE_KEY",
+            "BOUNDARY_AUTHKEY",
+            "audit-operational-footprint",
+            "cleanup-operational-footprint",
+            "ingest-ros-cadastral-lean",
+            "full-refresh-lean",
+        ):
+            self.assertNotIn(forbidden_snippet, workflow)
+
     def test_policy_discovery_uses_geonetwork_and_registers_topography(self) -> None:
         runner = (REPO_ROOT / "src" / "source_policy_discovery.py").read_text()
 

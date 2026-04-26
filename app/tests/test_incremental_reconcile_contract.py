@@ -131,11 +131,24 @@ class IncrementalReconcileContractTests(unittest.TestCase):
             "- reconcile-catchup-scan",
             "- refresh-affected-sites",
             "- weekly-reconcile-maintenance",
-            "- full-reconcile-canonical-sites",
             "- publish-planning-links",
             "- full-ingest-planning-history",
         ):
             self.assertIn(command_name, WORKFLOW)
+
+    def test_workflow_hides_legacy_full_refresh_commands(self) -> None:
+        self.assertNotIn("- full-reconcile-canonical-sites", WORKFLOW)
+        self.assertNotIn("- full-refresh-core-sources", WORKFLOW)
+
+        legacy_reconcile_branch = WORKFLOW.split(
+            'elif [ "$SELECTED_COMMAND" = "full-reconcile-canonical-sites" ]; then', 1
+        )[1]
+        legacy_reconcile_branch = legacy_reconcile_branch.split(
+            'elif [ "$SELECTED_COMMAND" = "publish-planning-links" ]; then', 1
+        )[0]
+        self.assertIn("retired for Phase One burn-in", legacy_reconcile_branch)
+        self.assertNotIn("python -m src.source_phase_runner reconcile-canonical-sites", legacy_reconcile_branch)
+        self.assertIn("full-refresh-core-sources is disabled during incremental source burn-in", WORKFLOW)
 
     def test_workflow_sets_incremental_reconcile_environment(self) -> None:
         for env_name in (

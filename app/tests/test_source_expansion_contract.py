@@ -58,6 +58,14 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("return names", PAGED_RUNNER)
         self.assertIn("Capabilities is the authority here", PAGED_RUNNER)
 
+    def test_sepa_arcgis_ingest_is_clipped_to_canonical_site_aoi(self) -> None:
+        self.assertIn('source.get("source_family") != "sepa_flood"', PAGED_RUNNER)
+        self.assertIn("_canonical_site_envelopes", PAGED_RUNNER)
+        self.assertIn('"geometryType": "esriGeometryEnvelope"', PAGED_RUNNER)
+        self.assertIn('"spatialRel": "esriSpatialRelIntersects"', PAGED_RUNNER)
+        self.assertIn("SOURCE_EXPANSION_ARCGIS_MAX_FEATURES_PER_LAYER", PAGED_RUNNER)
+        self.assertIn("sepa_layer_feature_cap_reached", PAGED_RUNNER)
+
     def test_canonical_constraint_anchor_has_no_legacy_site_dependency(self) -> None:
         anchor_sql = MIGRATION.split("create or replace function public.constraints_site_anchor()", 1)[1]
         anchor_sql = anchor_sql.split("insert into public.constraint_layer_registry", 1)[0]

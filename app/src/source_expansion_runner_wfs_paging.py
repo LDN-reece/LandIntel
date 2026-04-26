@@ -8,11 +8,13 @@ loaded through GitHub Actions without weakening the data model.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 import traceback
 import xml.etree.ElementTree as ET
 
 import geopandas as gpd
+import pandas as pd
 
 from config.settings import Settings, get_settings
 from src.logging_config import configure_logging
@@ -126,6 +128,108 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
                 + " | ".join(layer_errors[:5])
             )
         return frames
+
+    def _fetch_arcgis_layer(self, source: dict[str, Any], layer_url: str, layer_name: str) -> gpd.GeoDataFrame:
+        if source.get("source_family") != "sepa_flood":
+            return super()._fetch_arcgis_layer(source, layer_url, layer_name)
+
+        envelopes = self._canonical_site_envelopes()
+        if not envelopes:
+            self.logger.warning("sepa_aoi_missing", extra={"layer_name": layer_name})
+            return gpd.GeoDataFrame([], geometry="geometry", crs=27700)
+
+        frames: list[gpd.GeoDataFrame] = []
+        seen_feature_ids: set[str] = set()
+        page_size = max(1, self.page_size)
+        per_layer_cap = int(os.getenv("SOURCE_EXPANSION_ARCGIS_MAX_FEATURES_PER_LAYER", "75000") or "75000")
+        fetched = 0
+
+        for envelope in envelopes:
+            offset = 0
+            while True:
+                remaining = per_layer_cap - fetched
+                if remaining <= 0:
+                    self.logger.warning(
+                        "sepa_layer_feature_cap_reached",
+                        extra={"layer_name": layer_name, "feature_cap": per_layer_cap},
+                    )
+                    return self._combine_frames(frames)
+
+                batch_limit = min(page_size, remaining)
+                params = {
+                    "f": "geojson",
+                    "where": "1=1",
+                    "outFields": "*",
+                    "returnGeometry": "true",
+                    "outSR": "27700",
+                    "resultOffset": str(offset),
+                    "resultRecordCount": str(batch_limit),
+                    "geometry": f"{envelope['xmin']},{envelope['ymin']},{envelope['xmax']},{envelope['ymax']}",
+                    "geometryType": "esriGeometryEnvelope",
+                    "inSR": "27700",
+                    "spatialRel": "esriSpatialRelIntersects",
+                }
+                response = self.client.get(f"{layer_url.rstrip('/')}/query", params=params)
+                response.raise_for_status()
+                payload = self._json_payload(response, f"ArcGIS query {source['source_key']} {layer_name}")
+                frame = self._feature_collection_to_gdf(payload, source, layer_name)
+                if frame.empty:
+                    break
+
+                if "_source_feature_id" in frame.columns:
+                    keep_mask = ~frame["_source_feature_id"].astype(str).isin(seen_feature_ids)
+                    new_ids = set(frame.loc[keep_mask, "_source_feature_id"].astype(str).tolist())
+                    frame = frame.loc[keep_mask].copy()
+                    seen_feature_ids.update(new_ids)
+
+                if not frame.empty:
+                    frames.append(frame)
+                    fetched += len(frame)
+
+                if len(frame) < batch_limit:
+                    break
+                offset += batch_limit
+
+        return self._combine_frames(frames)
+
+    def _canonical_site_envelopes(self) -> list[dict[str, float]]:
+        buffer_m = float(os.getenv("SOURCE_EXPANSION_ARCGIS_SITE_BUFFER_M", "250") or "250")
+        tile_size_m = float(os.getenv("SOURCE_EXPANSION_ARCGIS_TILE_SIZE_M", "2000") or "2000")
+        max_tiles = int(os.getenv("SOURCE_EXPANSION_ARCGIS_MAX_TILES", "1000") or "1000")
+        rows = self.database.fetch_all(
+            """
+            with site_tiles as (
+                select
+                    floor(st_x(st_centroid(geometry)) / :tile_size_m)::integer as tile_x,
+                    floor(st_y(st_centroid(geometry)) / :tile_size_m)::integer as tile_y,
+                    st_expand(geometry, :buffer_m) as geometry
+                from landintel.canonical_sites
+                where geometry is not null
+            )
+            select
+                st_xmin(st_extent(geometry))::double precision as xmin,
+                st_ymin(st_extent(geometry))::double precision as ymin,
+                st_xmax(st_extent(geometry))::double precision as xmax,
+                st_ymax(st_extent(geometry))::double precision as ymax,
+                count(*)::integer as site_count
+            from site_tiles
+            group by tile_x, tile_y
+            order by site_count desc, tile_x, tile_y
+            limit :max_tiles
+            """,
+            {"buffer_m": buffer_m, "tile_size_m": tile_size_m, "max_tiles": max_tiles},
+        )
+        return [
+            {"xmin": float(row["xmin"]), "ymin": float(row["ymin"]), "xmax": float(row["xmax"]), "ymax": float(row["ymax"])}
+            for row in rows
+            if row.get("xmin") is not None and row.get("ymin") is not None and row.get("xmax") is not None and row.get("ymax") is not None
+        ]
+
+    def _combine_frames(self, frames: list[gpd.GeoDataFrame]) -> gpd.GeoDataFrame:
+        if not frames:
+            return gpd.GeoDataFrame([], geometry="geometry", crs=27700)
+        combined = pd.concat(frames, ignore_index=True)
+        return gpd.GeoDataFrame(combined, geometry="geometry", crs=frames[0].crs or 27700)
 
 
 def main() -> int:

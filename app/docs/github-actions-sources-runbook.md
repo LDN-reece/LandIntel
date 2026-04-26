@@ -69,13 +69,17 @@ Run:
 
 This confirms the current counts in `landintel` before the new ingest phase.
 
-### 2. Ingest national planning history
+### 2. Publish planning links without a full WFS pull
 
 Run:
 
-- `command = ingest-planning-history`
+- `command = publish-planning-links`
 
-This loads the national planning applications polygons feed into `landintel.planning_application_records` for the configured target councils.
+This uses the planning application records already populated in Supabase, queues planning reconciliation, processes the queue, and refreshes affected sites. It does not run the full national SpatialHub planning WFS pull.
+
+`command = ingest-planning-history` is retained as a compatibility alias during burn-in and also skips the full WFS pull.
+
+Only use `command = full-ingest-planning-history` when you deliberately want a full SpatialHub planning reload.
 
 ### 3. Ingest Housing Land Supply
 
@@ -85,13 +89,14 @@ Run:
 
 This loads HLA records into `landintel.hla_site_records` for the configured target councils.
 
-### 4. Build canonical sites and source links
+### 4. Process source links
 
 Run:
 
-- `command = reconcile-canonical-sites`
+- `command = process-reconcile-queue`
+- `command = refresh-affected-sites`
 
-This creates or refreshes `landintel.canonical_sites`, alias rows, source links, and evidence rows.
+This publishes queued planning/HLA source rows into canonical-site links and refreshes the affected review outputs.
 
 ### 5. Enrich reconciled sites with BGS evidence
 
@@ -111,27 +116,32 @@ This lets you confirm that records, canonical sites, and evidence were actually 
 
 ## One-shot refresh option
 
-If you want to run the whole pack end to end, use:
+Do not use the old one-shot command during incremental source burn-in:
 
 - `command = full-refresh-core-sources`
 
-That runs:
+It is disabled because it would run the full planning WFS ingest and can turn a normal planning publish into a multi-hour job.
 
-1. planning ingest
-2. HLA ingest
-3. reconciliation
-4. BGS enrichment
+Run the controlled commands separately instead:
+
+1. `source-estate-maintenance`
+2. `publish-planning-links`
+3. `ingest-hla`
+4. `ingest-bgs`
+5. `audit-source-footprint`
+6. `audit-source-freshness`
 
 ## Recommended first live test sequence
 
 Use this order the first time:
 
 1. `audit-source-footprint`
-2. `ingest-planning-history`
+2. `publish-planning-links`
 3. `ingest-hla`
-4. `reconcile-canonical-sites`
-5. `ingest-bgs`
-6. `audit-source-footprint`
+4. `process-reconcile-queue`
+5. `refresh-affected-sites`
+6. `ingest-bgs`
+7. `audit-source-footprint`
 
 This makes it much easier to see which step fails or under-loads.
 

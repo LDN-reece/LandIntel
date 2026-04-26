@@ -32,15 +32,14 @@ Run in this order:
 2. `source-estate-maintenance`
 3. `audit-source-estate`
 4. `audit-source-freshness`
-5. `ingest-planning-history`
+5. `publish-planning-links`
 6. `ingest-hla`
-7. `full-reconcile-canonical-sites`
-8. `process-reconcile-queue`
-9. `refresh-affected-sites`
-10. `ingest-bgs`
-11. `audit-source-footprint`
-12. `audit-source-freshness`
-13. `audit-source-estate`
+7. `process-reconcile-queue`
+8. `refresh-affected-sites`
+9. `ingest-bgs`
+10. `audit-source-footprint`
+11. `audit-source-freshness`
+12. `audit-source-estate`
 
 ## What Each Step Proves
 
@@ -48,9 +47,10 @@ Run in this order:
 - `source-estate-maintenance` registers all source families, registers topography/adopted-road/utility/Section 75 gap sources, probes live endpoints, discovers LDP records through Scottish SDI GeoNetwork, discovers settlement boundary records through Scottish SDI GeoNetwork, and writes source freshness states.
 - `audit-source-estate` proves every source is either live-wired, explicitly deferred, discovery-only, static-registered, blocked, or unproven.
 - `audit-source-freshness` proves the current freshness gate for ranking/review surfaces.
-- `ingest-planning-history` loads SpatialHub planning records, then queues and refreshes affected canonical sites.
+- `publish-planning-links` publishes existing live planning records into the canonical-site reconcile queue and refreshes affected sites without running the long national SpatialHub WFS pull.
+- `ingest-planning-history` is a compatibility alias for `publish-planning-links` during burn-in. It must not run a full planning pull by default.
+- `full-ingest-planning-history` is the only command that runs the full SpatialHub planning WFS pull and should be used only when a deliberate full reload is needed.
 - `ingest-hla` loads Housing Land Supply/HLA records, then queues and refreshes affected canonical sites.
-- `full-reconcile-canonical-sites` rebuilds canonical-site links from HLA and planning evidence.
 - `process-reconcile-queue` resolves source records into canonical-site links.
 - `refresh-affected-sites` recalculates affected site outputs.
 - `ingest-bgs` loads BGS ground-context records against canonical sites.

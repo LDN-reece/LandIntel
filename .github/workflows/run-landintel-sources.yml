@@ -29,12 +29,29 @@ on:
           - register-source-estate
           - probe-source-estate
           - audit-source-estate
+          - audit-source-expansion
           - discover-ldp-sources
           - discover-settlement-sources
+          - promote-ldp-authority-source
+          - promote-settlement-authority-source
           - publish-planning-links
           - ingest-planning-history
           - full-ingest-planning-history
           - ingest-hla
+          - ingest-ela
+          - ingest-vdl
+          - ingest-sepa-flood
+          - ingest-coal-authority
+          - ingest-hes-designations
+          - ingest-naturescot
+          - ingest-contaminated-land
+          - ingest-tpo
+          - ingest-culverts
+          - ingest-conservation-areas
+          - ingest-greenbelt
+          - ingest-os-topography
+          - ingest-os-places
+          - ingest-os-features
           - process-reconcile-queue
           - reconcile-catchup-scan
           - refresh-affected-sites
@@ -47,6 +64,8 @@ on:
 # not promote unvalidated LDP or settlement feeds into live ranking.
 # Phase One orchestration is GitHub Actions + Supabase only; legacy full-refresh
 # commands are deliberately not exposed as dispatch options.
+# HLA is supporting evidence only; the source universe now expands through
+# constraints, ELA, VDL, OS, LDP and settlement commands instead of repeating HLA.
 
 concurrency:
   group: landintel-sources-${{ github.event_name }}-${{ inputs.command || 'manual' }}
@@ -84,6 +103,8 @@ jobs:
       RECONCILE_LEASE_SECONDS: "1800"
       RECONCILE_REFRESH_LEASE_SECONDS: "1200"
       RECONCILE_MAX_ATTEMPTS: "3"
+      SOURCE_EXPANSION_PAGE_SIZE: "2000"
+      SOURCE_EXPANSION_MAX_FEATURES: "0"
       MIRROR_LAND_OBJECTS: "false"
 
     steps:
@@ -126,7 +147,7 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
       - name: Compile critical runners
-        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_estate_registry.py src/source_policy_discovery.py
+        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py
 
       - name: Resolve selected command
         run: |
@@ -165,6 +186,17 @@ jobs:
             done
           }
 
+          is_source_expansion_ingest() {
+            case "$1" in
+              ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features)
+                return 0
+                ;;
+              *)
+                return 1
+                ;;
+            esac
+          }
+
           if [ "$SELECTED_COMMAND" = "sync-source-catalog" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_catalog_sync sync-source-catalog
@@ -178,6 +210,9 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "audit-source-freshness" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_freshness_audit audit-source-freshness
+          elif [ "$SELECTED_COMMAND" = "audit-source-expansion" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_expansion_runner audit-source-expansion
           elif [ "$SELECTED_COMMAND" = "source-estate-maintenance" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate
@@ -187,6 +222,7 @@ jobs:
             python -m src.source_policy_discovery discover-settlement-geonetwork
             python -m src.source_estate_registry audit-source-estate
             python -m src.source_freshness_audit audit-source-freshness
+            python -m src.source_expansion_runner audit-source-expansion
           elif [ "$SELECTED_COMMAND" = "register-source-estate" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate
@@ -206,6 +242,15 @@ jobs:
             python -m src.source_estate_registry register-source-estate
             python -m src.source_policy_discovery register-supplemental-sources
             python -m src.source_policy_discovery discover-settlement-geonetwork
+          elif [ "$SELECTED_COMMAND" = "promote-ldp-authority-source" ] || [ "$SELECTED_COMMAND" = "promote-settlement-authority-source" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_expansion_runner "$SELECTED_COMMAND"
+          elif is_source_expansion_ingest "$SELECTED_COMMAND"; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_estate_registry register-source-estate
+            python -m src.source_policy_discovery register-supplemental-sources
+            run_with_retries 2 30 python -m src.source_expansion_runner "$SELECTED_COMMAND"
+            python -m src.source_expansion_runner audit-source-expansion
           elif [ "$SELECTED_COMMAND" = "process-reconcile-queue" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000
@@ -251,7 +296,7 @@ jobs:
             python -m src.source_phase_runner run-migrations
             run_with_retries 3 30 python -m src.source_phase_runner ingest-bgs
           elif [ "$SELECTED_COMMAND" = "full-refresh-core-sources" ]; then
-            echo "full-refresh-core-sources is disabled during incremental source burn-in because it would run the full planning WFS ingest. Run source-estate-maintenance, publish-planning-links, ingest-hla, and ingest-bgs as separate controlled commands."
+            echo "full-refresh-core-sources is disabled during incremental source burn-in because it would run the full planning WFS ingest. Run source-estate-maintenance, source expansion commands, publish-planning-links, ingest-hla, and ingest-bgs as separate controlled commands."
             exit 1
           else
             python -m src.source_phase_runner run-migrations

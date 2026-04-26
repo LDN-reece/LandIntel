@@ -33,11 +33,14 @@ class PhaseOneSiteSignalCompatibilityContractTests(unittest.TestCase):
         self.assertIn("new.signal_source", ORIGINAL_MIGRATION)
         self.assertIn("deliberately avoids optional columns", FIX_MIGRATION)
 
-    def test_phase_one_normalized_signal_confidence_is_allowed(self) -> None:
+    def test_phase_one_normalized_signal_confidence_is_type_safe(self) -> None:
         self.assertIn("drop constraint if exists site_signals_confidence_check", CONFIDENCE_MIGRATION)
-        self.assertIn("or confidence between 0 and 1", CONFIDENCE_MIGRATION)
-        self.assertIn("or confidence in (2, 3, 4, 5)", CONFIDENCE_MIGRATION)
-        self.assertIn("Phase One normalized confidence", CONFIDENCE_MIGRATION)
+        self.assertIn("confidence::text ~", CONFIDENCE_MIGRATION)
+        self.assertIn("confidence::text::numeric between 0 and 1", CONFIDENCE_MIGRATION)
+        self.assertIn("btrim(confidence::text) in ('2', '3', '4', '5')", CONFIDENCE_MIGRATION)
+        self.assertIn("Type-safe Phase One confidence domain", CONFIDENCE_MIGRATION)
+        self.assertNotIn("confidence between 0 and 1", CONFIDENCE_MIGRATION)
+        self.assertNotIn("confidence in (2, 3, 4, 5)", CONFIDENCE_MIGRATION)
 
 
 if __name__ == "__main__":

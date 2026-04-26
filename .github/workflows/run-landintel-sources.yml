@@ -147,7 +147,7 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
       - name: Compile critical runners
-        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py
+        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py
 
       - name: Resolve selected command
         run: |
@@ -212,7 +212,7 @@ jobs:
             python -m src.source_freshness_audit audit-source-freshness
           elif [ "$SELECTED_COMMAND" = "audit-source-expansion" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_expansion_runner audit-source-expansion
+            python -m src.source_expansion_runner_wfs_paging audit-source-expansion
           elif [ "$SELECTED_COMMAND" = "source-estate-maintenance" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate
@@ -222,7 +222,7 @@ jobs:
             python -m src.source_policy_discovery discover-settlement-geonetwork
             python -m src.source_estate_registry audit-source-estate
             python -m src.source_freshness_audit audit-source-freshness
-            python -m src.source_expansion_runner audit-source-expansion
+            python -m src.source_expansion_runner_wfs_paging audit-source-expansion
           elif [ "$SELECTED_COMMAND" = "register-source-estate" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate
@@ -244,13 +244,13 @@ jobs:
             python -m src.source_policy_discovery discover-settlement-geonetwork
           elif [ "$SELECTED_COMMAND" = "promote-ldp-authority-source" ] || [ "$SELECTED_COMMAND" = "promote-settlement-authority-source" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_expansion_runner "$SELECTED_COMMAND"
+            python -m src.source_expansion_runner_wfs_paging "$SELECTED_COMMAND"
           elif is_source_expansion_ingest "$SELECTED_COMMAND"; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate
             python -m src.source_policy_discovery register-supplemental-sources
-            run_with_retries 2 30 python -m src.source_expansion_runner "$SELECTED_COMMAND"
-            python -m src.source_expansion_runner audit-source-expansion
+            run_with_retries 2 30 python -m src.source_expansion_runner_wfs_paging "$SELECTED_COMMAND"
+            python -m src.source_expansion_runner_wfs_paging audit-source-expansion
           elif [ "$SELECTED_COMMAND" = "process-reconcile-queue" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000

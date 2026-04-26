@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: Which source phase command to run on GitHub
+        description: Which Phase One source command to run on GitHub
         required: true
         type: choice
         default: audit-source-footprint
@@ -39,14 +39,14 @@ on:
           - reconcile-catchup-scan
           - refresh-affected-sites
           - weekly-reconcile-maintenance
-          - full-reconcile-canonical-sites
           - ingest-bgs
-          - full-refresh-core-sources
 
 # Automated schedules are intentionally paused during incremental reconcile burn-in.
 # Push runs are validation-only. Source-estate maintenance is manual-only during
 # burn-in because it registers, probes, discovers, and audits sources. It does
 # not promote unvalidated LDP or settlement feeds into live ranking.
+# Phase One orchestration is GitHub Actions + Supabase only; legacy full-refresh
+# commands are deliberately not exposed as dispatch options.
 
 concurrency:
   group: landintel-sources-${{ github.event_name }}-${{ inputs.command || 'manual' }}
@@ -220,8 +220,8 @@ jobs:
             python -m src.source_phase_runner run-migrations
             python -m src.source_reconcile_incremental weekly-reconcile-maintenance
           elif [ "$SELECTED_COMMAND" = "full-reconcile-canonical-sites" ]; then
-            python -m src.source_phase_runner run-migrations
-            python -m src.source_phase_runner reconcile-canonical-sites
+            echo "full-reconcile-canonical-sites is retired for Phase One burn-in. Use process-reconcile-queue and refresh-affected-sites."
+            exit 1
           elif [ "$SELECTED_COMMAND" = "publish-planning-links" ]; then
             python -m src.source_phase_runner run-migrations
             echo "Publishing existing planning records into the canonical-site reconcile queue. No full SpatialHub planning pull is being run."

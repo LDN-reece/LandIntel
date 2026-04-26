@@ -7,6 +7,7 @@ import unittest
 APP_DIR = Path(__file__).resolve().parents[1]
 WORKFLOW = (APP_DIR.parent / ".github" / "workflows" / "run-landintel-sources.yml").read_text(encoding="utf-8")
 RUNNER = (APP_DIR / "src" / "source_expansion_runner.py").read_text(encoding="utf-8")
+PAGED_RUNNER = (APP_DIR / "src" / "source_expansion_runner_wfs_paging.py").read_text(encoding="utf-8")
 MIGRATION = (APP_DIR / "sql" / "044_phase_one_source_expansion.sql").read_text(encoding="utf-8")
 MANIFEST = (APP_DIR / "config" / "phase_one_source_estate.yaml").read_text(encoding="utf-8")
 
@@ -35,12 +36,20 @@ class SourceExpansionContractTests(unittest.TestCase):
             self.assertIn(f"- {command}", WORKFLOW)
             self.assertIn(command, RUNNER)
 
-    def test_workflow_routes_expansion_commands_to_expansion_runner(self) -> None:
+    def test_workflow_routes_expansion_commands_to_paged_expansion_runner(self) -> None:
         self.assertIn("src/source_expansion_runner.py", WORKFLOW)
-        self.assertIn("python -m src.source_expansion_runner \"$SELECTED_COMMAND\"", WORKFLOW)
-        self.assertIn("python -m src.source_expansion_runner audit-source-expansion", WORKFLOW)
+        self.assertIn("src/source_expansion_runner_wfs_paging.py", WORKFLOW)
+        self.assertIn("python -m src.source_expansion_runner_wfs_paging \"$SELECTED_COMMAND\"", WORKFLOW)
+        self.assertIn("python -m src.source_expansion_runner_wfs_paging audit-source-expansion", WORKFLOW)
         self.assertIn("is_source_expansion_ingest()", WORKFLOW)
         self.assertIn("HLA is supporting evidence only", WORKFLOW)
+
+    def test_paged_runner_bounds_spatialhub_wfs_reads(self) -> None:
+        self.assertIn("class PagedWfsSourceExpansionRunner(SourceExpansionRunner)", PAGED_RUNNER)
+        self.assertIn('"maxFeatures": str(batch_limit)', PAGED_RUNNER)
+        self.assertIn('params["startIndex"] = str(offset)', PAGED_RUNNER)
+        self.assertIn("SOURCE_EXPANSION_PAGE_SIZE", WORKFLOW)
+        self.assertIn("No usable WFS features returned", PAGED_RUNNER)
 
     def test_canonical_constraint_anchor_has_no_legacy_site_dependency(self) -> None:
         anchor_sql = MIGRATION.split("create or replace function public.constraints_site_anchor()", 1)[1]

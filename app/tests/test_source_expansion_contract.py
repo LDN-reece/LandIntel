@@ -51,6 +51,13 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("SOURCE_EXPANSION_PAGE_SIZE", WORKFLOW)
         self.assertIn("No usable WFS features returned", PAGED_RUNNER)
 
+    def test_paged_runner_uses_capabilities_as_vdl_layer_authority(self) -> None:
+        self.assertIn("def _wfs_feature_types", PAGED_RUNNER)
+        self.assertIn("GetCapabilities", PAGED_RUNNER)
+        self.assertIn('source.get("source_family") == "vdl"', PAGED_RUNNER)
+        self.assertIn("return names", PAGED_RUNNER)
+        self.assertIn("Capabilities is the authority here", PAGED_RUNNER)
+
     def test_canonical_constraint_anchor_has_no_legacy_site_dependency(self) -> None:
         anchor_sql = MIGRATION.split("create or replace function public.constraints_site_anchor()", 1)[1]
         anchor_sql = anchor_sql.split("insert into public.constraint_layer_registry", 1)[0]

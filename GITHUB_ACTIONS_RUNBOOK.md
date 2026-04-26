@@ -1,8 +1,10 @@
 # GitHub Actions Runbook
 
-This repository now has three GitHub Actions workflows only.
+LandIntel Phase One is repo-first and Supabase-backed.
 
-## Workflows
+Do not run, store, load, or patch source work locally. GitHub is the source of truth. Supabase is the orchestration and storage layer.
+
+## Active workflows
 
 ### `LandIntel CI`
 
@@ -11,65 +13,60 @@ Runs automatically on pushes and pull requests to `main`.
 Use it to confirm:
 
 - the app installs cleanly
-- the source runner still parses manifests and resource metadata correctly
+- workflow contracts still hold
+- runner modules still compile
 - unit tests pass before manual ingestion runs
-
-### `Run LandIntel Lean`
-
-This is the lean parcel-and-boundary foundation workflow.
-
-Use it for:
-
-- `audit-operational-footprint`
-- `cleanup-operational-footprint`
-- `ingest-ros-cadastral-lean`
-- `full-refresh-lean`
 
 ### `Run LandIntel Sources`
 
-This is the source-intelligence workflow that populates the private `landintel` schema.
+This is the only active Phase One source orchestration workflow.
 
 Use it for:
 
-- `audit-source-footprint`
-- `ingest-planning-history`
+- `run-migrations`
+- `source-estate-maintenance`
+- `audit-source-estate`
+- `audit-source-freshness`
+- `publish-planning-links`
 - `ingest-hla`
-- `reconcile-canonical-sites`
+- `process-reconcile-queue`
+- `refresh-affected-sites`
 - `ingest-bgs`
-- `full-refresh-core-sources`
+- `audit-source-footprint`
+
+## Retired workflow
+
+### `Run LandIntel Lean (Retired)`
+
+This workflow is retained only as an audit marker. It loads no Supabase secrets and performs no Supabase writes.
+
+The old lean runner `app/src/lean_ops.py` is also retired and hard-fails if called.
 
 ## Required GitHub secrets
 
 - `SUPABASE_DB_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `BOUNDARY_AUTHKEY`
-
-## Additional secrets already supported
-
-- `BOUNDARY_GEOJSON_URL`
+- `IMPROVEMENT_SERVICE_AUTHKEY`
 - `OS_API_KEY`
 - `ROS_CLIENT_ID`
 - `ROS_CLIENT_SECRET`
 
-## Recommended run order for MVP
+## Recommended Phase One run order
 
-### Foundation
-
-1. `Run LandIntel Lean` -> `audit-operational-footprint`
-2. `Run LandIntel Lean` -> `full-refresh-lean`
-3. `Run LandIntel Lean` -> `audit-operational-footprint`
-
-### Source intelligence
-
-1. `Run LandIntel Sources` -> `audit-source-footprint`
-2. `Run LandIntel Sources` -> `ingest-planning-history`
-3. `Run LandIntel Sources` -> `ingest-hla`
-4. `Run LandIntel Sources` -> `reconcile-canonical-sites`
-5. `Run LandIntel Sources` -> `ingest-bgs`
-6. `Run LandIntel Sources` -> `audit-source-footprint`
+1. `Run LandIntel Sources` -> `run-migrations`
+2. `Run LandIntel Sources` -> `source-estate-maintenance`
+3. `Run LandIntel Sources` -> `audit-source-estate`
+4. `Run LandIntel Sources` -> `audit-source-freshness`
+5. `Run LandIntel Sources` -> `publish-planning-links`
+6. `Run LandIntel Sources` -> `ingest-hla`
+7. `Run LandIntel Sources` -> `process-reconcile-queue`
+8. `Run LandIntel Sources` -> `refresh-affected-sites`
+9. `Run LandIntel Sources` -> `ingest-bgs`
+10. `Run LandIntel Sources` -> `audit-source-footprint`
+11. `Run LandIntel Sources` -> `audit-source-freshness`
+12. `Run LandIntel Sources` -> `audit-source-estate`
 
 ## Current design rule
 
-GitHub Actions is the execution surface.
-Supabase is the operational data store.
-The app should not depend on Docker or manual local execution to run the MVP path.
+Phase One must run from the repo through GitHub Actions and prove itself in Supabase. Old full-refresh, lean parcel, and local execution paths are intentionally blocked.

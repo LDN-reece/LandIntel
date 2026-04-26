@@ -7,6 +7,7 @@ import unittest
 APP_DIR = Path(__file__).resolve().parents[1]
 ORIGINAL_MIGRATION = (APP_DIR / "sql" / "046_phase_one_site_signal_compatibility.sql").read_text(encoding="utf-8")
 FIX_MIGRATION = (APP_DIR / "sql" / "047_phase_one_site_signal_trigger_fix.sql").read_text(encoding="utf-8")
+CONFIDENCE_MIGRATION = (APP_DIR / "sql" / "048_phase_one_site_signal_confidence_domain.sql").read_text(encoding="utf-8")
 
 
 class PhaseOneSiteSignalCompatibilityContractTests(unittest.TestCase):
@@ -31,6 +32,12 @@ class PhaseOneSiteSignalCompatibilityContractTests(unittest.TestCase):
         self.assertIn("new.signal_payload", ORIGINAL_MIGRATION)
         self.assertIn("new.signal_source", ORIGINAL_MIGRATION)
         self.assertIn("deliberately avoids optional columns", FIX_MIGRATION)
+
+    def test_phase_one_normalized_signal_confidence_is_allowed(self) -> None:
+        self.assertIn("drop constraint if exists site_signals_confidence_check", CONFIDENCE_MIGRATION)
+        self.assertIn("or confidence between 0 and 1", CONFIDENCE_MIGRATION)
+        self.assertIn("or confidence in (2, 3, 4, 5)", CONFIDENCE_MIGRATION)
+        self.assertIn("Phase One normalized confidence", CONFIDENCE_MIGRATION)
 
 
 if __name__ == "__main__":

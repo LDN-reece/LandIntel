@@ -20,20 +20,22 @@ The retired lean workflow is kept only as an audit marker. It loads no Supabase 
 
 LandIntel is not an HLA ingest tool.
 
-HLA is a useful supporting source, but it is not the sourcing spine and must not dominate opportunity generation. The source engine should prioritise parcel truth, planning movement, settlement/policy context, geometry, location, access, constraints, and overlooked evidence. HLA should validate, enrich, explain stalled-site context, and sometimes surface opportunities, but a site should not be treated as strong solely because it is in HLA.
+HLA is useful supporting evidence, but it is not the sourcing spine and must not dominate opportunity generation. The engine should prioritise parcel truth, planning movement, settlement and policy context, geometry, location, access, constraints, and overlooked evidence. HLA should validate, enrich, explain stalled-site context, and sometimes surface opportunities, but a site must not be treated as strong solely because it is in HLA.
 
-## What this workflow currently does
+The same rule applies to every source: source data is only valuable when it is populated in Supabase, linked or measured against `canonical_site_id`, evidenced, reflected in signals or review outputs, and capable of creating a resurfacing event when it changes.
+
+## What this workflow now does
 
 The active workflow supports controlled Phase One source operations:
 
 1. source estate registration and endpoint probing
 2. LDP and settlement discovery through Scottish SDI GeoNetwork
 3. planning link publishing from existing Supabase planning records
-4. Housing Land Supply ingest as a supporting evidence layer
-5. BGS enrichment
-6. incremental reconciliation to `canonical_site_id`
-7. affected-site refresh
-8. source, freshness, and footprint audits
+4. future-context ingest for HLA, ELA, and VDL
+5. canonical constraint ingest for SEPA flood, Coal Authority, HES, NatureScot, contaminated land, TPO, culverts, conservation areas, green belt, topography, OS Places, and OS Features
+6. incremental reconciliation to `canonical_site_id` where the source family uses the planning/HLA queue
+7. direct canonical publication for ELA and VDL
+8. affected-site refresh and source proof audits
 
 The runner resolves Spatial Hub downloads from published resource pages and WFS capabilities, rather than trusting brittle CKAN `typeName` hints directly.
 
@@ -41,17 +43,26 @@ The runner resolves Spatial Hub downloads from published resource pages and WFS 
 
 The workflow builds and audits:
 
+- `landintel.canonical_sites`
 - `landintel.planning_application_records`
 - `landintel.hla_site_records`
-- `landintel.canonical_sites`
+- `landintel.ela_site_records`
+- `landintel.vdl_site_records`
 - `landintel.site_reference_aliases`
 - `landintel.site_source_links`
 - `landintel.evidence_references`
-- `landintel.bgs_records`
+- `landintel.site_signals`
+- `landintel.site_change_events`
+- `landintel.source_expansion_events`
+- `public.constraint_source_features`
+- `public.site_constraint_measurements`
+- `public.site_constraint_group_summaries`
+- `public.site_commercial_friction_facts`
 - `analytics.v_live_source_coverage`
 - `analytics.v_live_site_summary`
 - `analytics.v_live_site_sources`
 - `analytics.v_live_site_readiness`
+- `analytics.v_phase_one_source_expansion_readiness`
 
 ## Required GitHub secrets
 
@@ -61,29 +72,43 @@ Required now:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `BOUNDARY_AUTHKEY`
 - `IMPROVEMENT_SERVICE_AUTHKEY`
-
-Used by later promoted source packs:
-
 - `OS_API_KEY`
+
+Used by later title/parcel source packs:
+
 - `ROS_CLIENT_ID`
 - `ROS_CLIENT_SECRET`
 
 ## Controlled run order
 
-Use this order for the current Phase One source estate:
+Use this order. Do not keep rerunning HLA or planning unless those feeds actually changed.
 
 1. `run-migrations`
 2. `source-estate-maintenance`
-3. `audit-source-estate`
-4. `audit-source-freshness`
-5. `publish-planning-links`
-6. `ingest-hla`
-7. `process-reconcile-queue`
-8. `refresh-affected-sites`
-9. `ingest-bgs`
-10. `audit-source-footprint`
-11. `audit-source-freshness`
-12. `audit-source-estate`
+3. `audit-source-expansion`
+4. `ingest-ela`
+5. `ingest-vdl`
+6. `ingest-greenbelt`
+7. `ingest-conservation-areas`
+8. `ingest-tpo`
+9. `ingest-culverts`
+10. `ingest-contaminated-land`
+11. `ingest-sepa-flood`
+12. `ingest-coal-authority`
+13. `ingest-hes-designations`
+14. `ingest-naturescot`
+15. `ingest-os-topography`
+16. `ingest-os-places`
+17. `ingest-os-features`
+18. `discover-ldp-sources`
+19. `discover-settlement-sources`
+20. `refresh-affected-sites`
+21. `audit-source-expansion`
+22. `audit-source-footprint`
+23. `audit-source-freshness`
+24. `audit-source-estate`
+
+Run `publish-planning-links` only when Supabase planning records have changed and need publishing into canonical sites. Run `ingest-hla` only when HLA/HLS needs refreshing. HLA is a supporting source, not the default next step.
 
 ## Planning command rule
 
@@ -96,6 +121,36 @@ This uses planning application records already populated in Supabase, queues pla
 `ingest-planning-history` is retained as a compatibility alias during burn-in and also skips the full WFS pull.
 
 Only use `full-ingest-planning-history` when a deliberate full SpatialHub planning reload is required.
+
+## LDP and settlement rule
+
+LDP and settlement boundaries are Phase One critical, but they remain ranking-deferred until authority-specific adapters are validated.
+
+The workflow must still discover, register, monitor, and report them. They become ranking-active only after an authority source is promoted from deferred to live with evidence that the adapter is reliable and that unvalidated feeds are not affecting review outputs.
+
+Use:
+
+- `discover-ldp-sources`
+- `discover-settlement-sources`
+- `promote-ldp-authority-source`
+- `promote-settlement-authority-source`
+
+Promotion commands currently record the explicit deferred state unless an authority adapter is available. That is correct behaviour and protects the ranking layer from false policy certainty.
+
+## Source proof rule
+
+A source is not complete because an ingest command passes.
+
+A source is `live_wired_proven` only when `analytics.v_phase_one_source_expansion_readiness` proves:
+
+- non-zero raw or feature rows
+- non-zero linked or measured rows
+- non-zero evidence rows
+- non-zero signal rows
+- non-zero review-output rows
+- non-zero site change events
+
+LDP and settlement may show `explicitly_deferred_until_authority_adapter_validated`. That is acceptable only while registry monitoring exists and they are proven absent from live ranking impact.
 
 ## Retired or blocked commands
 
@@ -115,16 +170,19 @@ Do not use these old command paths:
 The live source truth is split clearly:
 
 - `landintel.*` = raw, reconciled, and provenance-aware source layer
+- `public.constraint_*` and `public.site_constraint_*` = canonical constraint measurement layer
 - `analytics.v_live_*` = analyst-facing browse and audit layer
+- `analytics.v_phase_one_source_expansion_readiness` = source-universe proof layer
 - `landintel.v_site_traceability` = deep lineage/debug view only
 
 Start with:
 
-1. `analytics.v_live_source_coverage`
-2. `analytics.v_live_site_summary`
-3. `analytics.v_live_site_sources`
-4. `analytics.v_live_site_readiness`
-5. `landintel.v_site_traceability`
+1. `analytics.v_phase_one_source_expansion_readiness`
+2. `analytics.v_live_source_coverage`
+3. `analytics.v_live_site_summary`
+4. `analytics.v_live_site_sources`
+5. `analytics.v_live_site_readiness`
+6. `landintel.v_site_traceability`
 
 Older parcel/operations views may still exist, but they are not the current live-source site audit surface.
 

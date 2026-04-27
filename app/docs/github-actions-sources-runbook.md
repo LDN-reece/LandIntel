@@ -31,7 +31,7 @@ The active workflow supports controlled Phase One source operations:
 1. source estate registration and endpoint probing
 2. title number control audit through `public.site_title_validation`
 3. LDP package registration and storage from Spatial Hub CKAN ZIP resources
-4. settlement discovery through Scottish SDI GeoNetwork
+4. settlement boundary registration and storage from the National Records of Scotland WFS
 5. planning link publishing from existing Supabase planning records
 6. future-context ingest for HLA, ELA, and VDL
 7. canonical constraint ingest for SEPA flood, Coal Authority, HES, NatureScot, contaminated land, TPO, culverts, conservation areas, green belt, topography, OS Places, and OS Features
@@ -92,26 +92,27 @@ Use this order. Do not keep rerunning HLA or planning unless those feeds actuall
 4. `discover-ldp-sources`
 5. `ingest-ldp`
 6. `discover-settlement-sources`
-7. `audit-source-expansion`
-8. `ingest-ela`
-9. `ingest-vdl`
-10. `ingest-greenbelt`
-11. `ingest-conservation-areas`
-12. `ingest-tpo`
-13. `ingest-culverts`
-14. `ingest-contaminated-land`
-15. `ingest-sepa-flood`
-16. `ingest-coal-authority`
-17. `ingest-hes-designations`
-18. `ingest-naturescot`
-19. `ingest-os-topography`
-20. `ingest-os-places`
-21. `ingest-os-features`
-22. `refresh-affected-sites`
-23. `audit-source-expansion`
-24. `audit-source-footprint`
-25. `audit-source-freshness`
-26. `audit-source-estate`
+7. `ingest-settlement-boundaries`
+8. `audit-source-expansion`
+9. `ingest-ela`
+10. `ingest-vdl`
+11. `ingest-greenbelt`
+12. `ingest-conservation-areas`
+13. `ingest-tpo`
+14. `ingest-culverts`
+15. `ingest-contaminated-land`
+16. `ingest-sepa-flood`
+17. `ingest-coal-authority`
+18. `ingest-hes-designations`
+19. `ingest-naturescot`
+20. `ingest-os-topography`
+21. `ingest-os-places`
+22. `ingest-os-features`
+23. `refresh-affected-sites`
+24. `audit-source-expansion`
+25. `audit-source-footprint`
+26. `audit-source-freshness`
+27. `audit-source-estate`
 
 Run `publish-planning-links` only when Supabase planning records have changed and need publishing into canonical sites. Run `ingest-hla` only when HLA/HLS needs refreshing. HLA is a supporting source, not the default next step.
 
@@ -135,9 +136,9 @@ The commercial priority spine is:
 2. LDP
 3. Settlement
 
-Title number is the control layer. LDP is now a Spatial Hub package source and stores direct ZIP resource features into `landintel.ldp_site_records`. It remains ranking-protected until commercial-use rights and the policy interpreter are validated. Settlement boundaries remain Phase One critical but authority-adapter pending.
+Title number is the control layer. LDP is a Spatial Hub package source and stores direct ZIP resource features into `landintel.ldp_site_records`. It remains ranking-protected until commercial-use rights and the policy interpreter are validated. Settlement boundaries are now the NRS `NRS:SettlementBoundaries` WFS and store polygons in `landintel.settlement_boundary_records`; they remain ranking-protected until the canonical inside/outside/edge overlay is promoted.
 
-The workflow must still discover, register, monitor, and report LDP and settlement sources. LDP becomes storage-live through `ingest-ldp`; settlement becomes ranking-active only after an authority source is promoted from pending adapter to live with evidence that the adapter is reliable and that unvalidated feeds are not affecting review outputs.
+The workflow must still discover, register, monitor, and report LDP and settlement sources. LDP becomes storage-live through `ingest-ldp`; settlement becomes storage-live through `ingest-settlement-boundaries`. Neither source is allowed to create DD conclusions until the relevant interpreter gates are passed.
 
 Use:
 
@@ -145,9 +146,9 @@ Use:
 - `discover-ldp-sources`
 - `ingest-ldp`
 - `discover-settlement-sources`
-- `promote-settlement-authority-source`
+- `ingest-settlement-boundaries`
 
-`ingest-ldp` is storage-only. It proves data capture, not commercial ranking eligibility. The settlement promotion command currently records the core pending-adapter state unless an authority adapter is available. That protects the ranking layer from false policy certainty while keeping the source commercially first-class.
+`ingest-ldp` and `ingest-settlement-boundaries` are storage-first. They prove data capture, not commercial ranking eligibility. That protects the ranking layer from false policy certainty while keeping the priority sources commercially first-class.
 
 ## Source proof rule
 
@@ -162,7 +163,7 @@ A source is `live_wired_proven` only when `analytics.v_phase_one_source_expansio
 - non-zero review-output rows
 - non-zero site change events
 
-LDP may show `core_policy_storage_proven_licence_gated`. That means the Spatial Hub package is stored but not allowed to influence ranking or DD conclusions yet. Settlement may show `core_policy_pending_authority_adapter`; that is acceptable only while registry monitoring exists and it is proven absent from live ranking impact.
+LDP may show `core_policy_storage_proven_licence_gated`. That means the Spatial Hub package is stored but not allowed to influence ranking or DD conclusions yet. Settlement may show `core_policy_storage_proven_interpreter_gated`. That means NRS boundaries are stored but not allowed to influence ranking or DD conclusions until the canonical settlement-position overlay is promoted.
 
 ## Retired or blocked commands
 

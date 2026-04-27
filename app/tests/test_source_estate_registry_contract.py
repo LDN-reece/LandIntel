@@ -93,7 +93,7 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         self.assertIn("app/config/phase_one_source_estate.yaml", workflow)
         self.assertIn("src/source_policy_discovery.py", workflow)
         self.assertIn("discover-ldp-geonetwork", workflow)
-        self.assertIn("discover-settlement-geonetwork", workflow)
+        self.assertIn("register-settlement-boundaries", workflow)
         self.assertIn("audit-title-number-control", workflow)
 
     def test_legacy_lean_workflow_is_retired(self) -> None:
@@ -145,6 +145,8 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         self.assertIn("topography_scottish_lidar", runner)
         self.assertIn("adopted_roads_authority_discovery", runner)
         self.assertIn("utilities_water_electric_discovery", runner)
+        self.assertIn("NRS_SETTLEMENT_WFS_URL", runner)
+        self.assertIn("register_settlement_boundaries", runner)
 
     def test_manifest_marks_title_ldp_settlement_as_core_priority_spine(self) -> None:
         manifest_path = REPO_ROOT / "config" / "phase_one_source_estate.yaml"
@@ -159,8 +161,12 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         self.assertEqual(source_by_family["ldp"]["spatialhub_package_id"], "local_development_plans-is")
         self.assertFalse(source_by_family["ldp"]["ranking_eligible"])
         self.assertTrue(source_by_family["ldp"]["review_output_eligible"])
-        self.assertEqual(source_by_family["settlement"]["source_status"], "core_pending_adapter")
+        self.assertEqual(source_by_family["settlement"]["source_status"], "live_target")
+        self.assertEqual(source_by_family["settlement"]["orchestration_mode"], "nrs_wfs_geojson")
         self.assertEqual(source_by_family["settlement"]["target_table"], "landintel.settlement_boundary_records")
+        self.assertEqual(source_by_family["settlement"]["wfs_type_name"], "NRS:SettlementBoundaries")
+        self.assertFalse(source_by_family["settlement"]["ranking_eligible"])
+        self.assertTrue(source_by_family["settlement"]["review_output_eligible"])
 
 
 if __name__ == "__main__":

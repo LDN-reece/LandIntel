@@ -40,6 +40,14 @@ where older.ctid < newer.ctid
 create unique index if not exists landintel_ldp_site_records_source_record_uidx
     on landintel.ldp_site_records (source_record_id);
 
+delete from landintel.settlement_boundary_records as older
+using landintel.settlement_boundary_records as newer
+where older.ctid < newer.ctid
+  and older.source_record_id = newer.source_record_id;
+
+create unique index if not exists landintel_settlement_boundary_records_source_record_uidx
+    on landintel.settlement_boundary_records (source_record_id);
+
 drop view if exists analytics.v_phase_one_control_policy_priority;
 drop view if exists analytics.v_phase_one_source_expansion_readiness;
 
@@ -49,7 +57,7 @@ with expected_sources(priority_rank, source_family, command_name, target_table, 
     values
         (1, 'title_number', 'audit-title-number-control', 'public.site_title_validation', 'control'),
         (2, 'ldp', 'ingest-ldp', 'landintel.ldp_site_records', 'policy_core'),
-        (3, 'settlement', 'promote-settlement-authority-source', 'landintel.settlement_boundary_records', 'policy_core'),
+        (3, 'settlement', 'ingest-settlement-boundaries', 'landintel.settlement_boundary_records', 'policy_core'),
         (10, 'ela', 'ingest-ela', 'landintel.ela_site_records', 'future_context'),
         (11, 'vdl', 'ingest-vdl', 'landintel.vdl_site_records', 'future_context'),
         (20, 'sepa_flood', 'ingest-sepa-flood', 'public.constraint_source_features', 'constraint'),
@@ -176,9 +184,9 @@ select
         when expected.source_family = 'ldp'
          and coalesce(raw_counts.raw_row_count, 0) > 0 then 'core_policy_storage_proven_licence_gated'
         when expected.source_family = 'settlement'
-         and coalesce(raw_counts.raw_row_count, 0) > 0 then 'core_policy_populated_not_fully_proven'
+         and coalesce(raw_counts.raw_row_count, 0) > 0 then 'core_policy_storage_proven_interpreter_gated'
         when expected.source_family = 'ldp' then coalesce(latest_events.latest_event_status, 'core_policy_spatialhub_package_pending')
-        when expected.source_family = 'settlement' then coalesce(latest_events.latest_event_status, 'core_policy_pending_authority_adapter')
+        when expected.source_family = 'settlement' then coalesce(latest_events.latest_event_status, 'core_policy_nrs_wfs_pending')
         when coalesce(raw_counts.raw_row_count, 0) > 0
          and coalesce(linked_counts.linked_row_count, 0) > 0
          and coalesce(evidence_counts.evidence_row_count, 0) > 0

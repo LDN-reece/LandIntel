@@ -45,8 +45,8 @@ class SourceFreshnessContractTests(unittest.TestCase):
 
         self.assertIn("core_policy_storage_licence_gated", sql)
         self.assertIn("pass_core_policy_storage_licence_gated", sql)
-        self.assertIn("core_policy_pending_adapter", sql)
-        self.assertIn("pass_core_policy_pending_adapter", sql)
+        self.assertIn("core_policy_storage_interpreter_gated", sql)
+        self.assertIn("pass_core_policy_storage_interpreter_gated", sql)
         self.assertIn("control_spine", sql)
 
     def test_github_action_exposes_source_freshness_audit_command(self) -> None:

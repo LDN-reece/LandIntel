@@ -597,13 +597,15 @@ with expected_sources(source_family, command_name, target_table, source_role) as
         ('os_places', 'ingest-os-places', 'public.constraint_source_features', 'location_context'),
         ('os_features', 'ingest-os-features', 'public.constraint_source_features', 'location_context'),
         ('ldp', 'ingest-ldp', 'landintel.ldp_site_records', 'policy_deferred'),
-        ('settlement', 'promote-settlement-authority-source', 'landintel.authority_source_registry', 'policy_deferred')
+        ('settlement', 'ingest-settlement-boundaries', 'landintel.settlement_boundary_records', 'policy_deferred')
 ), raw_counts as (
     select 'ela'::text as source_family, count(*)::bigint as raw_row_count from landintel.ela_site_records
     union all
     select 'vdl'::text as source_family, count(*)::bigint as raw_row_count from landintel.vdl_site_records
     union all
     select 'ldp'::text as source_family, count(*)::bigint as raw_row_count from landintel.ldp_site_records
+    union all
+    select 'settlement'::text as source_family, count(*)::bigint as raw_row_count from landintel.settlement_boundary_records
     union all
     select layer.source_family, count(feature.id)::bigint as raw_row_count
     from public.constraint_layer_registry as layer
@@ -668,7 +670,9 @@ select
     latest_events.latest_event_summary,
     latest_events.latest_event_at,
     case
-        when expected.source_family in ('ldp', 'settlement') then 'explicitly_deferred_until_authority_adapter_validated'
+        when expected.source_family = 'ldp' and coalesce(raw_counts.raw_row_count, 0) > 0 then 'core_policy_storage_proven_licence_gated'
+        when expected.source_family = 'settlement' and coalesce(raw_counts.raw_row_count, 0) > 0 then 'core_policy_storage_proven_interpreter_gated'
+        when expected.source_family in ('ldp', 'settlement') then 'explicitly_deferred_until_interpreter_validated'
         when coalesce(raw_counts.raw_row_count, 0) > 0
          and coalesce(linked_counts.linked_row_count, 0) > 0
          and coalesce(evidence_counts.evidence_row_count, 0) > 0

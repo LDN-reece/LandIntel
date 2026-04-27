@@ -235,7 +235,7 @@ with source_families(source_family, phase_one_role, ranking_policy) as (
         ('ros_cadastral', 'critical', 'canonical_spine'),
         ('local_authority_boundaries', 'critical', 'review_context'),
         ('ldp', 'critical', 'core_policy_storage_licence_gated'),
-        ('settlement', 'critical', 'core_policy_pending_adapter'),
+        ('settlement', 'critical', 'core_policy_storage_interpreter_gated'),
         ('flood', 'target_live', 'constraints_drag'),
         ('bgs', 'context', 'ground_context'),
         ('ela', 'target_live', 'future_context'),
@@ -305,6 +305,8 @@ select
          and coalesce(rollup.deferred_count, 0) > 0 then 'pass_core_policy_pending_adapter'
         when family.ranking_policy = 'core_policy_storage_licence_gated'
          and coalesce(rollup.current_count, 0) > 0 then 'pass_core_policy_storage_licence_gated'
+        when family.ranking_policy = 'core_policy_storage_interpreter_gated'
+         and coalesce(rollup.current_count, 0) > 0 then 'pass_core_policy_storage_interpreter_gated'
         when family.ranking_policy = 'control_spine'
          and coalesce(rollup.current_count, 0) > 0 then 'pass_control_current'
         when family.ranking_policy like 'deferred%%' and coalesce(rollup.deferred_count, 0) > 0 then 'pass_deferred_monitored'

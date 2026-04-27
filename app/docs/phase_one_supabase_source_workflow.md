@@ -58,7 +58,7 @@ Run in this order:
 ## What Each Step Proves
 
 - `run-migrations` applies the Supabase schema for source freshness, source estate registry, and analytics proof views.
-- `source-estate-maintenance` registers all source families, registers topography/adopted-road/utility/Section 75 gap sources, probes live endpoints, registers the Spatial Hub LDP package, discovers settlement boundary records through Scottish SDI GeoNetwork, and writes source freshness states.
+- `source-estate-maintenance` registers all source families, registers topography/adopted-road/utility/Section 75 gap sources, probes live endpoints, registers the Spatial Hub LDP package, registers the NRS settlement boundary WFS, and writes source freshness states.
 - `audit-source-estate` proves every source is either live-wired, explicitly deferred, discovery-only, static-registered, blocked, or unproven.
 - `audit-source-freshness` proves the current freshness gate for ranking/review surfaces.
 - `publish-planning-links` publishes existing live planning records into the canonical-site reconcile queue and refreshes affected sites without running the long national SpatialHub WFS pull.
@@ -97,19 +97,20 @@ The LDP source is the Spatial Hub CKAN package:
 
 `ingest-ldp` downloads direct Spatial Hub ZIP resources and stores feature rows in `landintel.ldp_site_records`. This proves storage and readability only. It does not promote LDP into ranking or DD conclusions until commercial-use rights and the policy interpreter are validated.
 
-Settlement discovery remains Scottish SDI GeoNetwork:
+Settlement boundaries now use the National Records of Scotland WFS:
 
-- `https://www.spatialdata.gov.scot/geonetwork/srv/api/search/records/_search`
+- `https://maps.gov.scot/server/services/NRS/NRS/MapServer/WFSServer`
+- feature type: `NRS:SettlementBoundaries`
 
-Settlement GeoNetwork discovery does not automatically promote a source into ranking. Each authority source must be validated before promotion because the estate mixes WFS, ArcGIS, ZIP, PDF, and authority-specific schemas.
+`ingest-settlement-boundaries` stores NRS polygons in `landintel.settlement_boundary_records`. This proves storage and readability only. It does not promote settlement position into ranking or DD conclusions until the canonical inside/outside/edge overlay is validated.
 
 Until promoted or licence/interpreter-cleared:
 
 - ranking eligible: false
 - LDP review-output eligible: true for storage audit only
-- Settlement review-output eligible: false
+- Settlement review-output eligible: true for storage audit only
 - LDP status: storage live, licence/interpreter gated
-- Settlement status: authority adapter not validated
+- Settlement status: storage live, interpreter gated
 
 After promotion:
 

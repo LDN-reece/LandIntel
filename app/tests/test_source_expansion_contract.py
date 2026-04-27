@@ -32,7 +32,7 @@ class SourceExpansionContractTests(unittest.TestCase):
             "ingest-os-topography",
             "ingest-os-places",
             "ingest-os-features",
-            "promote-settlement-authority-source",
+            "ingest-settlement-boundaries",
         ):
             self.assertIn(f"- {command}", WORKFLOW)
             self.assertIn(command, RUNNER)
@@ -194,14 +194,21 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("local_development_plans-is", MANIFEST)
         self.assertIn("spatialhub_ckan_package_zips", MANIFEST)
         self.assertIn("commercial_use_licence_not_confirmed", MANIFEST)
-        self.assertIn("source_status: core_pending_adapter", MANIFEST)
-        self.assertIn("authority_adapter_not_validated", MANIFEST)
+        self.assertIn("source_key: nrs_settlement_boundaries", MANIFEST)
+        self.assertIn("nrs_wfs_geojson", MANIFEST)
+        self.assertIn("NRS:SettlementBoundaries", MANIFEST)
+        self.assertIn("e457f123-09df-4d67-ac81-d7bb2e470499", MANIFEST)
+        self.assertIn("settlement_position_overlay_not_promoted", MANIFEST)
+        self.assertIn("def _ingest_settlement_boundary_family", RUNNER)
+        self.assertIn("def _fetch_settlement_boundary_frame", RUNNER)
+        self.assertIn("def _replace_settlement_boundary_rows", RUNNER)
         self.assertIn("(1, 'title_number'", priority_migration)
         self.assertIn("(2, 'ldp', 'ingest-ldp'", priority_migration)
-        self.assertIn("(3, 'settlement'", priority_migration)
+        self.assertIn("(3, 'settlement', 'ingest-settlement-boundaries'", priority_migration)
         self.assertIn("core_policy_storage_proven_licence_gated", priority_migration)
-        self.assertIn("core_policy_pending_authority_adapter", priority_migration)
+        self.assertIn("core_policy_storage_proven_interpreter_gated", priority_migration)
         self.assertIn("landintel_ldp_site_records_source_record_uidx", priority_migration)
+        self.assertIn("landintel_settlement_boundary_records_source_record_uidx", priority_migration)
         self.assertIn("control_wired_proven", RUNNER)
 
 

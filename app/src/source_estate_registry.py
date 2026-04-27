@@ -8,6 +8,8 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+import xml.etree.ElementTree as ET
 
 import httpx
 import yaml
@@ -114,6 +116,26 @@ class SourceEstateRegistryRunner:
                 "registry_rows_written": len(self._sources(source_family)),
                 "package_results": 1 if package else 0,
                 "resource_count": len(package.get("resources") or []),
+            }
+            self.logger.info("source_estate_discovery_completed", extra=result)
+            return result
+        if "WFSServer" in search_url or "service=WFS" in search_url:
+            feature_count = self._wfs_hit_count(search_url, query_base)
+            for source in self._sources(source_family):
+                self._upsert_source(source)
+                self._record_freshness(
+                    source,
+                    freshness_status="current",
+                    live_access_status="reachable",
+                    summary=f"{source['source_name']} registered from WFS capabilities.",
+                    records_observed=feature_count,
+                )
+            result = {
+                "source_family": source_family,
+                "authorities_checked": 0,
+                "registry_rows_written": len(self._sources(source_family)),
+                "wfs_results": 1,
+                "feature_count": feature_count,
             }
             self.logger.info("source_estate_discovery_completed", extra=result)
             return result
@@ -316,6 +338,7 @@ class SourceEstateRegistryRunner:
         freshness_status: str,
         live_access_status: str,
         summary: str,
+        records_observed: int | None = None,
     ) -> None:
         self.database.execute(
             """
@@ -380,7 +403,11 @@ class SourceEstateRegistryRunner:
                     else live_access_status
                 ),
                 "check_summary": summary,
-                "records_observed": sum(int(asset.get("feature_count") or 0) for asset in source.get("static_assets") or []),
+                "records_observed": (
+                    records_observed
+                    if records_observed is not None
+                    else sum(int(asset.get("feature_count") or 0) for asset in source.get("static_assets") or [])
+                ),
                 "metadata": json.dumps({"source_key": source["source_key"], "phase_one_role": source.get("phase_one_role")}),
             },
         )
@@ -460,6 +487,30 @@ class SourceEstateRegistryRunner:
         if endpoint_url.endswith("/wfs") or "WFSServer" in endpoint_url:
             return {"service": "WFS", "request": "GetCapabilities"}
         return {}
+
+    def _wfs_hit_count(self, search_url: str, type_name: str) -> int:
+        parsed = urlparse(search_url)
+        endpoint_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}" if parsed.scheme else search_url.split("?", 1)[0]
+        response = self.client.get(
+            endpoint_url,
+            params={
+                "service": "WFS",
+                "version": "2.0.0",
+                "request": "GetFeature",
+                "typeNames": type_name,
+                "resultType": "hits",
+            },
+        )
+        response.raise_for_status()
+        try:
+            root = ET.fromstring(response.text.encode("utf-8"))
+        except ET.ParseError:
+            return 0
+        value = root.attrib.get("numberMatched") or root.attrib.get("numberOfFeatures")
+        try:
+            return int(str(value))
+        except (TypeError, ValueError):
+            return 0
 
     def _fetch_json(self, url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         response = self.client.get(url, params=params)

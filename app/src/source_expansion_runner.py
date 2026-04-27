@@ -40,6 +40,7 @@ MANIFEST_PATH = Path(__file__).resolve().parents[1] / "config" / "phase_one_sour
 
 FUTURE_CONTEXT_FAMILIES = {"ela", "vdl"}
 POLICY_PACKAGE_FAMILIES = {"ldp"}
+SETTLEMENT_BOUNDARY_FAMILIES = {"settlement"}
 CONSTRAINT_FAMILIES = {
     "sepa_flood",
     "coal_authority",
@@ -55,6 +56,7 @@ PROBE_ONLY_FAMILIES = {"topography", "os_places", "os_features"}
 
 COMMAND_TO_FAMILIES: dict[str, tuple[str, ...]] = {
     "ingest-ldp": ("ldp",),
+    "ingest-settlement-boundaries": ("settlement",),
     "ingest-ela": ("ela",),
     "ingest-vdl": ("vdl",),
     "ingest-sepa-flood": ("sepa_flood",),
@@ -206,8 +208,6 @@ class SourceExpansionRunner:
             return self.audit_title_number_control()
         if command == "promote-ldp-authority-source":
             return self._record_policy_promotion_placeholder("ldp", command)
-        if command == "promote-settlement-authority-source":
-            return self._record_policy_promotion_placeholder("settlement", command)
         if command not in COMMAND_TO_FAMILIES:
             raise KeyError(f"Unsupported source expansion command: {command}")
 
@@ -314,6 +314,8 @@ class SourceExpansionRunner:
                 result = self._ingest_future_context_family(command, source_family, sources, run_id)
             elif source_family in POLICY_PACKAGE_FAMILIES:
                 result = self._ingest_policy_package_family(command, source_family, sources, run_id)
+            elif source_family in SETTLEMENT_BOUNDARY_FAMILIES:
+                result = self._ingest_settlement_boundary_family(command, source_family, sources, run_id)
             elif source_family in CONSTRAINT_FAMILIES:
                 result = self._ingest_constraint_family(command, source_family, sources, run_id)
             elif source_family in PROBE_ONLY_FAMILIES:
@@ -328,7 +330,7 @@ class SourceExpansionRunner:
                     records_fetched=int(result.get("raw_rows", 0)),
                     records_loaded=int(
                         result.get("raw_rows", 0)
-                        if source_family in POLICY_PACKAGE_FAMILIES
+                        if source_family in POLICY_PACKAGE_FAMILIES | SETTLEMENT_BOUNDARY_FAMILIES
                         else result.get("linked_rows", 0) or result.get("measured_rows", 0)
                     ),
                     records_retained=int(result.get("signal_rows", 0)),
@@ -375,7 +377,7 @@ class SourceExpansionRunner:
             frame = pd.concat(frames, ignore_index=True)
             gdf = gpd.GeoDataFrame(frame, geometry="geometry", crs=frames[0].crs or 27700)
         else:
-            gdf = gpd.GeoDataFrame([], geometry="geometry", crs=27700)
+            gdf = gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs=27700)
 
         raw_rows = self._replace_future_context_rows(source_family, sources[0], gdf, run_id)
         self._backfill_future_context_authority(source_family)
@@ -566,6 +568,71 @@ class SourceExpansionRunner:
         )
         return result
 
+    def _ingest_settlement_boundary_family(
+        self,
+        command: str,
+        source_family: str,
+        sources: list[dict[str, Any]],
+        run_id: str,
+    ) -> dict[str, Any]:
+        if source_family != "settlement":
+            raise KeyError(f"No settlement-boundary strategy exists for {source_family}.")
+
+        raw_rows = 0
+        loaded_sources: list[dict[str, Any]] = []
+        for source in sources:
+            self._upsert_source_estate(source)
+            source_registry_id = self._upsert_settlement_source_registry(source)
+            frame = self._fetch_settlement_boundary_frame(source)
+            loaded = self._replace_settlement_boundary_rows(source, frame, run_id, source_registry_id)
+            raw_rows += loaded
+            loaded_sources.append(
+                {
+                    "source_key": source["source_key"],
+                    "wfs_type_name": source.get("wfs_type_name"),
+                    "rows_loaded": loaded,
+                }
+            )
+
+        status = (
+            "core_policy_storage_proven_interpreter_gated"
+            if raw_rows
+            else "core_policy_nrs_wfs_reachable_no_features"
+        )
+        result = {
+            "command": command,
+            "source_family": source_family,
+            "source_keys": [source["source_key"] for source in sources],
+            "raw_rows": raw_rows,
+            "linked_rows": 0,
+            "measured_rows": 0,
+            "evidence_rows": 0,
+            "signal_rows": 0,
+            "change_event_rows": 0,
+            "loaded_sources": loaded_sources,
+            "summary": (
+                "NRS settlement boundaries stored in landintel.settlement_boundary_records. "
+                "Ranking remains interpreter-gated until canonical settlement-position overlay is promoted."
+            ),
+        }
+        self._record_source_freshness(
+            sources[0],
+            "current" if raw_rows else "empty",
+            "reachable",
+            raw_rows,
+            result,
+        )
+        self._record_expansion_event(
+            command_name=command,
+            source_key=sources[0]["source_key"],
+            source_family=source_family,
+            status=status,
+            raw_rows=raw_rows,
+            summary=result["summary"],
+            metadata=result,
+        )
+        return result
+
     def _probe_catalogue_family(
         self,
         command: str,
@@ -706,7 +773,7 @@ class SourceExpansionRunner:
                 break
             offset += self.page_size
         if not frames:
-            return gpd.GeoDataFrame([], geometry="geometry", crs=27700)
+            return gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs=27700)
         combined = pd.concat(frames, ignore_index=True)
         return gpd.GeoDataFrame(combined, geometry="geometry", crs=frames[0].crs or 27700)
 
@@ -737,9 +804,61 @@ class SourceExpansionRunner:
             properties["geometry"] = geometry
             rows.append(properties)
         if not rows:
-            return gpd.GeoDataFrame([], geometry="geometry", crs=27700)
+            return gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs=27700)
         frame = gpd.GeoDataFrame(rows, geometry="geometry", crs=27700)
         return self._normalise_frame_crs(frame)
+
+    def _fetch_settlement_boundary_frame(self, source: dict[str, Any]) -> gpd.GeoDataFrame:
+        endpoint_url = str(source["endpoint_url"])
+        type_name = str(source.get("wfs_type_name") or "NRS:SettlementBoundaries")
+        frames: list[gpd.GeoDataFrame] = []
+        fetched = 0
+        offset = 0
+        page_size = max(1, self.page_size)
+
+        while True:
+            batch_limit = page_size
+            if self.max_features > 0:
+                remaining = self.max_features - fetched
+                if remaining <= 0:
+                    break
+                batch_limit = min(batch_limit, remaining)
+
+            params: dict[str, Any] = {
+                "service": "WFS",
+                "version": "2.0.0",
+                "request": "GetFeature",
+                "typeNames": type_name,
+                "outputFormat": "GEOJSON",
+                "srsName": "EPSG:27700",
+                "count": str(batch_limit),
+            }
+            if offset > 0:
+                params["startIndex"] = str(offset)
+
+            response = self.client.get(endpoint_url, params=params)
+            response.raise_for_status()
+            payload = self._json_payload(response, f"NRS settlement WFS {source['source_key']} {type_name}")
+            frame = self._feature_collection_to_gdf(payload, source, type_name)
+            if frame.empty:
+                break
+
+            frame = frame.copy()
+            frame["geometry"] = frame.geometry.apply(
+                lambda geometry: force_2d(geometry) if geometry is not None else None
+            )
+            frames.append(gpd.GeoDataFrame(frame, geometry="geometry", crs=frame.crs or 27700))
+
+            batch_count = len(frame)
+            fetched += batch_count
+            if batch_count < batch_limit:
+                break
+            offset += batch_count
+
+        if not frames:
+            return gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs=27700)
+        combined = pd.concat(frames, ignore_index=True)
+        return gpd.GeoDataFrame(combined, geometry="geometry", crs=frames[0].crs or 27700)
 
     def _is_direct_zip_resource(self, resource: dict[str, Any]) -> bool:
         url = str(resource.get("url") or "")
@@ -1028,6 +1147,95 @@ class SourceExpansionRunner:
                 proposed_use = excluded.proposed_use,
                 support_level = excluded.support_level,
                 policy_constraints = excluded.policy_constraints,
+                geometry = excluded.geometry,
+                source_registry_id = excluded.source_registry_id,
+                ingest_run_id = excluded.ingest_run_id,
+                raw_payload = excluded.raw_payload,
+                updated_at = now()
+        """
+        for batch in chunked(params, self.settings.batch_size):
+            self.database.execute_many(insert_sql, batch)
+        return len(params)
+
+    def _replace_settlement_boundary_rows(
+        self,
+        source: dict[str, Any],
+        frame: gpd.GeoDataFrame,
+        run_id: str,
+        source_registry_id: str | None,
+    ) -> int:
+        self.database.execute(
+            """
+            delete from landintel.settlement_boundary_records
+            where raw_payload ->> '_source_key' = :source_key
+               or source_registry_id = cast(:source_registry_id as uuid)
+            """,
+            {"source_key": source["source_key"], "source_registry_id": source_registry_id},
+        )
+        if frame.empty:
+            return 0
+
+        params: list[dict[str, Any]] = []
+        for index, row in enumerate(frame.to_dict(orient="records")):
+            geometry = _polygonize_geometry(row.get("geometry"))
+            if geometry is None:
+                continue
+            raw_payload_dict = _raw_payload(row)
+            raw_payload_dict.update(
+                {
+                    "_source_key": source["source_key"],
+                    "_metadata_uuid": source.get("metadata_uuid"),
+                    "_nrs_identifier": source.get("nrs_identifier"),
+                    "_nrs_revision_date": source.get("source_revision_date"),
+                    "_license": source.get("license"),
+                    "_attribution": source.get("attribution"),
+                }
+            )
+            source_reference = _pick_text(row, ("code", "CODE", "source_record_id", "objectid", "OBJECTID")) or str(index)
+            settlement_name = _pick_text(row, ("name", "NAME", "settlement_name")) or f"Settlement {source_reference}"
+            params.append(
+                {
+                    "source_record_id": f"{source['source_key']}:settlement_boundaries:{_slug(source_reference)}",
+                    "authority_name": "Scotland",
+                    "settlement_name": settlement_name,
+                    "boundary_role": "settlement",
+                    "boundary_status": "current",
+                    "geometry_wkb": _geometry_hex(geometry),
+                    "source_registry_id": source_registry_id,
+                    "ingest_run_id": run_id,
+                    "raw_payload": _json_dumps(raw_payload_dict),
+                }
+            )
+
+        insert_sql = """
+            insert into landintel.settlement_boundary_records (
+                source_record_id,
+                authority_name,
+                settlement_name,
+                boundary_role,
+                boundary_status,
+                geometry,
+                source_registry_id,
+                ingest_run_id,
+                raw_payload,
+                updated_at
+            ) values (
+                :source_record_id,
+                :authority_name,
+                :settlement_name,
+                :boundary_role,
+                :boundary_status,
+                ST_Multi(ST_GeomFromWKB(decode(:geometry_wkb, 'hex'), 27700)),
+                cast(:source_registry_id as uuid),
+                cast(:ingest_run_id as uuid),
+                cast(:raw_payload as jsonb),
+                now()
+            )
+            on conflict (source_record_id) do update set
+                authority_name = excluded.authority_name,
+                settlement_name = excluded.settlement_name,
+                boundary_role = excluded.boundary_role,
+                boundary_status = excluded.boundary_status,
                 geometry = excluded.geometry,
                 source_registry_id = excluded.source_registry_id,
                 ingest_run_id = excluded.ingest_run_id,
@@ -1892,8 +2100,8 @@ class SourceExpansionRunner:
             status = "core_policy_storage_licence_gated"
             summary = "LDP is now stored through ingest-ldp. Ranking still requires commercial-use clearance and a validated policy interpreter."
         else:
-            status = "core_policy_pending_authority_adapter"
-            summary = "Settlement is a core policy source. Promotion still requires an authority-specific adapter and explicit authority scope before ranking impact."
+            status = "core_policy_storage_interpreter_gated"
+            summary = "Settlement boundaries are now stored through ingest-settlement-boundaries. Ranking still requires the canonical settlement-position overlay."
         result = {
             "command": command,
             "source_family": source_family,
@@ -1945,6 +2153,32 @@ class SourceExpansionRunner:
                         "dataset": package,
                         "geonetwork_uuid": source.get("metadata_uuid"),
                         "spatialhub_identifier": source.get("spatialhub_identifier"),
+                    },
+                    geographic_extent=None,
+                    last_seen_at=datetime.now(timezone.utc),
+                )
+            ]
+        )
+        return self.phase_runner._resolve_source_registry_id(metadata_uuid)
+
+    def _upsert_settlement_source_registry(self, source: dict[str, Any]) -> str | None:
+        metadata_uuid = f"nrs:{source.get('nrs_identifier') or 'NRS_SettlementBdry'}"
+        self.loader.upsert_source_registry(
+            [
+                SourceRegistryRecord(
+                    source_name=str(source.get("source_name") or "Settlements - Scotland"),
+                    source_type="NRS WFS",
+                    publisher="National Records of Scotland",
+                    metadata_uuid=metadata_uuid,
+                    endpoint_url=source.get("endpoint_url"),
+                    download_url=str(source.get("information_url") or "https://www.nrscotland.gov.uk/"),
+                    record_json={
+                        "metadata_uuid": source.get("metadata_uuid"),
+                        "nrs_identifier": source.get("nrs_identifier"),
+                        "wfs_type_name": source.get("wfs_type_name"),
+                        "source_revision_date": source.get("source_revision_date"),
+                        "license": source.get("license"),
+                        "attribution": source.get("attribution"),
                     },
                     geographic_extent=None,
                     last_seen_at=datetime.now(timezone.utc),
@@ -2113,6 +2347,7 @@ def build_parser() -> argparse.ArgumentParser:
             "audit-source-expansion",
             "audit-title-number-control",
             "ingest-ldp",
+            "ingest-settlement-boundaries",
             "ingest-ela",
             "ingest-vdl",
             "ingest-sepa-flood",
@@ -2128,7 +2363,6 @@ def build_parser() -> argparse.ArgumentParser:
             "ingest-os-places",
             "ingest-os-features",
             "promote-ldp-authority-source",
-            "promote-settlement-authority-source",
         ),
     )
     return parser

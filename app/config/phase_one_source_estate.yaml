@@ -17,12 +17,12 @@ discovery:
     review_output_eligible: true
   settlement:
     source_family: settlement
-    search_url: "https://data.spatialhub.scot/api/3/action/package_search"
-    query: "settlement boundary local development plan"
-    source_status: core_pending_adapter
-    defer_reason_code: authority_adapter_not_validated
+    search_url: "https://maps.gov.scot/server/services/NRS/NRS/MapServer/WFSServer?service=WFS&request=GetCapabilities"
+    query: "NRS:SettlementBoundaries"
+    source_status: live_target
+    defer_reason_code: settlement_position_overlay_not_promoted
     ranking_eligible: false
-    review_output_eligible: false
+    review_output_eligible: true
 
 sources:
   - source_key: planning_applications_spatialhub
@@ -109,22 +109,31 @@ sources:
     spatialhub_identifier: "sh_ldp"
     notes: "Second source in the commercial priority spine after title number. SpatialHub provides direct ZIP resources for many authorities and external links for others; metadata says commercial use is not currently available, so storage is live but ranking remains gated."
 
-  - source_key: settlement_boundary_authority_discovery
+  - source_key: nrs_settlement_boundaries
     source_family: settlement
-    source_name: "Settlement boundary discovery and monitoring"
+    source_name: "Settlements - Scotland"
     source_group: policy
     phase_one_role: critical
-    source_status: core_pending_adapter
-    orchestration_mode: authority_discovery
-    endpoint_url: "https://data.spatialhub.scot/api/3/action/package_search"
+    source_status: live_target
+    orchestration_mode: nrs_wfs_geojson
+    endpoint_url: "https://maps.gov.scot/server/services/NRS/NRS/MapServer/WFSServer"
     target_table: landintel.settlement_boundary_records
-    reconciliation_path: "authority source discovery -> validated authority adapter -> settlement_boundary_records -> canonical site overlay"
-    evidence_path: "authority registry, settlement_boundary_records, evidence_references, site_source_links"
+    reconciliation_path: "NRS WFS -> settlement_boundary_records -> later canonical settlement-position overlay"
+    evidence_path: "settlement_boundary_records raw_payload, source_expansion_events, source_freshness_states"
     signal_output: "settlement_position and planning_context caveats"
-    ranking_impact: "Core planning-thesis source. Held out of ranking until authority boundary evidence is reliable."
-    resurfacing_trigger: "boundary dataset refresh, promotion, inside/outside percentage change"
-    data_age_basis: "Authority source checked timestamp and source modified timestamp"
-    notes: "Third source in the commercial priority spine after title number and LDP. Must show percentages and never predict planning outcome."
+    ranking_impact: "Core planning-thesis source. Stored now; ranking remains interpreter-gated until canonical inside/outside/edge overlay is validated."
+    resurfacing_trigger: "NRS boundary dataset refresh, source revision change, or settlement-position overlay promotion"
+    data_age_basis: "NRS metadata revision date and latest successful ingest run"
+    ranking_eligible: false
+    review_output_eligible: true
+    metadata_uuid: "e457f123-09df-4d67-ac81-d7bb2e470499"
+    nrs_identifier: "NRS_SettlementBdry"
+    wfs_type_name: "NRS:SettlementBoundaries"
+    source_revision_date: "2023-07-11"
+    information_url: "https://www.nrscotland.gov.uk/publications/population-estimates-for-settlements-and-localities-in-scotland-mid-2020/"
+    license: "Open Government Licence"
+    attribution: "Copyright National Records of Scotland, contains Ordnance Survey data © Crown copyright and database right (insert year)."
+    notes: "Third source in the commercial priority spine after title number and LDP. National NRS boundaries are storage-live; they must not influence ranking until the canonical overlay reports exact inside/outside/edge percentages."
 
   - source_key: employment_land_supply_spatialhub
     source_family: ela

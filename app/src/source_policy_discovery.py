@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import json
 import re
 from typing import Any
+import xml.etree.ElementTree as ET
 
 import httpx
 
@@ -17,6 +18,9 @@ from src.logging_config import configure_logging
 
 GEONETWORK_SEARCH_URL = "https://www.spatialdata.gov.scot/geonetwork/srv/api/search/records/_search"
 LDP_SPATIALHUB_PACKAGE_URL = "https://data.spatialhub.scot/api/3/action/package_show?id=local_development_plans-is"
+NRS_SETTLEMENT_WFS_URL = "https://maps.gov.scot/server/services/NRS/NRS/MapServer/WFSServer"
+NRS_SETTLEMENT_TYPE_NAME = "NRS:SettlementBoundaries"
+NRS_SETTLEMENT_METADATA_UUID = "e457f123-09df-4d67-ac81-d7bb2e470499"
 
 POLICY_DISCOVERY: dict[str, dict[str, Any]] = {
     "ldp": {
@@ -27,11 +31,11 @@ POLICY_DISCOVERY: dict[str, dict[str, Any]] = {
         "resurfacing_trigger": "SpatialHub package revision, direct ZIP resource refresh, allocation change, or policy interpreter promotion.",
     },
     "settlement": {
-        "query": '"settlement boundary" OR "settlement boundaries" OR "local development plan settlement boundaries"',
-        "source_name_suffix": "settlement boundary discovery",
-        "signal_output": "settlement_position after authority adapter validation",
-        "ranking_impact": "Core settlement source. No live ranking until authority adapter is validated.",
-        "resurfacing_trigger": "Boundary dataset refresh, adapter promotion, or inside/outside percentage change.",
+        "query": NRS_SETTLEMENT_TYPE_NAME,
+        "source_name_suffix": "NRS settlement boundaries",
+        "signal_output": "settlement_position after canonical overlay validation",
+        "ranking_impact": "Core settlement source. Storage is live; no ranking impact until the canonical inside/outside/edge interpreter is promoted.",
+        "resurfacing_trigger": "NRS dataset refresh, source revision change, or inside/outside percentage change.",
     },
 }
 
@@ -190,6 +194,8 @@ class SourcePolicyDiscoveryRunner:
             raise KeyError(f"No policy discovery config for {source_family}")
         if source_family == "ldp":
             return self.register_ldp_spatialhub_package()
+        if source_family == "settlement":
+            return self.register_settlement_boundaries()
         config = POLICY_DISCOVERY[source_family]
         authorities = self.settings.load_target_councils()
         inserted = 0
@@ -271,6 +277,81 @@ class SourcePolicyDiscoveryRunner:
         }
         self.logger.info("ldp_spatialhub_package_registered", extra=result)
         return result
+
+    def register_settlement_boundaries(self) -> dict[str, Any]:
+        capabilities = self.client.get(
+            NRS_SETTLEMENT_WFS_URL,
+            params={"service": "WFS", "request": "GetCapabilities"},
+            headers={"Accept": "text/xml,application/xml"},
+        )
+        capabilities.raise_for_status()
+        feature_count = self._settlement_hit_count()
+        source = {
+            "source_key": "nrs_settlement_boundaries",
+            "source_family": "settlement",
+            "source_name": "Settlements - Scotland",
+            "source_group": "policy",
+            "phase_one_role": "critical",
+            "source_status": "live_target",
+            "orchestration_mode": "nrs_wfs_geojson",
+            "endpoint_url": NRS_SETTLEMENT_WFS_URL,
+            "target_table": "landintel.settlement_boundary_records",
+            "reconciliation_path": "NRS WFS -> settlement_boundary_records -> later canonical settlement-position overlay",
+            "evidence_path": "settlement_boundary_records raw_payload, source_expansion_events, source_freshness_states",
+            "signal_output": POLICY_DISCOVERY["settlement"]["signal_output"],
+            "ranking_impact": POLICY_DISCOVERY["settlement"]["ranking_impact"],
+            "resurfacing_trigger": POLICY_DISCOVERY["settlement"]["resurfacing_trigger"],
+            "data_age_basis": "NRS metadata revision date and latest successful ingest run.",
+            "ranking_eligible": False,
+            "review_output_eligible": True,
+            "notes": "NRS settlement WFS is reachable and storage-live; ranking waits for canonical settlement-position overlay.",
+            "metadata": {
+                "metadata_uuid": NRS_SETTLEMENT_METADATA_UUID,
+                "nrs_identifier": "NRS_SettlementBdry",
+                "wfs_type_name": NRS_SETTLEMENT_TYPE_NAME,
+                "source_revision_date": "2023-07-11",
+                "license": "Open Government Licence",
+                "feature_count": feature_count,
+            },
+        }
+        self._upsert_source(source)
+        self._record_freshness(
+            source,
+            freshness_status="current",
+            live_access_status="reachable",
+            summary="NRS settlement WFS registered; features are storage-live and interpreter-gated.",
+            records_observed=feature_count,
+        )
+        result = {
+            "source_family": "settlement",
+            "source_key": source["source_key"],
+            "wfs_type_name": NRS_SETTLEMENT_TYPE_NAME,
+            "feature_count": feature_count,
+        }
+        self.logger.info("settlement_boundaries_registered", extra=result)
+        return result
+
+    def _settlement_hit_count(self) -> int:
+        response = self.client.get(
+            NRS_SETTLEMENT_WFS_URL,
+            params={
+                "service": "WFS",
+                "version": "2.0.0",
+                "request": "GetFeature",
+                "typeNames": NRS_SETTLEMENT_TYPE_NAME,
+                "resultType": "hits",
+            },
+        )
+        response.raise_for_status()
+        try:
+            root = ET.fromstring(response.text.encode("utf-8"))
+        except ET.ParseError:
+            return 0
+        value = root.attrib.get("numberMatched") or root.attrib.get("numberOfFeatures")
+        try:
+            return int(str(value))
+        except (TypeError, ValueError):
+            return 0
 
     def _search_geonetwork(self, authority: str, query: str) -> list[dict[str, Any]]:
         payload = {
@@ -566,6 +647,7 @@ def build_parser() -> argparse.ArgumentParser:
             "register-supplemental-sources",
             "discover-ldp-geonetwork",
             "discover-settlement-geonetwork",
+            "register-settlement-boundaries",
             "discover-policy-geonetwork",
         ),
     )
@@ -582,7 +664,7 @@ def main() -> int:
             runner.register_supplemental_sources()
         elif args.command == "discover-ldp-geonetwork":
             runner.discover_policy_sources("ldp")
-        elif args.command == "discover-settlement-geonetwork":
+        elif args.command in {"discover-settlement-geonetwork", "register-settlement-boundaries"}:
             runner.discover_policy_sources("settlement")
         elif args.command == "discover-policy-geonetwork":
             runner.register_supplemental_sources()

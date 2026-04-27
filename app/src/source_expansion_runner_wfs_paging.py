@@ -85,28 +85,40 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
                 self.logger.info("constraint_layer_gate", extra=layer_payload)
 
                 if gate["measurement_approved"]:
-                    proof = self.database.fetch_one(
-                        "select * from public.refresh_constraint_measurements_for_layer(:layer_key)",
-                        {"layer_key": layer["layer_key"]},
-                    ) or {}
-                    measurement_approved_layers += 1
-                    measured_rows += int(proof.get("measurement_count") or 0)
-                    evidence_rows += int(proof.get("evidence_count") or 0)
-                    signal_rows += int(proof.get("signal_count") or 0)
-                    affected_site_count += int(proof.get("affected_site_count") or 0)
-                    layer_payload.update(proof)
+                    try:
+                        proof = self.database.fetch_one(
+                            "select * from public.refresh_constraint_measurements_for_layer(:layer_key)",
+                            {"layer_key": layer["layer_key"]},
+                        ) or {}
+                    except Exception as exc:
+                        if not self._is_statement_timeout(exc):
+                            raise
+                        measurement_deferred_layers += 1
+                        layer_payload.update(
+                            self._deferred_measurement_payload(
+                                "measurement_statement_timeout",
+                                str(exc),
+                            )
+                        )
+                        self.logger.warning(
+                            "constraint_measurement_deferred",
+                            extra={
+                                "layer_key": layer.get("layer_key"),
+                                "source_family": source_family,
+                                "gate_reason": "measurement_statement_timeout",
+                                "error_message": str(exc),
+                            },
+                        )
+                    else:
+                        measurement_approved_layers += 1
+                        measured_rows += int(proof.get("measurement_count") or 0)
+                        evidence_rows += int(proof.get("evidence_count") or 0)
+                        signal_rows += int(proof.get("signal_count") or 0)
+                        affected_site_count += int(proof.get("affected_site_count") or 0)
+                        layer_payload.update(proof)
                 else:
                     measurement_deferred_layers += 1
-                    layer_payload.update(
-                        {
-                            "measurement_count": 0,
-                            "summary_count": 0,
-                            "friction_fact_count": 0,
-                            "evidence_count": 0,
-                            "signal_count": 0,
-                            "affected_site_count": 0,
-                        }
-                    )
+                    layer_payload.update(self._deferred_measurement_payload(gate["gate_reason"]))
                 layer_results.append(layer_payload)
 
         if raw_rows == 0:
@@ -191,13 +203,34 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
             "raw_rows_at_gate": raw_rows,
         }
 
+    def _deferred_measurement_payload(self, reason: str, error_message: str | None = None) -> dict[str, Any]:
+        payload = {
+            "measurement_count": 0,
+            "summary_count": 0,
+            "friction_fact_count": 0,
+            "evidence_count": 0,
+            "signal_count": 0,
+            "affected_site_count": 0,
+            "measurement_deferred_reason": reason,
+        }
+        if error_message:
+            payload["measurement_error_message"] = error_message[:500]
+        return payload
+
+    def _is_statement_timeout(self, exc: Exception) -> bool:
+        text = f"{type(exc).__name__}: {exc}".lower()
+        return "statement timeout" in text or "querycanceled" in text or "query canceled" in text
+
     def _constraint_measurement_mode(self, source_family: str) -> str:
         family_key = source_family.upper().replace("-", "_")
-        return (
-            os.getenv(f"SOURCE_EXPANSION_{family_key}_MEASURE_MODE")
-            or os.getenv("SOURCE_EXPANSION_CONSTRAINT_MEASURE_MODE")
-            or "auto"
-        ).strip().lower()
+        configured = os.getenv(f"SOURCE_EXPANSION_{family_key}_MEASURE_MODE") or os.getenv(
+            "SOURCE_EXPANSION_CONSTRAINT_MEASURE_MODE"
+        )
+        if configured and configured.strip():
+            return configured.strip().lower()
+        if source_family == "sepa_flood":
+            return "load_only"
+        return "auto"
 
     def _constraint_env_int(self, source_family: str, suffix: str, default: int) -> int:
         family_key = source_family.upper().replace("-", "_")

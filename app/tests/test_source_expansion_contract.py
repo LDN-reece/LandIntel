@@ -108,6 +108,12 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("objectIds", PAGED_RUNNER)
         self.assertIn("self.client.post", PAGED_RUNNER)
 
+    def test_paged_runner_flattens_3d_source_geometries_before_storage(self) -> None:
+        self.assertIn("from shapely import force_2d", PAGED_RUNNER)
+        self.assertIn("def _force_2d_frame", PAGED_RUNNER)
+        self.assertIn("force_2d(geometry)", PAGED_RUNNER)
+        self.assertIn("return self._force_2d_frame(frame)", PAGED_RUNNER)
+
     def test_canonical_constraint_anchor_has_no_legacy_site_dependency(self) -> None:
         anchor_sql = MIGRATION.split("create or replace function public.constraints_site_anchor()", 1)[1]
         anchor_sql = anchor_sql.split("insert into public.constraint_layer_registry", 1)[0]

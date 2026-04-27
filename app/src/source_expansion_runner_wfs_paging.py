@@ -54,6 +54,167 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
                 return self._empty_geo_frame()
             raise
 
+    def _ingest_constraint_family(
+        self,
+        command: str,
+        source_family: str,
+        sources: list[dict[str, Any]],
+        run_id: str,
+    ) -> dict[str, Any]:
+        self._assert_required_secrets(sources)
+        self._clear_constraint_family(source_family)
+        raw_rows = 0
+        measured_rows = 0
+        evidence_rows = 0
+        signal_rows = 0
+        affected_site_count = 0
+        measurement_approved_layers = 0
+        measurement_deferred_layers = 0
+        layer_results: list[dict[str, Any]] = []
+
+        for source in sources:
+            self._upsert_source_estate(source)
+            if self._source_uses_arcgis(source):
+                loaded_layers = self._load_arcgis_constraint_source(source, run_id)
+            else:
+                loaded_layers = self._load_wfs_constraint_source(source, run_id)
+            for layer in loaded_layers:
+                raw_rows += int(layer.get("raw_rows", 0))
+                gate = self._constraint_layer_gate(source_family, len(layer_results), layer)
+                layer_payload = {**layer, **gate}
+                self.logger.info("constraint_layer_gate", extra=layer_payload)
+
+                if gate["measurement_approved"]:
+                    proof = self.database.fetch_one(
+                        "select * from public.refresh_constraint_measurements_for_layer(:layer_key)",
+                        {"layer_key": layer["layer_key"]},
+                    ) or {}
+                    measurement_approved_layers += 1
+                    measured_rows += int(proof.get("measurement_count") or 0)
+                    evidence_rows += int(proof.get("evidence_count") or 0)
+                    signal_rows += int(proof.get("signal_count") or 0)
+                    affected_site_count += int(proof.get("affected_site_count") or 0)
+                    layer_payload.update(proof)
+                else:
+                    measurement_deferred_layers += 1
+                    layer_payload.update(
+                        {
+                            "measurement_count": 0,
+                            "summary_count": 0,
+                            "friction_fact_count": 0,
+                            "evidence_count": 0,
+                            "signal_count": 0,
+                            "affected_site_count": 0,
+                        }
+                    )
+                layer_results.append(layer_payload)
+
+        if raw_rows == 0:
+            event_status = "empty_source_response"
+        elif measurement_approved_layers and affected_site_count == 0:
+            event_status = "constraint_loaded_no_site_overlap"
+        elif measurement_approved_layers:
+            event_status = "constraint_measurements_refreshed"
+        else:
+            event_status = "constraint_loaded_measurement_deferred"
+
+        result = {
+            "command": command,
+            "source_family": source_family,
+            "source_keys": [source["source_key"] for source in sources],
+            "raw_rows": raw_rows,
+            "measured_rows": measured_rows,
+            "linked_rows": affected_site_count,
+            "evidence_rows": evidence_rows,
+            "signal_rows": signal_rows,
+            "change_event_rows": affected_site_count,
+            "measurement_approved_layers": measurement_approved_layers,
+            "measurement_deferred_layers": measurement_deferred_layers,
+            "gate_status": event_status,
+            "layers": layer_results,
+        }
+        self._record_source_freshness(sources[0], "current" if raw_rows else "empty", "reachable", raw_rows, result)
+        self._record_expansion_event(
+            command_name=command,
+            source_key=sources[0]["source_key"],
+            source_family=source_family,
+            status=event_status,
+            raw_rows=raw_rows,
+            linked_rows=affected_site_count,
+            measured_rows=measured_rows,
+            evidence_rows=evidence_rows,
+            signal_rows=signal_rows,
+            change_event_rows=affected_site_count,
+            summary=f"{source_family} constraints loaded, gate-checked, and measured only where approved by the Phase One budget.",
+            metadata=result,
+        )
+        return result
+
+    def _constraint_layer_gate(
+        self,
+        source_family: str,
+        layer_index: int,
+        layer: dict[str, Any],
+    ) -> dict[str, Any]:
+        mode = self._constraint_measurement_mode(source_family)
+        raw_rows = int(layer.get("raw_rows", 0) or 0)
+        max_features = self._constraint_env_int(source_family, "MAX_MEASURE_FEATURES", 2500)
+        max_layers = self._constraint_env_int(source_family, "MAX_MEASURE_LAYERS", 1)
+
+        if raw_rows <= 0:
+            return self._gate_result(False, "empty_layer", mode, raw_rows, max_features, max_layers)
+        if mode in {"off", "false", "0", "load_only", "load-only"}:
+            return self._gate_result(False, "measurement_disabled_by_config", mode, raw_rows, max_features, max_layers)
+        if mode in {"always", "force", "true", "1"}:
+            return self._gate_result(True, "measurement_forced_by_config", mode, raw_rows, max_features, max_layers)
+        if layer_index >= max_layers:
+            return self._gate_result(False, "measurement_layer_budget_exceeded", mode, raw_rows, max_features, max_layers)
+        if raw_rows > max_features:
+            return self._gate_result(False, "measurement_feature_budget_exceeded", mode, raw_rows, max_features, max_layers)
+        return self._gate_result(True, "measurement_budget_passed", mode, raw_rows, max_features, max_layers)
+
+    def _gate_result(
+        self,
+        approved: bool,
+        reason: str,
+        mode: str,
+        raw_rows: int,
+        max_features: int,
+        max_layers: int,
+    ) -> dict[str, Any]:
+        return {
+            "measurement_approved": approved,
+            "gate_reason": reason,
+            "measurement_mode": mode,
+            "measurement_feature_budget": max_features,
+            "measurement_layer_budget": max_layers,
+            "raw_rows_at_gate": raw_rows,
+        }
+
+    def _constraint_measurement_mode(self, source_family: str) -> str:
+        family_key = source_family.upper().replace("-", "_")
+        return (
+            os.getenv(f"SOURCE_EXPANSION_{family_key}_MEASURE_MODE")
+            or os.getenv("SOURCE_EXPANSION_CONSTRAINT_MEASURE_MODE")
+            or "auto"
+        ).strip().lower()
+
+    def _constraint_env_int(self, source_family: str, suffix: str, default: int) -> int:
+        family_key = source_family.upper().replace("-", "_")
+        return self._env_int(
+            f"SOURCE_EXPANSION_{family_key}_{suffix}",
+            self._env_int(f"SOURCE_EXPANSION_{suffix}", default),
+        )
+
+    def _env_int(self, name: str, default: int) -> int:
+        raw_value = os.getenv(name)
+        if raw_value is None or str(raw_value).strip() == "":
+            return default
+        try:
+            return int(str(raw_value))
+        except ValueError:
+            return default
+
     def _wfs_feature_types(self, source: dict[str, Any]) -> list[str]:
         endpoint_url = str(source["endpoint_url"])
         response = self.client.get(
@@ -160,7 +321,7 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
         frames: list[gpd.GeoDataFrame] = []
         seen_feature_ids: set[str] = set()
         page_size = max(1, self.page_size)
-        per_layer_cap = int(os.getenv("SOURCE_EXPANSION_ARCGIS_MAX_FEATURES_PER_LAYER", "75000") or "75000")
+        per_layer_cap = int(os.getenv("SOURCE_EXPANSION_ARCGIS_MAX_FEATURES_PER_LAYER", "10000") or "10000")
         fetched = 0
 
         for envelope in envelopes:
@@ -215,7 +376,7 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
     def _canonical_site_envelopes(self) -> list[dict[str, float]]:
         buffer_m = float(os.getenv("SOURCE_EXPANSION_ARCGIS_SITE_BUFFER_M", "250") or "250")
         tile_size_m = float(os.getenv("SOURCE_EXPANSION_ARCGIS_TILE_SIZE_M", "2000") or "2000")
-        max_tiles = int(os.getenv("SOURCE_EXPANSION_ARCGIS_MAX_TILES", "1000") or "1000")
+        max_tiles = int(os.getenv("SOURCE_EXPANSION_ARCGIS_MAX_TILES", "75") or "75")
         rows = self.database.fetch_all(
             """
             with site_tiles as (

@@ -84,7 +84,7 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("MAX_MEASURE_LAYERS", PAGED_RUNNER)
         self.assertIn("measurement_statement_timeout", PAGED_RUNNER)
         self.assertIn("constraint_measurement_deferred", PAGED_RUNNER)
-        self.assertIn('if source_family == "sepa_flood"', PAGED_RUNNER)
+        self.assertIn("source_family in CONSTRAINT_FAMILIES", PAGED_RUNNER)
         self.assertIn('return "load_only"', PAGED_RUNNER)
         self.assertIn("SOURCE_EXPANSION_COMMAND_TIMEOUT", WORKFLOW)
         self.assertIn('timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging', WORKFLOW)
@@ -96,6 +96,16 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertNotIn("load-sepa-flood", WORKFLOW)
         self.assertNotIn("gate-sepa-flood", WORKFLOW)
         self.assertNotIn("measure-sepa-flood", WORKFLOW)
+
+    def test_hes_uses_arcgis_rest_and_handles_non_paginated_layers(self) -> None:
+        self.assertIn("source_key: hes_designations", MANIFEST)
+        self.assertIn("HES_Designations/MapServer/WFSServer", MANIFEST)
+        self.assertIn("def _normalise_arcgis_endpoint_url", PAGED_RUNNER)
+        self.assertIn('/arcgis/rest/services/', PAGED_RUNNER)
+        self.assertIn('/wfsserver', PAGED_RUNNER)
+        self.assertIn("arcgis_pagination_unsupported", PAGED_RUNNER)
+        self.assertIn("returnIdsOnly", PAGED_RUNNER)
+        self.assertIn("objectIds", PAGED_RUNNER)
 
     def test_canonical_constraint_anchor_has_no_legacy_site_dependency(self) -> None:
         anchor_sql = MIGRATION.split("create or replace function public.constraints_site_anchor()", 1)[1]

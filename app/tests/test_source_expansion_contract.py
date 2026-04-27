@@ -66,6 +66,14 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("SOURCE_EXPANSION_ARCGIS_MAX_FEATURES_PER_LAYER", PAGED_RUNNER)
         self.assertIn("sepa_layer_feature_cap_reached", PAGED_RUNNER)
 
+    def test_paged_runner_handles_empty_arcgis_tiles_without_geopandas_crash(self) -> None:
+        self.assertIn("def _empty_geo_frame", PAGED_RUNNER)
+        self.assertIn('gpd.GeoDataFrame({"geometry": []}', PAGED_RUNNER)
+        self.assertIn("def _feature_collection_to_gdf", PAGED_RUNNER)
+        self.assertIn('if not payload.get("features")', PAGED_RUNNER)
+        self.assertIn('if "Unknown column geometry" in str(exc)', PAGED_RUNNER)
+        self.assertNotIn('gpd.GeoDataFrame([], geometry="geometry"', PAGED_RUNNER)
+
     def test_canonical_constraint_anchor_has_no_legacy_site_dependency(self) -> None:
         anchor_sql = MIGRATION.split("create or replace function public.constraints_site_anchor()", 1)[1]
         anchor_sql = anchor_sql.split("insert into public.constraint_layer_registry", 1)[0]

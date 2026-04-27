@@ -9,12 +9,12 @@ generated_from:
 discovery:
   ldp:
     source_family: ldp
-    search_url: "https://data.spatialhub.scot/api/3/action/package_search"
-    query: "local development plan allocation settlement"
-    source_status: core_pending_adapter
-    defer_reason_code: authority_adapter_not_validated
+    search_url: "https://data.spatialhub.scot/api/3/action/package_show?id=local_development_plans-is"
+    query: "local_development_plans-is"
+    source_status: live_target
+    defer_reason_code: commercial_use_licence_not_confirmed
     ranking_eligible: false
-    review_output_eligible: false
+    review_output_eligible: true
   settlement:
     source_family: settlement
     search_url: "https://data.spatialhub.scot/api/3/action/package_search"
@@ -86,23 +86,28 @@ sources:
     review_output_eligible: true
     notes: "Highest-priority control source. This is the deal-control layer before LDP and settlement interpretation."
 
-  - source_key: ldp_authority_discovery
+  - source_key: ldp_spatialhub_package
     source_family: ldp
-    source_name: "Authority LDP discovery and monitoring"
+    source_name: "Local Development Plans - Scotland"
     source_group: policy
     phase_one_role: critical
-    source_status: core_pending_adapter
-    orchestration_mode: authority_discovery
-    endpoint_url: "https://data.spatialhub.scot/api/3/action/package_search"
+    source_status: live_target
+    orchestration_mode: spatialhub_ckan_package_zips
+    endpoint_url: "https://data.spatialhub.scot/api/3/action/package_show?id=local_development_plans-is"
     target_table: landintel.ldp_site_records
-    reconciliation_path: "authority source discovery -> validated authority adapter -> ldp_site_records -> canonical site link"
-    evidence_path: "authority registry, ldp_site_records, evidence_references, site_source_links"
+    reconciliation_path: "SpatialHub CKAN package -> direct ZIP resources -> ldp_site_records -> later policy interpreter/canonical overlay"
+    evidence_path: "ldp_site_records raw_payload, source_expansion_events, source_freshness_states"
     signal_output: "planning_context, policy_support, future_context"
-    ranking_impact: "Core planning-thesis source. Held out of ranking until authority adapter evidence is reliable."
-    resurfacing_trigger: "document/package change, allocation change, adapter promotion"
-    data_age_basis: "Authority source checked timestamp and document modified timestamp"
+    ranking_impact: "Core planning-thesis source. Stored now; ranking remains licence-gated and interpreter-gated until policy semantics are validated."
+    resurfacing_trigger: "SpatialHub package revision, resource ZIP refresh, allocation layer change, or policy interpreter promotion"
+    data_age_basis: "SpatialHub package revision date and resource last_modified timestamps"
     drive_folder_url: "https://drive.google.com/drive/folders/1PCafGI44c_F5jl_budLooGzgBK6qSG03"
-    notes: "Second source in the commercial priority spine after title number. Needs authority-specific polygon adapters before ranking."
+    ranking_eligible: false
+    review_output_eligible: true
+    metadata_uuid: "8e13ad58-41f2-4308-a3a8-5ffe8593e731"
+    spatialhub_package_id: "local_development_plans-is"
+    spatialhub_identifier: "sh_ldp"
+    notes: "Second source in the commercial priority spine after title number. SpatialHub provides direct ZIP resources for many authorities and external links for others; metadata says commercial use is not currently available, so storage is live but ranking remains gated."
 
   - source_key: settlement_boundary_authority_discovery
     source_family: settlement

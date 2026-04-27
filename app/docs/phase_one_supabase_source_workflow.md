@@ -58,7 +58,7 @@ Run in this order:
 ## What Each Step Proves
 
 - `run-migrations` applies the Supabase schema for source freshness, source estate registry, and analytics proof views.
-- `source-estate-maintenance` registers all source families, registers topography/adopted-road/utility/Section 75 gap sources, probes live endpoints, discovers LDP records through Scottish SDI GeoNetwork, discovers settlement boundary records through Scottish SDI GeoNetwork, and writes source freshness states.
+- `source-estate-maintenance` registers all source families, registers topography/adopted-road/utility/Section 75 gap sources, probes live endpoints, registers the Spatial Hub LDP package, discovers settlement boundary records through Scottish SDI GeoNetwork, and writes source freshness states.
 - `audit-source-estate` proves every source is either live-wired, explicitly deferred, discovery-only, static-registered, blocked, or unproven.
 - `audit-source-freshness` proves the current freshness gate for ranking/review surfaces.
 - `publish-planning-links` publishes existing live planning records into the canonical-site reconcile queue and refreshes affected sites without running the long national SpatialHub WFS pull.
@@ -91,18 +91,25 @@ Do not use HLA to:
 
 LDP allocations and settlement boundaries are Phase One critical.
 
-The discovery spine is Scottish SDI GeoNetwork:
+The LDP source is the Spatial Hub CKAN package:
+
+- `https://data.spatialhub.scot/api/3/action/package_show?id=local_development_plans-is`
+
+`ingest-ldp` downloads direct Spatial Hub ZIP resources and stores feature rows in `landintel.ldp_site_records`. This proves storage and readability only. It does not promote LDP into ranking or DD conclusions until commercial-use rights and the policy interpreter are validated.
+
+Settlement discovery remains Scottish SDI GeoNetwork:
 
 - `https://www.spatialdata.gov.scot/geonetwork/srv/api/search/records/_search`
 
-GeoNetwork discovery does not automatically promote a source into ranking. Each authority source must be validated before promotion because the estate mixes WFS, ArcGIS, ZIP, PDF, and authority-specific schemas.
+Settlement GeoNetwork discovery does not automatically promote a source into ranking. Each authority source must be validated before promotion because the estate mixes WFS, ArcGIS, ZIP, PDF, and authority-specific schemas.
 
-Until promoted:
+Until promoted or licence/interpreter-cleared:
 
 - ranking eligible: false
-- review-output eligible: false
-- status: explicitly deferred
-- reason: authority adapter not validated
+- LDP review-output eligible: true for storage audit only
+- Settlement review-output eligible: false
+- LDP status: storage live, licence/interpreter gated
+- Settlement status: authority adapter not validated
 
 After promotion:
 

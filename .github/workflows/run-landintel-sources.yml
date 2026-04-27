@@ -33,7 +33,7 @@ on:
           - audit-title-number-control
           - discover-ldp-sources
           - discover-settlement-sources
-          - promote-ldp-authority-source
+          - ingest-ldp
           - promote-settlement-authority-source
           - publish-planning-links
           - ingest-planning-history
@@ -62,7 +62,7 @@ on:
 # Automated schedules are intentionally paused during incremental reconcile burn-in.
 # Push runs are validation-only. Source-estate maintenance is manual-only during
 # burn-in because it registers, probes, discovers, and audits sources. It does
-# not promote unvalidated LDP or settlement feeds into live ranking.
+# keeps LDP storage licence-gated and does not promote unvalidated settlement feeds into live ranking.
 # Phase One orchestration is GitHub Actions + Supabase only; legacy full-refresh
 # commands are deliberately not exposed as dispatch options.
 # HLA is supporting evidence only; the source universe now expands through
@@ -108,6 +108,8 @@ jobs:
       SOURCE_EXPANSION_COMMAND_TIMEOUT: "45m"
       SOURCE_EXPANSION_PAGE_SIZE: "2000"
       SOURCE_EXPANSION_MAX_FEATURES: "0"
+      SOURCE_EXPANSION_LDP_MAX_RESOURCES: "0"
+      SOURCE_EXPANSION_LDP_MAX_LAYERS_PER_RESOURCE: "0"
       SOURCE_EXPANSION_ARCGIS_MAX_TILES: "75"
       SOURCE_EXPANSION_ARCGIS_MAX_FEATURES_PER_LAYER: "10000"
       SOURCE_EXPANSION_CONSTRAINT_MEASURE_MODE: "auto"
@@ -196,7 +198,7 @@ jobs:
 
           is_source_expansion_ingest() {
             case "$1" in
-              ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features)
+              ingest-ldp|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features)
                 return 0
                 ;;
               *)
@@ -255,7 +257,7 @@ jobs:
             python -m src.source_estate_registry register-source-estate
             python -m src.source_policy_discovery register-supplemental-sources
             python -m src.source_policy_discovery discover-settlement-geonetwork
-          elif [ "$SELECTED_COMMAND" = "promote-ldp-authority-source" ] || [ "$SELECTED_COMMAND" = "promote-settlement-authority-source" ]; then
+          elif [ "$SELECTED_COMMAND" = "promote-settlement-authority-source" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_expansion_runner_wfs_paging "$SELECTED_COMMAND"
           elif is_source_expansion_ingest "$SELECTED_COMMAND"; then

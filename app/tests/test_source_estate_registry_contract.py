@@ -153,8 +153,12 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
 
         self.assertEqual(source_by_family["title_number"]["source_status"], "live_internal_validation")
         self.assertEqual(source_by_family["title_number"]["target_table"], "public.site_title_validation")
-        self.assertEqual(source_by_family["ldp"]["source_status"], "core_pending_adapter")
+        self.assertEqual(source_by_family["ldp"]["source_status"], "live_target")
+        self.assertEqual(source_by_family["ldp"]["orchestration_mode"], "spatialhub_ckan_package_zips")
         self.assertEqual(source_by_family["ldp"]["target_table"], "landintel.ldp_site_records")
+        self.assertEqual(source_by_family["ldp"]["spatialhub_package_id"], "local_development_plans-is")
+        self.assertFalse(source_by_family["ldp"]["ranking_eligible"])
+        self.assertTrue(source_by_family["ldp"]["review_output_eligible"])
         self.assertEqual(source_by_family["settlement"]["source_status"], "core_pending_adapter")
         self.assertEqual(source_by_family["settlement"]["target_table"], "landintel.settlement_boundary_records")
 

@@ -97,6 +97,26 @@ class SourceEstateRegistryRunner:
         authorities = self.settings.load_target_councils()
         search_url = str(discovery["search_url"])
         query_base = str(discovery.get("query") or source_family)
+        if "package_show" in search_url:
+            payload = self._fetch_json(search_url, params={})
+            package = dict(payload.get("result") or payload)
+            for source in self._sources(source_family):
+                self._upsert_source(source)
+                self._record_freshness(
+                    source,
+                    freshness_status="current",
+                    live_access_status="reachable",
+                    summary=f"{source['source_name']} package registered from SpatialHub package_show.",
+                )
+            result = {
+                "source_family": source_family,
+                "authorities_checked": 0,
+                "registry_rows_written": len(self._sources(source_family)),
+                "package_results": 1 if package else 0,
+                "resource_count": len(package.get("resources") or []),
+            }
+            self.logger.info("source_estate_discovery_completed", extra=result)
+            return result
         inserted = 0
         result_count = 0
         for authority in authorities:

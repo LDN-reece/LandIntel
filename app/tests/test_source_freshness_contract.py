@@ -43,6 +43,8 @@ class SourceFreshnessContractTests(unittest.TestCase):
         ):
             self.assertIn(source_family, sql)
 
+        self.assertIn("core_policy_storage_licence_gated", sql)
+        self.assertIn("pass_core_policy_storage_licence_gated", sql)
         self.assertIn("core_policy_pending_adapter", sql)
         self.assertIn("pass_core_policy_pending_adapter", sql)
         self.assertIn("control_spine", sql)

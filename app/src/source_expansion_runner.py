@@ -14,6 +14,7 @@ import math
 import os
 from pathlib import Path
 import re
+import tempfile
 import traceback
 from typing import Any
 from urllib.parse import urlparse
@@ -23,6 +24,7 @@ import geopandas as gpd
 import httpx
 import pandas as pd
 import yaml
+from shapely import force_2d
 from shapely.geometry import shape
 from shapely.geometry.base import BaseGeometry
 
@@ -31,11 +33,13 @@ from src.db import chunked
 from src.loaders.supabase_loader import SupabaseLoader
 from src.logging_config import configure_logging
 from src.models.ingest_runs import IngestRunRecord, IngestRunUpdate
+from src.models.source_registry import SourceRegistryRecord
 from src.source_phase_runner import SourcePhaseRunner, _geometry_hex, _normalize_ref, _polygonize_geometry
 
 MANIFEST_PATH = Path(__file__).resolve().parents[1] / "config" / "phase_one_source_estate.yaml"
 
 FUTURE_CONTEXT_FAMILIES = {"ela", "vdl"}
+POLICY_PACKAGE_FAMILIES = {"ldp"}
 CONSTRAINT_FAMILIES = {
     "sepa_flood",
     "coal_authority",
@@ -50,6 +54,7 @@ CONSTRAINT_FAMILIES = {
 PROBE_ONLY_FAMILIES = {"topography", "os_places", "os_features"}
 
 COMMAND_TO_FAMILIES: dict[str, tuple[str, ...]] = {
+    "ingest-ldp": ("ldp",),
     "ingest-ela": ("ela",),
     "ingest-vdl": ("vdl",),
     "ingest-sepa-flood": ("sepa_flood",),
@@ -170,6 +175,8 @@ NAME_FIELDS = ("site_name", "sitename", "name", "title", "description", "site", 
 STATUS_FIELDS = ("status", "site_status", "planning_status", "class", "category", "type", "condition")
 AUTHORITY_FIELDS = ("local_authority", "local_authority_name", "authority_name", "planning_authority", "council", "la_name")
 SEVERITY_FIELDS = ("severity", "risk", "risk_level", "category", "flood_risk", "status", "designation")
+LDP_POLICY_FIELDS = ("policy_reference", "policy_ref", "policy", "policy_code", "policy_name", "ldp_policy")
+LDP_USE_FIELDS = ("proposed_use", "land_use", "use", "use_class", "allocation_use", "proposal", "category", "type")
 
 
 class SourceExpansionRunner:
@@ -185,6 +192,8 @@ class SourceExpansionRunner:
         self.manifest = yaml.safe_load(MANIFEST_PATH.read_text(encoding="utf-8")) or {}
         self.max_features = int(os.getenv("SOURCE_EXPANSION_MAX_FEATURES", "0") or "0")
         self.page_size = int(os.getenv("SOURCE_EXPANSION_PAGE_SIZE", "2000") or "2000")
+        self.ldp_max_resources = self._env_int("SOURCE_EXPANSION_LDP_MAX_RESOURCES", 0)
+        self.ldp_max_layers_per_resource = self._env_int("SOURCE_EXPANSION_LDP_MAX_LAYERS_PER_RESOURCE", 0)
 
     def close(self) -> None:
         self.client.close()
@@ -303,6 +312,8 @@ class SourceExpansionRunner:
         try:
             if source_family in FUTURE_CONTEXT_FAMILIES:
                 result = self._ingest_future_context_family(command, source_family, sources, run_id)
+            elif source_family in POLICY_PACKAGE_FAMILIES:
+                result = self._ingest_policy_package_family(command, source_family, sources, run_id)
             elif source_family in CONSTRAINT_FAMILIES:
                 result = self._ingest_constraint_family(command, source_family, sources, run_id)
             elif source_family in PROBE_ONLY_FAMILIES:
@@ -315,7 +326,11 @@ class SourceExpansionRunner:
                 IngestRunUpdate(
                     status="success",
                     records_fetched=int(result.get("raw_rows", 0)),
-                    records_loaded=int(result.get("linked_rows", 0) or result.get("measured_rows", 0)),
+                    records_loaded=int(
+                        result.get("raw_rows", 0)
+                        if source_family in POLICY_PACKAGE_FAMILIES
+                        else result.get("linked_rows", 0) or result.get("measured_rows", 0)
+                    ),
                     records_retained=int(result.get("signal_rows", 0)),
                     metadata=result,
                     finished=True,
@@ -447,6 +462,106 @@ class SourceExpansionRunner:
             signal_rows=signal_rows,
             change_event_rows=affected_site_count,
             summary=f"{source_family} constraints ingested and measured against canonical sites.",
+            metadata=result,
+        )
+        return result
+
+    def _ingest_policy_package_family(
+        self,
+        command: str,
+        source_family: str,
+        sources: list[dict[str, Any]],
+        run_id: str,
+    ) -> dict[str, Any]:
+        if source_family != "ldp":
+            raise KeyError(f"No policy package strategy exists for {source_family}.")
+
+        raw_rows = 0
+        resource_count = 0
+        direct_zip_resource_count = 0
+        external_link_resource_count = 0
+        failed_resources: list[dict[str, str]] = []
+        loaded_resources: list[dict[str, Any]] = []
+
+        for source in sources:
+            self._upsert_source_estate(source)
+            package_payload = self._fetch_json(str(source["endpoint_url"]), {})
+            package = dict(package_payload.get("result") or package_payload)
+            resources = list(package.get("resources") or [])
+            resource_count += len(resources)
+            direct_resources = [resource for resource in resources if self._is_direct_zip_resource(resource)]
+            external_link_resource_count += len(resources) - len(direct_resources)
+            if self.ldp_max_resources > 0:
+                direct_resources = direct_resources[: self.ldp_max_resources]
+            direct_zip_resource_count += len(direct_resources)
+            source_registry_id = self._upsert_ldp_source_registry(source, package)
+
+            with tempfile.TemporaryDirectory(prefix="landintel-ldp-") as tmp_dir:
+                for resource in direct_resources:
+                    try:
+                        frames = self._fetch_ldp_resource_frames(source, resource, tmp_dir)
+                    except Exception as exc:
+                        failed_resources.append(
+                            {
+                                "resource_id": str(resource.get("id") or ""),
+                                "resource_name": str(resource.get("name") or resource.get("url") or "unknown"),
+                                "error": str(exc),
+                            }
+                        )
+                        continue
+                    loaded = 0
+                    for frame in frames:
+                        loaded += self._replace_ldp_rows(source, frame, run_id, source_registry_id)
+                    raw_rows += loaded
+                    loaded_resources.append(
+                        {
+                            "resource_id": resource.get("id"),
+                            "resource_name": resource.get("name"),
+                            "rows_loaded": loaded,
+                        }
+                    )
+
+        status = (
+            "core_policy_storage_partial_licence_gated"
+            if raw_rows and failed_resources
+            else "core_policy_storage_proven_licence_gated"
+            if raw_rows
+            else "core_policy_package_reachable_no_features"
+        )
+        result = {
+            "command": command,
+            "source_family": source_family,
+            "source_keys": [source["source_key"] for source in sources],
+            "raw_rows": raw_rows,
+            "linked_rows": 0,
+            "measured_rows": 0,
+            "evidence_rows": 0,
+            "signal_rows": 0,
+            "change_event_rows": 0,
+            "resource_count": resource_count,
+            "direct_zip_resource_count": direct_zip_resource_count,
+            "external_link_resource_count": external_link_resource_count,
+            "loaded_resources": loaded_resources,
+            "failed_resources": failed_resources,
+            "summary": (
+                "SpatialHub LDP package stored in landintel.ldp_site_records. "
+                "Ranking remains licence-gated and interpreter-gated."
+            ),
+        }
+        self._record_source_freshness(
+            sources[0],
+            "current" if raw_rows else "empty",
+            "reachable",
+            raw_rows,
+            result,
+        )
+        self._record_expansion_event(
+            command_name=command,
+            source_key=sources[0]["source_key"],
+            source_family=source_family,
+            status=status,
+            raw_rows=raw_rows,
+            summary=result["summary"],
             metadata=result,
         )
         return result
@@ -626,6 +741,96 @@ class SourceExpansionRunner:
         frame = gpd.GeoDataFrame(rows, geometry="geometry", crs=27700)
         return self._normalise_frame_crs(frame)
 
+    def _is_direct_zip_resource(self, resource: dict[str, Any]) -> bool:
+        url = str(resource.get("url") or "")
+        resource_format = str(resource.get("format") or resource.get("mimetype") or "").lower()
+        host = urlparse(url).netloc.lower()
+        return "data.spatialhub.scot" in host and (url.lower().endswith(".zip") or "zip" in resource_format)
+
+    def _fetch_ldp_resource_frames(
+        self,
+        source: dict[str, Any],
+        resource: dict[str, Any],
+        tmp_dir: str,
+    ) -> list[gpd.GeoDataFrame]:
+        url = str(resource.get("url") or "")
+        if not url:
+            return []
+        resource_id = str(resource.get("id") or _slug(resource.get("name") or url))
+        zip_path = Path(tmp_dir) / f"{_slug(resource_id)}.zip"
+        with self.client.stream("GET", url) as response:
+            response.raise_for_status()
+            with zip_path.open("wb") as file_handle:
+                for chunk in response.iter_bytes():
+                    if chunk:
+                        file_handle.write(chunk)
+
+        dataset_uri = f"zip://{zip_path}"
+        layer_names = self._vector_layer_names(dataset_uri)
+        if self.ldp_max_layers_per_resource > 0:
+            layer_names = layer_names[: self.ldp_max_layers_per_resource]
+
+        frames: list[gpd.GeoDataFrame] = []
+        for layer_name in layer_names:
+            frame = gpd.read_file(dataset_uri, layer=layer_name) if layer_name else gpd.read_file(dataset_uri)
+            normalised = self._normalise_ldp_frame(frame, source, resource, layer_name)
+            if not normalised.empty:
+                frames.append(normalised)
+        return frames
+
+    def _vector_layer_names(self, dataset_uri: str) -> list[str | None]:
+        try:
+            layers = gpd.list_layers(dataset_uri)
+        except Exception:
+            return [None]
+        if hasattr(layers, "to_dict"):
+            records = list(layers.to_dict(orient="records"))
+            names = [
+                str(record.get("name"))
+                for record in records
+                if record.get("name") and str(record.get("geometry_type") or "").lower() != "none"
+            ]
+            return names or [None]
+        names = [str(value) for value in layers if value]
+        return names or [None]
+
+    def _normalise_ldp_frame(
+        self,
+        frame: gpd.GeoDataFrame,
+        source: dict[str, Any],
+        resource: dict[str, Any],
+        layer_name: str | None,
+    ) -> gpd.GeoDataFrame:
+        if frame.empty or "geometry" not in frame.columns:
+            return gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs=27700)
+        frame = gpd.GeoDataFrame(frame, geometry="geometry", crs=frame.crs)
+        frame = frame[frame.geometry.notna() & ~frame.geometry.is_empty].copy()
+        if frame.empty:
+            return gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs=27700)
+        if frame.crs:
+            frame = frame.to_crs(27700)
+        else:
+            frame = self._normalise_frame_crs(frame)
+        frame["geometry"] = frame.geometry.apply(lambda geometry: force_2d(geometry) if geometry is not None else None)
+
+        resource_name = str(resource.get("name") or resource.get("description") or "Local Development Plan resource")
+        resource_id = str(resource.get("id") or _slug(resource_name))
+        layer_label = str(layer_name or resource_name)
+        authority_name = _authority_from_ldp_resource_name(resource_name) or "Scotland"
+        frame["_source_layer_name"] = layer_label
+        frame["_source_key"] = source["source_key"]
+        frame["_ldp_resource_id"] = resource_id
+        frame["_ldp_resource_name"] = resource_name
+        frame["_ldp_resource_url"] = resource.get("url")
+        frame["_ldp_resource_last_modified"] = resource.get("last_modified") or resource.get("created")
+        frame["_ldp_authority_name"] = authority_name
+        frame["_ldp_plan_period"] = _plan_period_from_text(resource_name)
+        frame["_source_feature_id"] = [
+            f"{resource_id}:{_slug(layer_label)}:{_slug(_pick_text(row, REFERENCE_FIELDS) or index)}"
+            for index, row in enumerate(frame.to_dict(orient="records"))
+        ]
+        return gpd.GeoDataFrame(frame, geometry="geometry", crs=27700)
+
     def _normalise_frame_crs(self, frame: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         if frame.empty:
             return frame.set_crs(27700, allow_override=True)
@@ -723,6 +928,109 @@ class SourceExpansionRunner:
                 ingest_run_id = excluded.ingest_run_id,
                 source_record_signature = excluded.source_record_signature,
                 geometry_hash = excluded.geometry_hash,
+                raw_payload = excluded.raw_payload,
+                updated_at = now()
+        """
+        for batch in chunked(params, self.settings.batch_size):
+            self.database.execute_many(insert_sql, batch)
+        return len(params)
+
+    def _replace_ldp_rows(
+        self,
+        source: dict[str, Any],
+        frame: gpd.GeoDataFrame,
+        run_id: str,
+        source_registry_id: str | None,
+    ) -> int:
+        if frame.empty:
+            return 0
+        params: list[dict[str, Any]] = []
+        for index, row in enumerate(frame.to_dict(orient="records")):
+            geometry = row.get("geometry")
+            if geometry is None or getattr(geometry, "is_empty", True):
+                continue
+            raw_payload = _json_dumps(_raw_payload(row))
+            source_record_id = self._source_record_id(source, row, index)
+            resource_name = str(row.get("_ldp_resource_name") or source["source_name"])
+            authority_name = (
+                _pick_text(row, AUTHORITY_FIELDS)
+                or str(row.get("_ldp_authority_name") or "").strip()
+                or "Scotland"
+            )
+            plan_period = (
+                _pick_text(row, ("plan_period", "period", "year", "adopted_year"))
+                or str(row.get("_ldp_plan_period") or "").strip()
+                or _plan_period_from_text(resource_name)
+            )
+            params.append(
+                {
+                    "source_record_id": source_record_id,
+                    "authority_name": authority_name,
+                    "plan_name": _pick_text(row, ("plan_name", "ldp_name", "document_name")) or resource_name,
+                    "plan_period": plan_period,
+                    "policy_reference": _pick_text(row, LDP_POLICY_FIELDS),
+                    "site_reference": _pick_text(row, REFERENCE_FIELDS),
+                    "site_name": _pick_text(row, NAME_FIELDS),
+                    "allocation_status": _pick_text(row, STATUS_FIELDS),
+                    "proposed_use": _pick_text(row, LDP_USE_FIELDS),
+                    "support_level": _pick_text(row, ("support_level", "support", "allocation_type", "status", "category")),
+                    "policy_constraints": _policy_constraint_values(row),
+                    "geometry_wkb": _geometry_hex(geometry),
+                    "source_registry_id": source_registry_id,
+                    "ingest_run_id": run_id,
+                    "raw_payload": raw_payload,
+                }
+            )
+        insert_sql = """
+            insert into landintel.ldp_site_records (
+                source_record_id,
+                authority_name,
+                plan_name,
+                plan_period,
+                policy_reference,
+                site_reference,
+                site_name,
+                allocation_status,
+                proposed_use,
+                support_level,
+                policy_constraints,
+                geometry,
+                source_registry_id,
+                ingest_run_id,
+                raw_payload,
+                updated_at
+            ) values (
+                :source_record_id,
+                :authority_name,
+                :plan_name,
+                :plan_period,
+                :policy_reference,
+                :site_reference,
+                :site_name,
+                :allocation_status,
+                :proposed_use,
+                :support_level,
+                :policy_constraints,
+                ST_GeomFromWKB(decode(:geometry_wkb, 'hex'), 27700),
+                cast(:source_registry_id as uuid),
+                cast(:ingest_run_id as uuid),
+                cast(:raw_payload as jsonb),
+                now()
+            )
+            on conflict (source_record_id) do update set
+                authority_name = excluded.authority_name,
+                plan_name = excluded.plan_name,
+                plan_period = excluded.plan_period,
+                policy_reference = excluded.policy_reference,
+                site_reference = excluded.site_reference,
+                site_name = excluded.site_name,
+                allocation_status = excluded.allocation_status,
+                proposed_use = excluded.proposed_use,
+                support_level = excluded.support_level,
+                policy_constraints = excluded.policy_constraints,
+                geometry = excluded.geometry,
+                source_registry_id = excluded.source_registry_id,
+                ingest_run_id = excluded.ingest_run_id,
                 raw_payload = excluded.raw_payload,
                 updated_at = now()
         """
@@ -1580,11 +1888,17 @@ class SourceExpansionRunner:
         )
 
     def _record_policy_promotion_placeholder(self, source_family: str, command: str) -> dict[str, Any]:
+        if source_family == "ldp":
+            status = "core_policy_storage_licence_gated"
+            summary = "LDP is now stored through ingest-ldp. Ranking still requires commercial-use clearance and a validated policy interpreter."
+        else:
+            status = "core_policy_pending_authority_adapter"
+            summary = "Settlement is a core policy source. Promotion still requires an authority-specific adapter and explicit authority scope before ranking impact."
         result = {
             "command": command,
             "source_family": source_family,
-            "status": "core_policy_pending_authority_adapter",
-            "summary": "LDP and settlement are core policy sources. Promotion still requires an authority-specific adapter and explicit authority scope before ranking impact.",
+            "status": status,
+            "summary": summary,
         }
         self._record_expansion_event(
             command_name=command,
@@ -1614,6 +1928,30 @@ class SourceExpansionRunner:
             {"source_key": source_key},
         )
         return str(row["id"]) if row else None
+
+    def _upsert_ldp_source_registry(self, source: dict[str, Any], package: dict[str, Any]) -> str | None:
+        package_id = str(source.get("spatialhub_package_id") or package.get("name") or "local_development_plans-is")
+        metadata_uuid = f"spatialhub:{package_id}"
+        self.loader.upsert_source_registry(
+            [
+                SourceRegistryRecord(
+                    source_name=str(package.get("title") or source["source_name"]),
+                    source_type="Spatial Hub CKAN package",
+                    publisher="Improvement Service",
+                    metadata_uuid=metadata_uuid,
+                    endpoint_url=source.get("endpoint_url"),
+                    download_url=f"https://data.spatialhub.scot/dataset/{package_id}",
+                    record_json={
+                        "dataset": package,
+                        "geonetwork_uuid": source.get("metadata_uuid"),
+                        "spatialhub_identifier": source.get("spatialhub_identifier"),
+                    },
+                    geographic_extent=None,
+                    last_seen_at=datetime.now(timezone.utc),
+                )
+            ]
+        )
+        return self.phase_runner._resolve_source_registry_id(metadata_uuid)
 
     def _source_record_id(self, source: dict[str, Any], row: dict[str, Any], index: int) -> str:
         layer_name = str(row.get("_source_layer_name") or source["source_family"])
@@ -1645,6 +1983,15 @@ class SourceExpansionRunner:
         if not isinstance(payload, dict):
             raise RuntimeError(f"{context} returned a non-object JSON payload.")
         return payload
+
+    def _env_int(self, name: str, default: int) -> int:
+        value = os.getenv(name)
+        if value is None or value == "":
+            return default
+        try:
+            return int(value)
+        except ValueError:
+            return default
 
 
 def _pick_text(row: dict[str, Any], candidates: tuple[str, ...] | list[str]) -> str | None:
@@ -1731,6 +2078,33 @@ def _short_snippet(text: str, limit: int = 240) -> str:
     return compact[:limit]
 
 
+def _authority_from_ldp_resource_name(value: Any) -> str | None:
+    text = re.sub(r"\b(proposed|local|development|plan|ldp|layers?|available|zip)\b", " ", str(value or ""), flags=re.I)
+    text = re.sub(r"\b(19|20)\d{2}(?:\s*[-/]\s*(?:19|20)\d{2})?\b", " ", text)
+    text = re.sub(r"\s+", " ", text.replace("_", " ")).strip(" -")
+    return text or None
+
+
+def _plan_period_from_text(value: Any) -> str | None:
+    text = str(value or "")
+    match = re.search(r"\b((?:19|20)\d{2}(?:\s*[-/]\s*(?:19|20)\d{2})?)\b", text)
+    return match.group(1).replace(" ", "") if match else None
+
+
+def _policy_constraint_values(row: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for key, value in row.items():
+        lowered = str(key).lower()
+        if lowered.startswith("_") or lowered == "geometry":
+            continue
+        if "constraint" not in lowered and "policy" not in lowered:
+            continue
+        text = str(value or "").strip()
+        if text and text.lower() not in {"nan", "none", "null"} and text not in values:
+            values.append(text[:240])
+    return values
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run LandIntel Phase One source expansion commands.")
     parser.add_argument(
@@ -1738,6 +2112,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=(
             "audit-source-expansion",
             "audit-title-number-control",
+            "ingest-ldp",
             "ingest-ela",
             "ingest-vdl",
             "ingest-sepa-flood",

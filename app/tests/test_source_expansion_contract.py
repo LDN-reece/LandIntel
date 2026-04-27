@@ -17,6 +17,7 @@ class SourceExpansionContractTests(unittest.TestCase):
         for command in (
             "audit-source-expansion",
             "audit-title-number-control",
+            "ingest-ldp",
             "ingest-ela",
             "ingest-vdl",
             "ingest-sepa-flood",
@@ -31,7 +32,6 @@ class SourceExpansionContractTests(unittest.TestCase):
             "ingest-os-topography",
             "ingest-os-places",
             "ingest-os-features",
-            "promote-ldp-authority-source",
             "promote-settlement-authority-source",
         ):
             self.assertIn(f"- {command}", WORKFLOW)
@@ -190,12 +190,18 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("source_family: ldp", MANIFEST)
         self.assertIn("source_family: settlement", MANIFEST)
         self.assertIn("source_status: live_internal_validation", MANIFEST)
+        self.assertIn("source_key: ldp_spatialhub_package", MANIFEST)
+        self.assertIn("local_development_plans-is", MANIFEST)
+        self.assertIn("spatialhub_ckan_package_zips", MANIFEST)
+        self.assertIn("commercial_use_licence_not_confirmed", MANIFEST)
         self.assertIn("source_status: core_pending_adapter", MANIFEST)
         self.assertIn("authority_adapter_not_validated", MANIFEST)
         self.assertIn("(1, 'title_number'", priority_migration)
-        self.assertIn("(2, 'ldp'", priority_migration)
+        self.assertIn("(2, 'ldp', 'ingest-ldp'", priority_migration)
         self.assertIn("(3, 'settlement'", priority_migration)
+        self.assertIn("core_policy_storage_proven_licence_gated", priority_migration)
         self.assertIn("core_policy_pending_authority_adapter", priority_migration)
+        self.assertIn("landintel_ldp_site_records_source_record_uidx", priority_migration)
         self.assertIn("control_wired_proven", RUNNER)
 
 

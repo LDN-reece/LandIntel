@@ -30,13 +30,14 @@ The active workflow supports controlled Phase One source operations:
 
 1. source estate registration and endpoint probing
 2. title number control audit through `public.site_title_validation`
-3. LDP and settlement discovery through Scottish SDI GeoNetwork
-4. planning link publishing from existing Supabase planning records
-5. future-context ingest for HLA, ELA, and VDL
-6. canonical constraint ingest for SEPA flood, Coal Authority, HES, NatureScot, contaminated land, TPO, culverts, conservation areas, green belt, topography, OS Places, and OS Features
-7. incremental reconciliation to `canonical_site_id` where the source family uses the planning/HLA queue
-8. direct canonical publication for ELA and VDL
-9. affected-site refresh and source proof audits
+3. LDP package registration and storage from Spatial Hub CKAN ZIP resources
+4. settlement discovery through Scottish SDI GeoNetwork
+5. planning link publishing from existing Supabase planning records
+6. future-context ingest for HLA, ELA, and VDL
+7. canonical constraint ingest for SEPA flood, Coal Authority, HES, NatureScot, contaminated land, TPO, culverts, conservation areas, green belt, topography, OS Places, and OS Features
+8. incremental reconciliation to `canonical_site_id` where the source family uses the planning/HLA queue
+9. direct canonical publication for ELA and VDL
+10. affected-site refresh and source proof audits
 
 The runner resolves Spatial Hub downloads from published resource pages and WFS capabilities, rather than trusting brittle CKAN `typeName` hints directly.
 
@@ -89,27 +90,28 @@ Use this order. Do not keep rerunning HLA or planning unless those feeds actuall
 2. `source-estate-maintenance`
 3. `audit-title-number-control`
 4. `discover-ldp-sources`
-5. `discover-settlement-sources`
-6. `audit-source-expansion`
-7. `ingest-ela`
-8. `ingest-vdl`
-9. `ingest-greenbelt`
-10. `ingest-conservation-areas`
-11. `ingest-tpo`
-12. `ingest-culverts`
-13. `ingest-contaminated-land`
-14. `ingest-sepa-flood`
-15. `ingest-coal-authority`
-16. `ingest-hes-designations`
-17. `ingest-naturescot`
-18. `ingest-os-topography`
-19. `ingest-os-places`
-20. `ingest-os-features`
-21. `refresh-affected-sites`
-22. `audit-source-expansion`
-23. `audit-source-footprint`
-24. `audit-source-freshness`
-25. `audit-source-estate`
+5. `ingest-ldp`
+6. `discover-settlement-sources`
+7. `audit-source-expansion`
+8. `ingest-ela`
+9. `ingest-vdl`
+10. `ingest-greenbelt`
+11. `ingest-conservation-areas`
+12. `ingest-tpo`
+13. `ingest-culverts`
+14. `ingest-contaminated-land`
+15. `ingest-sepa-flood`
+16. `ingest-coal-authority`
+17. `ingest-hes-designations`
+18. `ingest-naturescot`
+19. `ingest-os-topography`
+20. `ingest-os-places`
+21. `ingest-os-features`
+22. `refresh-affected-sites`
+23. `audit-source-expansion`
+24. `audit-source-footprint`
+25. `audit-source-freshness`
+26. `audit-source-estate`
 
 Run `publish-planning-links` only when Supabase planning records have changed and need publishing into canonical sites. Run `ingest-hla` only when HLA/HLS needs refreshing. HLA is a supporting source, not the default next step.
 
@@ -133,19 +135,19 @@ The commercial priority spine is:
 2. LDP
 3. Settlement
 
-Title number is the control layer. LDP and settlement boundaries are Phase One critical policy sources, but they remain ranking-protected until authority-specific adapters are validated.
+Title number is the control layer. LDP is now a Spatial Hub package source and stores direct ZIP resource features into `landintel.ldp_site_records`. It remains ranking-protected until commercial-use rights and the policy interpreter are validated. Settlement boundaries remain Phase One critical but authority-adapter pending.
 
-The workflow must still discover, register, monitor, and report LDP and settlement sources. They become ranking-active only after an authority source is promoted from pending adapter to live with evidence that the adapter is reliable and that unvalidated feeds are not affecting review outputs.
+The workflow must still discover, register, monitor, and report LDP and settlement sources. LDP becomes storage-live through `ingest-ldp`; settlement becomes ranking-active only after an authority source is promoted from pending adapter to live with evidence that the adapter is reliable and that unvalidated feeds are not affecting review outputs.
 
 Use:
 
 - `audit-title-number-control`
 - `discover-ldp-sources`
+- `ingest-ldp`
 - `discover-settlement-sources`
-- `promote-ldp-authority-source`
 - `promote-settlement-authority-source`
 
-Promotion commands currently record the core pending-adapter state unless an authority adapter is available. That is correct behaviour and protects the ranking layer from false policy certainty while keeping the source commercially first-class.
+`ingest-ldp` is storage-only. It proves data capture, not commercial ranking eligibility. The settlement promotion command currently records the core pending-adapter state unless an authority adapter is available. That protects the ranking layer from false policy certainty while keeping the source commercially first-class.
 
 ## Source proof rule
 
@@ -160,7 +162,7 @@ A source is `live_wired_proven` only when `analytics.v_phase_one_source_expansio
 - non-zero review-output rows
 - non-zero site change events
 
-LDP and settlement may show `core_policy_pending_authority_adapter`. That is acceptable only while registry monitoring exists and they are proven absent from live ranking impact.
+LDP may show `core_policy_storage_proven_licence_gated`. That means the Spatial Hub package is stored but not allowed to influence ranking or DD conclusions yet. Settlement may show `core_policy_pending_authority_adapter`; that is acceptable only while registry monitoring exists and it is proven absent from live ranking impact.
 
 ## Retired or blocked commands
 

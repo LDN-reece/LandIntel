@@ -596,12 +596,14 @@ with expected_sources(source_family, command_name, target_table, source_role) as
         ('topography', 'ingest-os-topography', 'public.constraint_source_features', 'constraint'),
         ('os_places', 'ingest-os-places', 'public.constraint_source_features', 'location_context'),
         ('os_features', 'ingest-os-features', 'public.constraint_source_features', 'location_context'),
-        ('ldp', 'promote-ldp-authority-source', 'landintel.authority_source_registry', 'policy_deferred'),
+        ('ldp', 'ingest-ldp', 'landintel.ldp_site_records', 'policy_deferred'),
         ('settlement', 'promote-settlement-authority-source', 'landintel.authority_source_registry', 'policy_deferred')
 ), raw_counts as (
     select 'ela'::text as source_family, count(*)::bigint as raw_row_count from landintel.ela_site_records
     union all
     select 'vdl'::text as source_family, count(*)::bigint as raw_row_count from landintel.vdl_site_records
+    union all
+    select 'ldp'::text as source_family, count(*)::bigint as raw_row_count from landintel.ldp_site_records
     union all
     select layer.source_family, count(feature.id)::bigint as raw_row_count
     from public.constraint_layer_registry as layer

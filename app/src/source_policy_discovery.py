@@ -16,14 +16,15 @@ from src.logging_config import configure_logging
 
 
 GEONETWORK_SEARCH_URL = "https://www.spatialdata.gov.scot/geonetwork/srv/api/search/records/_search"
+LDP_SPATIALHUB_PACKAGE_URL = "https://data.spatialhub.scot/api/3/action/package_show?id=local_development_plans-is"
 
 POLICY_DISCOVERY: dict[str, dict[str, Any]] = {
     "ldp": {
-        "query": '"local development plan allocations" OR "local development plan" OR "proposed local development plan" OR "development plan allocation"',
-        "source_name_suffix": "LDP allocation/source discovery",
-        "signal_output": "planning_context/future_context after authority adapter validation",
-        "ranking_impact": "Core policy source. No live ranking until authority adapter is validated.",
-        "resurfacing_trigger": "LDP package/document/service change, allocation change, or adapter promotion.",
+        "query": "local_development_plans-is",
+        "source_name_suffix": "SpatialHub LDP package",
+        "signal_output": "planning_context/future_context after licence and policy-interpreter validation",
+        "ranking_impact": "Core policy source. Storage is live; ranking stays gated until commercial-use and interpretation checks pass.",
+        "resurfacing_trigger": "SpatialHub package revision, direct ZIP resource refresh, allocation change, or policy interpreter promotion.",
     },
     "settlement": {
         "query": '"settlement boundary" OR "settlement boundaries" OR "local development plan settlement boundaries"',
@@ -187,6 +188,8 @@ class SourcePolicyDiscoveryRunner:
     def discover_policy_sources(self, source_family: str) -> dict[str, Any]:
         if source_family not in POLICY_DISCOVERY:
             raise KeyError(f"No policy discovery config for {source_family}")
+        if source_family == "ldp":
+            return self.register_ldp_spatialhub_package()
         config = POLICY_DISCOVERY[source_family]
         authorities = self.settings.load_target_councils()
         inserted = 0
@@ -209,6 +212,65 @@ class SourcePolicyDiscoveryRunner:
         }
         self.logger.info("policy_sources_discovered", extra=payload)
         return payload
+
+    def register_ldp_spatialhub_package(self) -> dict[str, Any]:
+        response = self.client.get(LDP_SPATIALHUB_PACKAGE_URL, headers={"Accept": "application/json"})
+        response.raise_for_status()
+        payload = response.json()
+        package = dict(payload.get("result") or payload)
+        resources = list(package.get("resources") or [])
+        zip_resources = [
+            resource
+            for resource in resources
+            if str(resource.get("url") or "").lower().endswith(".zip")
+            or "zip" in str(resource.get("format") or resource.get("mimetype") or "").lower()
+        ]
+        external_resources = len(resources) - len(zip_resources)
+        source = {
+            "source_key": "ldp_spatialhub_package",
+            "source_family": "ldp",
+            "source_name": str(package.get("title") or "Local Development Plans - Scotland"),
+            "source_group": "policy",
+            "phase_one_role": "critical",
+            "source_status": "live_target",
+            "orchestration_mode": "spatialhub_ckan_package_zips",
+            "endpoint_url": LDP_SPATIALHUB_PACKAGE_URL,
+            "target_table": "landintel.ldp_site_records",
+            "reconciliation_path": "SpatialHub CKAN package -> direct ZIP resources -> ldp_site_records -> later policy interpreter/canonical overlay",
+            "evidence_path": "ldp_site_records raw_payload, source_expansion_events, source_freshness_states",
+            "signal_output": POLICY_DISCOVERY["ldp"]["signal_output"],
+            "ranking_impact": POLICY_DISCOVERY["ldp"]["ranking_impact"],
+            "resurfacing_trigger": POLICY_DISCOVERY["ldp"]["resurfacing_trigger"],
+            "data_age_basis": "SpatialHub package revision date and resource last_modified timestamps.",
+            "ranking_eligible": False,
+            "review_output_eligible": True,
+            "notes": "SpatialHub LDP package is reachable. Direct ZIP resources are storage-live; commercial ranking remains licence-gated.",
+            "metadata": {
+                "package_id": package.get("name"),
+                "metadata_uuid": "8e13ad58-41f2-4308-a3a8-5ffe8593e731",
+                "spatialhub_identifier": "sh_ldp",
+                "resource_count": len(resources),
+                "zip_resource_count": len(zip_resources),
+                "external_link_resource_count": external_resources,
+            },
+        }
+        self._upsert_source(source)
+        self._record_freshness(
+            source,
+            freshness_status="current",
+            live_access_status="reachable",
+            summary="SpatialHub LDP package registered; direct ZIP resources available, external links held as metadata.",
+            records_observed=len(resources),
+        )
+        result = {
+            "source_family": "ldp",
+            "source_key": source["source_key"],
+            "resource_count": len(resources),
+            "zip_resource_count": len(zip_resources),
+            "external_link_resource_count": external_resources,
+        }
+        self.logger.info("ldp_spatialhub_package_registered", extra=result)
+        return result
 
     def _search_geonetwork(self, authority: str, query: str) -> list[dict[str, Any]]:
         payload = {
@@ -396,6 +458,7 @@ class SourcePolicyDiscoveryRunner:
         freshness_status: str,
         live_access_status: str,
         summary: str,
+        records_observed: int = 0,
     ) -> None:
         self.database.execute(
             """
@@ -452,7 +515,7 @@ class SourcePolicyDiscoveryRunner:
                     else None
                 ),
                 "check_summary": summary,
-                "records_observed": 0,
+                "records_observed": records_observed,
                 "metadata": json.dumps({"source_key": source["source_key"]}, default=str),
             },
         )

@@ -35,6 +35,25 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
         super().__init__(settings, logger)
         self.logger = logger.getChild("source_expansion_paged_wfs")
 
+    def _empty_geo_frame(self) -> gpd.GeoDataFrame:
+        return gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs=27700)
+
+    def _feature_collection_to_gdf(
+        self,
+        payload: dict[str, Any],
+        source: dict[str, Any],
+        layer_name: str,
+    ) -> gpd.GeoDataFrame:
+        # Empty AOI tiles are expected for constraint layers clipped to live sites.
+        if not payload.get("features"):
+            return self._empty_geo_frame()
+        try:
+            return super()._feature_collection_to_gdf(payload, source, layer_name)
+        except ValueError as exc:
+            if "Unknown column geometry" in str(exc):
+                return self._empty_geo_frame()
+            raise
+
     def _wfs_feature_types(self, source: dict[str, Any]) -> list[str]:
         endpoint_url = str(source["endpoint_url"])
         response = self.client.get(
@@ -136,7 +155,7 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
         envelopes = self._canonical_site_envelopes()
         if not envelopes:
             self.logger.warning("sepa_aoi_missing", extra={"layer_name": layer_name})
-            return gpd.GeoDataFrame([], geometry="geometry", crs=27700)
+            return self._empty_geo_frame()
 
         frames: list[gpd.GeoDataFrame] = []
         seen_feature_ids: set[str] = set()
@@ -176,6 +195,7 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
                 if frame.empty:
                     break
 
+                raw_batch_count = len(frame)
                 if "_source_feature_id" in frame.columns:
                     keep_mask = ~frame["_source_feature_id"].astype(str).isin(seen_feature_ids)
                     new_ids = set(frame.loc[keep_mask, "_source_feature_id"].astype(str).tolist())
@@ -186,7 +206,7 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
                     frames.append(frame)
                     fetched += len(frame)
 
-                if len(frame) < batch_limit:
+                if raw_batch_count < batch_limit:
                     break
                 offset += batch_limit
 
@@ -227,7 +247,7 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
 
     def _combine_frames(self, frames: list[gpd.GeoDataFrame]) -> gpd.GeoDataFrame:
         if not frames:
-            return gpd.GeoDataFrame([], geometry="geometry", crs=27700)
+            return self._empty_geo_frame()
         combined = pd.concat(frames, ignore_index=True)
         return gpd.GeoDataFrame(combined, geometry="geometry", crs=frames[0].crs or 27700)
 

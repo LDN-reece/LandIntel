@@ -460,9 +460,9 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
         batch_size = min(max(1, self.page_size), 500)
         for offset in range(0, len(object_ids), batch_size):
             batch_ids = object_ids[offset : offset + batch_size]
-            response = self.client.get(
+            response = self.client.post(
                 f"{layer_url.rstrip('/')}/query",
-                params={
+                data={
                     "f": "geojson",
                     "objectIds": ",".join(str(object_id) for object_id in batch_ids),
                     "outFields": "*",

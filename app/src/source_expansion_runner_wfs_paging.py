@@ -19,6 +19,7 @@ import pandas as pd
 from config.settings import Settings, get_settings
 from src.logging_config import configure_logging
 from src.source_expansion_runner import (
+    CONSTRAINT_FAMILIES,
     SourceExpansionRunner,
     _dedupe,
     _feature_type_matches,
@@ -226,7 +227,7 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
         family_configured = os.getenv(f"SOURCE_EXPANSION_{family_key}_MEASURE_MODE")
         if family_configured and family_configured.strip():
             return family_configured.strip().lower()
-        if source_family == "sepa_flood":
+        if source_family in CONSTRAINT_FAMILIES:
             return "load_only"
         configured = os.getenv("SOURCE_EXPANSION_CONSTRAINT_MEASURE_MODE")
         if configured and configured.strip():
@@ -281,6 +282,18 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
 
         workspace = _workspace_from_url(endpoint_url)
         return [f"{workspace}:{hint}" if workspace else hint for hint in hints]
+
+    def _load_arcgis_constraint_source(self, source: dict[str, Any], run_id: str) -> list[dict[str, Any]]:
+        source = dict(source)
+        source["endpoint_url"] = self._normalise_arcgis_endpoint_url(str(source["endpoint_url"]))
+        return super()._load_arcgis_constraint_source(source, run_id)
+
+    def _normalise_arcgis_endpoint_url(self, endpoint_url: str) -> str:
+        endpoint = endpoint_url.rstrip("/")
+        if endpoint.lower().endswith("/wfsserver") and "/arcgis/services/" in endpoint:
+            endpoint = endpoint[: -len("/WFSServer")]
+            endpoint = endpoint.replace("/arcgis/services/", "/arcgis/rest/services/")
+        return endpoint
 
     def _fetch_wfs_source_frames(self, source: dict[str, Any]) -> list[gpd.GeoDataFrame]:
         endpoint_url = str(source["endpoint_url"])
@@ -345,7 +358,7 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
 
     def _fetch_arcgis_layer(self, source: dict[str, Any], layer_url: str, layer_name: str) -> gpd.GeoDataFrame:
         if source.get("source_family") != "sepa_flood":
-            return super()._fetch_arcgis_layer(source, layer_url, layer_name)
+            return self._fetch_arcgis_layer_with_pagination_fallback(source, layer_url, layer_name)
 
         envelopes = self._canonical_site_envelopes()
         if not envelopes:
@@ -405,6 +418,63 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
                     break
                 offset += batch_limit
 
+        return self._combine_frames(frames)
+
+    def _fetch_arcgis_layer_with_pagination_fallback(
+        self,
+        source: dict[str, Any],
+        layer_url: str,
+        layer_name: str,
+    ) -> gpd.GeoDataFrame:
+        try:
+            return super()._fetch_arcgis_layer(source, layer_url, layer_name)
+        except Exception as exc:
+            if not self._is_arcgis_pagination_unsupported(exc):
+                raise
+            self.logger.warning(
+                "arcgis_pagination_unsupported",
+                extra={"source_key": source.get("source_key"), "layer_name": layer_name},
+            )
+            return self._fetch_arcgis_layer_by_object_ids(source, layer_url, layer_name)
+
+    def _is_arcgis_pagination_unsupported(self, exc: Exception) -> bool:
+        return "pagination is not supported" in str(exc).lower()
+
+    def _fetch_arcgis_layer_by_object_ids(
+        self,
+        source: dict[str, Any],
+        layer_url: str,
+        layer_name: str,
+    ) -> gpd.GeoDataFrame:
+        id_payload = self._fetch_json(
+            f"{layer_url.rstrip('/')}/query",
+            {"f": "json", "where": "1=1", "returnIdsOnly": "true"},
+        )
+        object_ids = list(id_payload.get("objectIds") or [])
+        if self.max_features > 0:
+            object_ids = object_ids[: self.max_features]
+        if not object_ids:
+            return self._empty_geo_frame()
+
+        frames: list[gpd.GeoDataFrame] = []
+        batch_size = min(max(1, self.page_size), 500)
+        for offset in range(0, len(object_ids), batch_size):
+            batch_ids = object_ids[offset : offset + batch_size]
+            response = self.client.get(
+                f"{layer_url.rstrip('/')}/query",
+                params={
+                    "f": "geojson",
+                    "objectIds": ",".join(str(object_id) for object_id in batch_ids),
+                    "outFields": "*",
+                    "returnGeometry": "true",
+                    "outSR": "27700",
+                },
+            )
+            response.raise_for_status()
+            payload = self._json_payload(response, f"ArcGIS objectId query {source['source_key']} {layer_name}")
+            frame = self._feature_collection_to_gdf(payload, source, layer_name)
+            if not frame.empty:
+                frames.append(frame)
         return self._combine_frames(frames)
 
     def _canonical_site_envelopes(self) -> list[dict[str, float]]:

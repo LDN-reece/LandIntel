@@ -106,6 +106,7 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("arcgis_pagination_unsupported", PAGED_RUNNER)
         self.assertIn("returnIdsOnly", PAGED_RUNNER)
         self.assertIn("objectIds", PAGED_RUNNER)
+        self.assertIn("self.client.post", PAGED_RUNNER)
 
     def test_canonical_constraint_anchor_has_no_legacy_site_dependency(self) -> None:
         anchor_sql = MIGRATION.split("create or replace function public.constraints_site_anchor()", 1)[1]

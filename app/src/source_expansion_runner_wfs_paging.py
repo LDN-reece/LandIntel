@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 
 import geopandas as gpd
 import pandas as pd
+from shapely import force_2d
 
 from config.settings import Settings, get_settings
 from src.logging_config import configure_logging
@@ -39,6 +40,15 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
     def _empty_geo_frame(self) -> gpd.GeoDataFrame:
         return gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs=27700)
 
+    def _force_2d_frame(self, frame: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        if frame.empty:
+            return frame
+        frame = frame.copy()
+        frame["geometry"] = frame.geometry.apply(
+            lambda geometry: force_2d(geometry) if geometry is not None else None
+        )
+        return gpd.GeoDataFrame(frame, geometry="geometry", crs=frame.crs or 27700)
+
     def _feature_collection_to_gdf(
         self,
         payload: dict[str, Any],
@@ -49,7 +59,7 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
         if not payload.get("features"):
             return self._empty_geo_frame()
         try:
-            return super()._feature_collection_to_gdf(payload, source, layer_name)
+            return self._force_2d_frame(super()._feature_collection_to_gdf(payload, source, layer_name))
         except ValueError as exc:
             if "Unknown column geometry" in str(exc):
                 return self._empty_geo_frame()
@@ -514,7 +524,8 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
         if not frames:
             return self._empty_geo_frame()
         combined = pd.concat(frames, ignore_index=True)
-        return gpd.GeoDataFrame(combined, geometry="geometry", crs=frames[0].crs or 27700)
+        frame = gpd.GeoDataFrame(combined, geometry="geometry", crs=frames[0].crs or 27700)
+        return self._force_2d_frame(frame)
 
 
 def main() -> int:

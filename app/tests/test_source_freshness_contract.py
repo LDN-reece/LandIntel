@@ -21,6 +21,7 @@ class SourceFreshnessContractTests(unittest.TestCase):
         for source_family in (
             "planning",
             "hla",
+            "title_number",
             "canonical",
             "ros_cadastral",
             "local_authority_boundaries",
@@ -41,6 +42,10 @@ class SourceFreshnessContractTests(unittest.TestCase):
             "sgn_assets",
         ):
             self.assertIn(source_family, sql)
+
+        self.assertIn("core_policy_pending_adapter", sql)
+        self.assertIn("pass_core_policy_pending_adapter", sql)
+        self.assertIn("control_spine", sql)
 
     def test_github_action_exposes_source_freshness_audit_command(self) -> None:
         workflow = (REPO_ROOT.parent / ".github" / "workflows" / "run-landintel-sources.yml").read_text()

@@ -21,15 +21,15 @@ POLICY_DISCOVERY: dict[str, dict[str, Any]] = {
     "ldp": {
         "query": '"local development plan allocations" OR "local development plan" OR "proposed local development plan" OR "development plan allocation"',
         "source_name_suffix": "LDP allocation/source discovery",
-        "signal_output": "none until promoted, then planning_context/future_context",
-        "ranking_impact": "No live ranking until authority adapter is validated.",
+        "signal_output": "planning_context/future_context after authority adapter validation",
+        "ranking_impact": "Core policy source. No live ranking until authority adapter is validated.",
         "resurfacing_trigger": "LDP package/document/service change, allocation change, or adapter promotion.",
     },
     "settlement": {
         "query": '"settlement boundary" OR "settlement boundaries" OR "local development plan settlement boundaries"',
         "source_name_suffix": "settlement boundary discovery",
-        "signal_output": "none until promoted, then settlement_position",
-        "ranking_impact": "No live ranking until authority adapter is validated.",
+        "signal_output": "settlement_position after authority adapter validation",
+        "ranking_impact": "Core settlement source. No live ranking until authority adapter is validated.",
         "resurfacing_trigger": "Boundary dataset refresh, adapter promotion, or inside/outside percentage change.",
     },
 }
@@ -170,7 +170,13 @@ class SourcePolicyDiscoveryRunner:
             self._upsert_source(source)
             self._record_freshness(
                 source,
-                freshness_status="explicitly_deferred" if source.get("source_status") == "explicitly_deferred" else "registered_unproven",
+                freshness_status=(
+                    "core_pending_adapter"
+                    if source.get("source_status") == "core_pending_adapter"
+                    else "explicitly_deferred"
+                    if source.get("source_status") == "explicitly_deferred"
+                    else "registered_unproven"
+                ),
                 live_access_status="registered",
                 summary="Registered from Phase One supplemental source discovery.",
             )
@@ -251,7 +257,7 @@ class SourcePolicyDiscoveryRunner:
         self._upsert_source(source)
         self._record_freshness(
             source,
-            freshness_status="explicitly_deferred",
+            freshness_status="core_pending_adapter",
             live_access_status="monitored",
             summary="No GeoNetwork record found yet; placeholder kept for authority monitoring.",
         )
@@ -275,7 +281,7 @@ class SourcePolicyDiscoveryRunner:
         self._upsert_source(source)
         self._record_freshness(
             source,
-            freshness_status="explicitly_deferred",
+            freshness_status="core_pending_adapter",
             live_access_status="monitored",
             summary="GeoNetwork record discovered and held out of ranking until authority adapter promotion.",
         )
@@ -297,19 +303,23 @@ class SourcePolicyDiscoveryRunner:
             "source_name": title,
             "source_group": "policy",
             "phase_one_role": "critical",
-            "source_status": "explicitly_deferred",
+            "source_status": "core_pending_adapter",
             "orchestration_mode": "geonetwork_authority_discovery",
             "endpoint_url": url,
-            "target_table": "landintel.source_estate_registry",
-            "reconciliation_path": "deferred until authority adapter validated",
-            "evidence_path": "registry audit rows only until promoted",
+            "target_table": (
+                "landintel.ldp_site_records"
+                if source_family == "ldp"
+                else "landintel.settlement_boundary_records"
+            ),
+            "reconciliation_path": "authority discovery -> validated authority adapter -> canonical site link",
+            "evidence_path": "registry rows until promoted; then source records, evidence_references, and site_source_links",
             "signal_output": config["signal_output"],
             "ranking_impact": config["ranking_impact"],
             "resurfacing_trigger": config["resurfacing_trigger"],
             "data_age_basis": "GeoNetwork metadata modified timestamp and authority discovery run timestamp.",
             "ranking_eligible": False,
             "review_output_eligible": False,
-            "notes": "GeoNetwork discovered policy source. Promotion must be authority-specific and explicit.",
+            "notes": "Core policy source discovered through GeoNetwork. Promotion must be authority-specific and explicit.",
             "metadata": metadata,
         }
 
@@ -436,7 +446,11 @@ class SourcePolicyDiscoveryRunner:
                 "live_access_status": live_access_status,
                 "ranking_eligible": bool(source.get("ranking_eligible", False)),
                 "review_output_eligible": bool(source.get("review_output_eligible", True)),
-                "stale_reason_code": None if freshness_status not in {"explicitly_deferred"} else "authority_adapter_not_validated",
+                "stale_reason_code": (
+                    "authority_adapter_not_validated"
+                    if freshness_status in {"explicitly_deferred", "core_pending_adapter"}
+                    else None
+                ),
                 "check_summary": summary,
                 "records_observed": 0,
                 "metadata": json.dumps({"source_key": source["source_key"]}, default=str),

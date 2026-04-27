@@ -30,6 +30,7 @@ on:
           - probe-source-estate
           - audit-source-estate
           - audit-source-expansion
+          - audit-title-number-control
           - discover-ldp-sources
           - discover-settlement-sources
           - promote-ldp-authority-source
@@ -65,7 +66,8 @@ on:
 # Phase One orchestration is GitHub Actions + Supabase only; legacy full-refresh
 # commands are deliberately not exposed as dispatch options.
 # HLA is supporting evidence only; the source universe now expands through
-# constraints, ELA, VDL, OS, LDP and settlement commands instead of repeating HLA.
+# Title Number, LDP, settlement, constraints, ELA, VDL and OS commands instead
+# of repeating HLA.
 
 concurrency:
   group: landintel-sources-${{ github.event_name }}-${{ inputs.command || 'manual' }}
@@ -226,6 +228,7 @@ jobs:
             python -m src.source_estate_registry probe-source-estate
             python -m src.source_policy_discovery discover-ldp-geonetwork
             python -m src.source_policy_discovery discover-settlement-geonetwork
+            python -m src.source_expansion_runner_wfs_paging audit-title-number-control
             python -m src.source_estate_registry audit-source-estate
             python -m src.source_freshness_audit audit-source-freshness
             python -m src.source_expansion_runner_wfs_paging audit-source-expansion
@@ -238,6 +241,10 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "audit-source-estate" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry audit-source-estate
+          elif [ "$SELECTED_COMMAND" = "audit-title-number-control" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_estate_registry register-source-estate
+            python -m src.source_expansion_runner_wfs_paging audit-title-number-control
           elif [ "$SELECTED_COMMAND" = "discover-ldp-sources" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate

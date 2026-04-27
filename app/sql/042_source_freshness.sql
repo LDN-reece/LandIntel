@@ -209,7 +209,7 @@ freshness_rows as (
 select
     freshness.*,
     case
-        when freshness.freshness_status in ('explicitly_deferred', 'discovery_only', 'manual_snapshot', 'failed') then freshness.freshness_status
+        when freshness.freshness_status in ('core_pending_adapter', 'explicitly_deferred', 'discovery_only', 'manual_snapshot', 'failed') then freshness.freshness_status
         when freshness.last_checked_at is null then 'unknown'
         when freshness.next_refresh_due_at is not null and freshness.next_refresh_due_at < now() then 'stale'
         when freshness.last_checked_at < now() - make_interval(days => greatest(freshness.max_staleness_days, 1)) then 'stale'
@@ -230,11 +230,12 @@ with source_families(source_family, phase_one_role, ranking_policy) as (
     values
         ('planning', 'critical', 'live_ranking'),
         ('hla', 'critical', 'live_ranking'),
+        ('title_number', 'critical', 'control_spine'),
         ('canonical', 'critical', 'canonical_spine'),
         ('ros_cadastral', 'critical', 'canonical_spine'),
         ('local_authority_boundaries', 'critical', 'review_context'),
-        ('ldp', 'critical', 'deferred_until_authority_adapter_validated'),
-        ('settlement', 'critical', 'deferred_until_authority_adapter_validated'),
+        ('ldp', 'critical', 'core_policy_pending_adapter'),
+        ('settlement', 'critical', 'core_policy_pending_adapter'),
         ('flood', 'target_live', 'constraints_drag'),
         ('bgs', 'context', 'ground_context'),
         ('ela', 'target_live', 'future_context'),
@@ -258,7 +259,7 @@ rollup as (
         count(*) filter (where current.effective_freshness_status = 'unknown')::bigint as unknown_count,
         count(*) filter (where current.effective_freshness_status = 'failed')::bigint as failed_count,
         count(*) filter (where current.effective_freshness_status = 'manual_snapshot')::bigint as manual_snapshot_count,
-        count(*) filter (where current.effective_freshness_status in ('explicitly_deferred', 'discovery_only'))::bigint as deferred_count,
+        count(*) filter (where current.effective_freshness_status in ('core_pending_adapter', 'explicitly_deferred', 'discovery_only'))::bigint as deferred_count,
         max(current.last_checked_at) as latest_checked_at,
         max(current.last_success_at) as latest_success_at,
         min(current.next_refresh_due_at) filter (where current.next_refresh_due_at is not null) as next_refresh_due_at,
@@ -294,11 +295,16 @@ select
         when coalesce(rollup.failed_count, 0) > 0 and coalesce(rollup.current_count, 0) = 0 then 'failed'
         when coalesce(rollup.stale_count, 0) > 0 and coalesce(rollup.current_count, 0) = 0 then 'stale'
         when coalesce(rollup.current_count, 0) > 0 then 'current'
+        when 'core_pending_adapter' = any(coalesce(rollup.freshness_statuses, '{}'::text[])) then 'core_pending_adapter'
         when coalesce(rollup.deferred_count, 0) > 0 then 'explicitly_deferred'
         when coalesce(rollup.manual_snapshot_count, 0) > 0 then 'manual_snapshot'
         else 'unknown'
     end as source_freshness_status,
     case
+        when family.ranking_policy = 'core_policy_pending_adapter'
+         and coalesce(rollup.deferred_count, 0) > 0 then 'pass_core_policy_pending_adapter'
+        when family.ranking_policy = 'control_spine'
+         and coalesce(rollup.current_count, 0) > 0 then 'pass_control_current'
         when family.ranking_policy like 'deferred%%' and coalesce(rollup.deferred_count, 0) > 0 then 'pass_deferred_monitored'
         when coalesce(rollup.has_current_ranking_source, false) then 'pass_current'
         when family.phase_one_role = 'context' and coalesce(rollup.current_count, 0) > 0 then 'pass_context_current'

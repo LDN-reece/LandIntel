@@ -11,7 +11,7 @@ discovery:
     source_family: ldp
     search_url: "https://data.spatialhub.scot/api/3/action/package_search"
     query: "local development plan allocation settlement"
-    source_status: explicitly_deferred
+    source_status: core_pending_adapter
     defer_reason_code: authority_adapter_not_validated
     ranking_eligible: false
     review_output_eligible: false
@@ -19,7 +19,7 @@ discovery:
     source_family: settlement
     search_url: "https://data.spatialhub.scot/api/3/action/package_search"
     query: "settlement boundary local development plan"
-    source_status: explicitly_deferred
+    source_status: core_pending_adapter
     defer_reason_code: authority_adapter_not_validated
     ranking_eligible: false
     review_output_eligible: false
@@ -68,40 +68,58 @@ sources:
         feature_count: 9132
         modified_at: "2026-03-01T21:34:58Z"
 
+  - source_key: title_number_control_spine
+    source_family: title_number
+    source_name: "Title number validation and control spine"
+    source_group: control
+    phase_one_role: critical
+    source_status: live_internal_validation
+    orchestration_mode: site_title_validation
+    target_table: public.site_title_validation
+    reconciliation_path: "canonical/live site geometry -> title evidence -> normalized title number -> control review"
+    evidence_path: "public.site_title_validation, landintel.site_source_links, landintel.evidence_references"
+    signal_output: "control_readiness and ownership_control caveats"
+    ranking_impact: "Control gate first. Planning upside is not commercially actionable until title/control evidence is known."
+    resurfacing_trigger: "new title number, validation-status change, title conflict, or manual control review"
+    data_age_basis: "public.site_title_validation updated_at and title_source metadata"
+    ranking_eligible: true
+    review_output_eligible: true
+    notes: "Highest-priority control source. This is the deal-control layer before LDP and settlement interpretation."
+
   - source_key: ldp_authority_discovery
     source_family: ldp
     source_name: "Authority LDP discovery and monitoring"
     source_group: policy
     phase_one_role: critical
-    source_status: explicitly_deferred
+    source_status: core_pending_adapter
     orchestration_mode: authority_discovery
     endpoint_url: "https://data.spatialhub.scot/api/3/action/package_search"
-    target_table: landintel.authority_source_registry
-    reconciliation_path: "deferred until authority adapter validated"
-    evidence_path: "registry audit rows only until promoted"
-    signal_output: "none until promoted, then planning_context/future_context"
-    ranking_impact: "No live ranking until promoted authority-by-authority"
+    target_table: landintel.ldp_site_records
+    reconciliation_path: "authority source discovery -> validated authority adapter -> ldp_site_records -> canonical site link"
+    evidence_path: "authority registry, ldp_site_records, evidence_references, site_source_links"
+    signal_output: "planning_context, policy_support, future_context"
+    ranking_impact: "Core planning-thesis source. Held out of ranking until authority adapter evidence is reliable."
     resurfacing_trigger: "document/package change, allocation change, adapter promotion"
     data_age_basis: "Authority source checked timestamp and document modified timestamp"
     drive_folder_url: "https://drive.google.com/drive/folders/1PCafGI44c_F5jl_budLooGzgBK6qSG03"
-    notes: "Drive contains Council LDP URLs and Glasgow sample data. Needs authority-specific polygon adapters before ranking."
+    notes: "Second source in the commercial priority spine after title number. Needs authority-specific polygon adapters before ranking."
 
   - source_key: settlement_boundary_authority_discovery
     source_family: settlement
     source_name: "Settlement boundary discovery and monitoring"
     source_group: policy
     phase_one_role: critical
-    source_status: explicitly_deferred
+    source_status: core_pending_adapter
     orchestration_mode: authority_discovery
     endpoint_url: "https://data.spatialhub.scot/api/3/action/package_search"
-    target_table: landintel.authority_source_registry
-    reconciliation_path: "deferred until authority adapter validated, then direct spatial assignment"
-    evidence_path: "registry audit rows only until promoted"
-    signal_output: "none until promoted, then settlement_position"
-    ranking_impact: "No live ranking until promoted authority-by-authority"
+    target_table: landintel.settlement_boundary_records
+    reconciliation_path: "authority source discovery -> validated authority adapter -> settlement_boundary_records -> canonical site overlay"
+    evidence_path: "authority registry, settlement_boundary_records, evidence_references, site_source_links"
+    signal_output: "settlement_position and planning_context caveats"
+    ranking_impact: "Core planning-thesis source. Held out of ranking until authority boundary evidence is reliable."
     resurfacing_trigger: "boundary dataset refresh, promotion, inside/outside percentage change"
     data_age_basis: "Authority source checked timestamp and source modified timestamp"
-    notes: "Critical edge. Must show percentages and never predict planning outcome."
+    notes: "Third source in the commercial priority spine after title number and LDP. Must show percentages and never predict planning outcome."
 
   - source_key: employment_land_supply_spatialhub
     source_family: ela

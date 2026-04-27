@@ -20,6 +20,7 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         for source_family in {
             "planning",
             "hla",
+            "title_number",
             "ldp",
             "settlement",
             "ela",
@@ -78,6 +79,7 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
             "register-source-estate",
             "probe-source-estate",
             "audit-source-estate",
+            "audit-title-number-control",
             "discover-ldp-sources",
             "discover-settlement-sources",
         ):
@@ -92,6 +94,7 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         self.assertIn("src/source_policy_discovery.py", workflow)
         self.assertIn("discover-ldp-geonetwork", workflow)
         self.assertIn("discover-settlement-geonetwork", workflow)
+        self.assertIn("audit-title-number-control", workflow)
 
     def test_legacy_lean_workflow_is_retired(self) -> None:
         workflow = (REPO_ROOT.parent / ".github" / "workflows" / "run-landintel-lean.yml").read_text()
@@ -142,6 +145,18 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         self.assertIn("topography_scottish_lidar", runner)
         self.assertIn("adopted_roads_authority_discovery", runner)
         self.assertIn("utilities_water_electric_discovery", runner)
+
+    def test_manifest_marks_title_ldp_settlement_as_core_priority_spine(self) -> None:
+        manifest_path = REPO_ROOT / "config" / "phase_one_source_estate.yaml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        source_by_family = {source["source_family"]: source for source in manifest["sources"]}
+
+        self.assertEqual(source_by_family["title_number"]["source_status"], "live_internal_validation")
+        self.assertEqual(source_by_family["title_number"]["target_table"], "public.site_title_validation")
+        self.assertEqual(source_by_family["ldp"]["source_status"], "core_pending_adapter")
+        self.assertEqual(source_by_family["ldp"]["target_table"], "landintel.ldp_site_records")
+        self.assertEqual(source_by_family["settlement"]["source_status"], "core_pending_adapter")
+        self.assertEqual(source_by_family["settlement"]["target_table"], "landintel.settlement_boundary_records")
 
 
 if __name__ == "__main__":

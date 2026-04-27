@@ -193,6 +193,8 @@ class SourceExpansionRunner:
     def run_command(self, command: str) -> dict[str, Any]:
         if command == "audit-source-expansion":
             return self.audit_source_expansion()
+        if command == "audit-title-number-control":
+            return self.audit_title_number_control()
         if command == "promote-ldp-authority-source":
             return self._record_policy_promotion_placeholder("ldp", command)
         if command == "promote-settlement-authority-source":
@@ -213,15 +215,16 @@ class SourceExpansionRunner:
             """
             select *
             from analytics.v_phase_one_source_expansion_readiness
-            order by source_role, source_family
+            order by priority_rank, source_role, source_family
             """
         )
-        live_wired = [row for row in rows if row.get("live_proof_status") == "live_wired_proven"]
+        live_wired_statuses = {"live_wired_proven", "control_wired_proven", "core_policy_wired_proven"}
+        live_wired = [row for row in rows if row.get("live_proof_status") in live_wired_statuses]
         deferred = [row for row in rows if str(row.get("live_proof_status") or "").startswith("explicitly_deferred")]
         incomplete = [
             row
             for row in rows
-            if row.get("live_proof_status") not in {"live_wired_proven"}
+            if row.get("live_proof_status") not in live_wired_statuses
             and not str(row.get("live_proof_status") or "").startswith("explicitly_deferred")
         ]
         payload = {
@@ -230,10 +233,59 @@ class SourceExpansionRunner:
             "deferred_count": len(deferred),
             "incomplete_count": len(incomplete),
             "incomplete_sources": [row.get("source_family") for row in incomplete],
+            "priority_sources": [
+                {
+                    "priority_rank": row.get("priority_rank"),
+                    "source_family": row.get("source_family"),
+                    "live_proof_status": row.get("live_proof_status"),
+                    "raw_or_feature_rows": row.get("raw_or_feature_rows"),
+                    "linked_or_measured_rows": row.get("linked_or_measured_rows"),
+                }
+                for row in rows
+                if int(row.get("priority_rank") or 999) <= 3
+            ],
             "matrix": rows,
         }
         self.logger.info("source_expansion_audit", extra=payload)
         return payload
+
+    def audit_title_number_control(self) -> dict[str, Any]:
+        summary = self.database.fetch_one(
+            """
+            select
+                count(*)::bigint as title_rows,
+                count(*) filter (
+                    where validation_status in ('matched', 'probable', 'manual_review')
+                )::bigint as review_ready_rows,
+                count(distinct site_id)::bigint as site_count,
+                count(distinct normalized_title_number)::bigint as normalized_title_count,
+                max(updated_at) as latest_title_validation_at
+            from public.site_title_validation
+            """
+        ) or {}
+        title_rows = int(summary.get("title_rows") or 0)
+        review_ready_rows = int(summary.get("review_ready_rows") or 0)
+        status = "control_wired_proven" if title_rows and review_ready_rows else "control_source_not_yet_populated"
+        result = {
+            "command": "audit-title-number-control",
+            "source_family": "title_number",
+            "status": status,
+            "summary": "Title number control spine audited from public.site_title_validation.",
+            **summary,
+        }
+        self._record_expansion_event(
+            command_name="audit-title-number-control",
+            source_key="title_number_control_spine",
+            source_family="title_number",
+            status=status,
+            raw_rows=title_rows,
+            linked_rows=int(summary.get("site_count") or 0),
+            measured_rows=review_ready_rows,
+            summary=result["summary"],
+            metadata=result,
+        )
+        self.logger.info("title_number_control_audit", extra=result)
+        return result
 
     def _run_family_command(self, command: str, source_family: str) -> dict[str, Any]:
         sources = self._sources_for_family(source_family)
@@ -1531,8 +1583,8 @@ class SourceExpansionRunner:
         result = {
             "command": command,
             "source_family": source_family,
-            "status": "explicitly_deferred_until_authority_adapter_validated",
-            "summary": "LDP and settlement sources are monitored and discovery-registered, but promotion requires an authority-specific adapter and explicit authority scope.",
+            "status": "core_policy_pending_authority_adapter",
+            "summary": "LDP and settlement are core policy sources. Promotion still requires an authority-specific adapter and explicit authority scope before ranking impact.",
         }
         self._record_expansion_event(
             command_name=command,
@@ -1685,6 +1737,7 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         choices=(
             "audit-source-expansion",
+            "audit-title-number-control",
             "ingest-ela",
             "ingest-vdl",
             "ingest-sepa-flood",

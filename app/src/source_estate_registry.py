@@ -264,7 +264,13 @@ class SourceEstateRegistryRunner:
 
     def _record_freshness_without_probe(self, source: dict[str, Any]) -> None:
         source_status = str(source.get("source_status") or "unknown")
-        if source_status == "explicitly_deferred":
+        if source_status == "live_internal_validation":
+            freshness_status = "current"
+            access_status = "internal_table_registered"
+        elif source_status == "core_pending_adapter":
+            freshness_status = "core_pending_adapter"
+            access_status = "monitored"
+        elif source_status == "explicitly_deferred":
             freshness_status = "explicitly_deferred"
             access_status = "monitored"
         elif source_status == "discovery_only":
@@ -335,13 +341,24 @@ class SourceEstateRegistryRunner:
                 "source_url": source.get("endpoint_url") or source.get("drive_folder_url"),
                 "refresh_cadence": "weekly" if source.get("phase_one_role") == "critical" else "monthly",
                 "max_staleness_days": 7 if source.get("phase_one_role") == "critical" else 30,
-                "last_success_at": datetime.now(timezone.utc) if freshness_status in {"current", "manual_snapshot", "explicitly_deferred", "discovery_only"} else None,
+                "last_success_at": (
+                    datetime.now(timezone.utc)
+                    if freshness_status
+                    in {"current", "manual_snapshot", "explicitly_deferred", "core_pending_adapter", "discovery_only"}
+                    else None
+                ),
                 "next_refresh_due_at": None,
                 "freshness_status": freshness_status,
                 "live_access_status": live_access_status,
                 "ranking_eligible": bool(source.get("ranking_eligible", source.get("phase_one_role") in {"critical", "target_live"})),
                 "review_output_eligible": bool(source.get("review_output_eligible", True)),
-                "stale_reason_code": None if freshness_status in {"current", "manual_snapshot"} else live_access_status,
+                "stale_reason_code": (
+                    "authority_adapter_not_validated"
+                    if freshness_status == "core_pending_adapter"
+                    else None
+                    if freshness_status in {"current", "manual_snapshot"}
+                    else live_access_status
+                ),
                 "check_summary": summary,
                 "records_observed": sum(int(asset.get("feature_count") or 0) for asset in source.get("static_assets") or []),
                 "metadata": json.dumps({"source_key": source["source_key"], "phase_one_role": source.get("phase_one_role")}),

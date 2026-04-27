@@ -118,6 +118,8 @@ select
     coalesce(freshness.records_observed, 0) as freshness_records_observed,
     coalesce(freshness.reason_codes, '{}'::text[]) as freshness_reason_codes,
     case
+        when registry.source_status = 'live_internal_validation' then 'internal_validation_registered'
+        when registry.source_status = 'core_pending_adapter' then 'core_pending_adapter'
         when registry.source_status in ('explicitly_deferred', 'discovery_only') then registry.source_status
         when registry.source_status in ('live_api', 'live_target') and registry.last_probe_status in ('reachable', 'current') then 'live_wired'
         when registry.source_status = 'static_snapshot' and coalesce(asset_rollup.asset_count, 0) > 0 then 'static_registered'

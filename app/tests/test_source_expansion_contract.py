@@ -16,6 +16,7 @@ class SourceExpansionContractTests(unittest.TestCase):
     def test_workflow_exposes_missing_source_universe_commands(self) -> None:
         for command in (
             "audit-source-expansion",
+            "audit-title-number-control",
             "ingest-ela",
             "ingest-vdl",
             "ingest-sepa-flood",
@@ -132,9 +133,10 @@ class SourceExpansionContractTests(unittest.TestCase):
             "landintel.site_signals",
             "landintel.site_change_events",
             "analytics.v_phase_one_source_expansion_readiness",
+            "analytics.v_phase_one_control_policy_priority",
             "public.refresh_constraint_measurements_for_layer",
         ):
-            self.assertIn(object_name, MIGRATION)
+            self.assertIn(object_name, MIGRATION if object_name != "analytics.v_phase_one_control_policy_priority" else (APP_DIR / "sql" / "046_phase_one_control_policy_priority.sql").read_text(encoding="utf-8"))
 
         for proof_column in (
             "raw_or_feature_rows",
@@ -181,12 +183,20 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("https://api.os.uk/features/v1/wfs", RUNNER)
         self.assertNotIn("TEMP_STORAGE_PATH", RUNNER)
 
-    def test_manifest_still_declares_ldp_and_settlement_deferred(self) -> None:
+    def test_control_policy_spine_prioritises_title_ldp_and_settlement(self) -> None:
+        priority_migration = (APP_DIR / "sql" / "046_phase_one_control_policy_priority.sql").read_text(encoding="utf-8")
+
+        self.assertIn("source_family: title_number", MANIFEST)
         self.assertIn("source_family: ldp", MANIFEST)
         self.assertIn("source_family: settlement", MANIFEST)
-        self.assertIn("source_status: explicitly_deferred", MANIFEST)
+        self.assertIn("source_status: live_internal_validation", MANIFEST)
+        self.assertIn("source_status: core_pending_adapter", MANIFEST)
         self.assertIn("authority_adapter_not_validated", MANIFEST)
-        self.assertIn("explicitly_deferred_until_authority_adapter_validated", MIGRATION)
+        self.assertIn("(1, 'title_number'", priority_migration)
+        self.assertIn("(2, 'ldp'", priority_migration)
+        self.assertIn("(3, 'settlement'", priority_migration)
+        self.assertIn("core_policy_pending_authority_adapter", priority_migration)
+        self.assertIn("control_wired_proven", RUNNER)
 
 
 if __name__ == "__main__":

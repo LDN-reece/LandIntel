@@ -74,6 +74,25 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn('if "Unknown column geometry" in str(exc)', PAGED_RUNNER)
         self.assertNotIn('gpd.GeoDataFrame([], geometry="geometry"', PAGED_RUNNER)
 
+    def test_constraint_ingest_is_internally_staged_and_budget_gated(self) -> None:
+        self.assertIn("def _ingest_constraint_family", PAGED_RUNNER)
+        self.assertIn("constraint_layer_gate", PAGED_RUNNER)
+        self.assertIn('if gate["measurement_approved"]', PAGED_RUNNER)
+        self.assertIn("constraint_loaded_measurement_deferred", PAGED_RUNNER)
+        self.assertIn("SOURCE_EXPANSION_CONSTRAINT_MEASURE_MODE", PAGED_RUNNER)
+        self.assertIn("SOURCE_EXPANSION_MAX_MEASURE_FEATURES", PAGED_RUNNER)
+        self.assertIn("SOURCE_EXPANSION_MAX_MEASURE_LAYERS", PAGED_RUNNER)
+        self.assertIn("SOURCE_EXPANSION_COMMAND_TIMEOUT", WORKFLOW)
+        self.assertIn('timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging', WORKFLOW)
+        self.assertIn('SOURCE_EXPANSION_ARCGIS_MAX_TILES: "75"', WORKFLOW)
+        self.assertIn('SOURCE_EXPANSION_ARCGIS_MAX_FEATURES_PER_LAYER: "10000"', WORKFLOW)
+        self.assertIn('SOURCE_EXPANSION_MAX_MEASURE_FEATURES: "2500"', WORKFLOW)
+        self.assertIn('SOURCE_EXPANSION_MAX_MEASURE_LAYERS: "1"', WORKFLOW)
+        self.assertNotIn("probe-sepa-flood", WORKFLOW)
+        self.assertNotIn("load-sepa-flood", WORKFLOW)
+        self.assertNotIn("gate-sepa-flood", WORKFLOW)
+        self.assertNotIn("measure-sepa-flood", WORKFLOW)
+
     def test_canonical_constraint_anchor_has_no_legacy_site_dependency(self) -> None:
         anchor_sql = MIGRATION.split("create or replace function public.constraints_site_anchor()", 1)[1]
         anchor_sql = anchor_sql.split("insert into public.constraint_layer_registry", 1)[0]

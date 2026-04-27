@@ -223,13 +223,14 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
 
     def _constraint_measurement_mode(self, source_family: str) -> str:
         family_key = source_family.upper().replace("-", "_")
-        configured = os.getenv(f"SOURCE_EXPANSION_{family_key}_MEASURE_MODE") or os.getenv(
-            "SOURCE_EXPANSION_CONSTRAINT_MEASURE_MODE"
-        )
-        if configured and configured.strip():
-            return configured.strip().lower()
+        family_configured = os.getenv(f"SOURCE_EXPANSION_{family_key}_MEASURE_MODE")
+        if family_configured and family_configured.strip():
+            return family_configured.strip().lower()
         if source_family == "sepa_flood":
             return "load_only"
+        configured = os.getenv("SOURCE_EXPANSION_CONSTRAINT_MEASURE_MODE")
+        if configured and configured.strip():
+            return configured.strip().lower()
         return "auto"
 
     def _constraint_env_int(self, source_family: str, suffix: str, default: int) -> int:

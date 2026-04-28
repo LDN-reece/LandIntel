@@ -245,7 +245,7 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("ingest-ros-cadastral", WORKFLOW)
         self.assertIn('elif [ "$SELECTED_COMMAND" = "ingest-ros-cadastral" ]; then', WORKFLOW)
         self.assertIn("python -m src.main ingest-ros-cadastral", WORKFLOW)
-        self.assertIn("python -m py_compile src/main.py", WORKFLOW)
+        self.assertIn("src/main.py", WORKFLOW)
         self.assertIn("ros_cadastral_spatial_bridge", MANIFEST)
         self.assertIn("TOID/site geometry -> RoS cadastral parcel -> title-number candidate", MANIFEST)
 

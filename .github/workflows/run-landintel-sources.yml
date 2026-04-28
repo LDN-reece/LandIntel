@@ -162,7 +162,7 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
       - name: Compile critical runners
-        run: python -m py_compile src/main.py src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py
+        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py src/main.py
 
       - name: Resolve selected command
         run: |

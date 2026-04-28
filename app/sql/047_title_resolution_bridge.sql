@@ -130,6 +130,8 @@ declare
     v_max_candidates_per_site integer := greatest(coalesce(max_candidates_per_site, 10), 1);
     v_min_overlap_sqm numeric := greatest(coalesce(min_overlap_sqm, 1), 0);
 begin
+    perform set_config('statement_timeout', '15min', true);
+
     delete from public.site_title_resolution_candidates
     where candidate_source = 'ros_cadastral_spatial_intersection';
 
@@ -158,12 +160,20 @@ begin
         join public.ros_cadastral_parcels as parcel
           on anchor.geometry is not null
          and parcel.geometry is not null
+         and parcel.authority_name = anchor.authority_name
+         and parcel.geometry && anchor.geometry
          and st_intersects(parcel.geometry, anchor.geometry)
         cross join lateral (
             with cleaned as (
                 select
-                    st_makevalid(anchor.geometry) as site_geometry,
-                    st_makevalid(parcel.geometry) as parcel_geometry
+                    case
+                        when st_isvalid(anchor.geometry) then anchor.geometry
+                        else st_makevalid(anchor.geometry)
+                    end as site_geometry,
+                    case
+                        when st_isvalid(parcel.geometry) then parcel.geometry
+                        else st_makevalid(parcel.geometry)
+                    end as parcel_geometry
             ), measured as (
                 select
                     st_area(st_intersection(site_geometry, parcel_geometry)) as overlap_area_sqm,

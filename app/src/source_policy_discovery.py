@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 import re
 from typing import Any
 import xml.etree.ElementTree as ET
@@ -21,6 +22,12 @@ LDP_SPATIALHUB_PACKAGE_URL = "https://data.spatialhub.scot/api/3/action/package_
 NRS_SETTLEMENT_WFS_URL = "https://maps.gov.scot/server/services/NRS/NRS/MapServer/WFSServer"
 NRS_SETTLEMENT_TYPE_NAME = "NRS:SettlementBoundaries"
 NRS_SETTLEMENT_METADATA_UUID = "e457f123-09df-4d67-ac81-d7bb2e470499"
+
+
+def _boundary_auth_params() -> dict[str, str]:
+    authkey = os.getenv("BOUNDARY_AUTHKEY")
+    return {"authkey": authkey} if authkey else {}
+
 
 POLICY_DISCOVERY: dict[str, dict[str, Any]] = {
     "ldp": {
@@ -281,7 +288,7 @@ class SourcePolicyDiscoveryRunner:
     def register_settlement_boundaries(self) -> dict[str, Any]:
         capabilities = self.client.get(
             NRS_SETTLEMENT_WFS_URL,
-            params={"service": "WFS", "request": "GetCapabilities"},
+            params={"service": "WFS", "request": "GetCapabilities", **_boundary_auth_params()},
             headers={"Accept": "text/xml,application/xml"},
         )
         capabilities.raise_for_status()
@@ -295,6 +302,7 @@ class SourcePolicyDiscoveryRunner:
             "source_status": "live_target",
             "orchestration_mode": "nrs_wfs_geojson",
             "endpoint_url": NRS_SETTLEMENT_WFS_URL,
+            "auth_env_vars": ["BOUNDARY_AUTHKEY"],
             "target_table": "landintel.settlement_boundary_records",
             "reconciliation_path": "NRS WFS -> settlement_boundary_records -> later canonical settlement-position overlay",
             "evidence_path": "settlement_boundary_records raw_payload, source_expansion_events, source_freshness_states",
@@ -340,6 +348,7 @@ class SourcePolicyDiscoveryRunner:
                 "request": "GetFeature",
                 "typeNames": NRS_SETTLEMENT_TYPE_NAME,
                 "resultType": "hits",
+                **_boundary_auth_params(),
             },
         )
         response.raise_for_status()

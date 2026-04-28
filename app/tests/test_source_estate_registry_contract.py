@@ -166,6 +166,7 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         self.assertEqual(source_by_family["settlement"]["orchestration_mode"], "nrs_wfs_geojson")
         self.assertEqual(source_by_family["settlement"]["target_table"], "landintel.settlement_boundary_records")
         self.assertEqual(source_by_family["settlement"]["wfs_type_name"], "NRS:SettlementBoundaries")
+        self.assertEqual(source_by_family["settlement"]["auth_env_vars"], ["BOUNDARY_AUTHKEY"])
         self.assertFalse(source_by_family["settlement"]["ranking_eligible"])
         self.assertTrue(source_by_family["settlement"]["review_output_eligible"])
 

@@ -935,6 +935,7 @@ class SourceExpansionRunner:
                 "srsName": "EPSG:27700",
                 "count": str(batch_limit),
             }
+            params.update(self._auth_params(source))
             if offset > 0:
                 params["startIndex"] = str(offset)
 
@@ -1996,6 +1997,9 @@ class SourceExpansionRunner:
         auth_vars = [str(value) for value in source.get("auth_env_vars") or []]
         if "IMPROVEMENT_SERVICE_AUTHKEY" in auth_vars:
             authkey = os.getenv("IMPROVEMENT_SERVICE_AUTHKEY")
+            return {"authkey": authkey} if authkey else {}
+        if "BOUNDARY_AUTHKEY" in auth_vars:
+            authkey = os.getenv("BOUNDARY_AUTHKEY")
             return {"authkey": authkey} if authkey else {}
         if "OS_API_KEY" in auth_vars:
             return self._os_key_params()

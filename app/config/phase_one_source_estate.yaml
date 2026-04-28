@@ -117,6 +117,7 @@ sources:
     source_status: live_target
     orchestration_mode: nrs_wfs_geojson
     endpoint_url: "https://maps.gov.scot/server/services/NRS/NRS/MapServer/WFSServer"
+    auth_env_vars: [BOUNDARY_AUTHKEY]
     target_table: landintel.settlement_boundary_records
     reconciliation_path: "NRS WFS -> settlement_boundary_records -> later canonical settlement-position overlay"
     evidence_path: "settlement_boundary_records raw_payload, source_expansion_events, source_freshness_states"

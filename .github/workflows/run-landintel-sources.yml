@@ -30,6 +30,8 @@ on:
           - probe-source-estate
           - audit-source-estate
           - audit-source-expansion
+          - ingest-ros-cadastral
+          - resolve-title-numbers
           - audit-title-number-control
           - discover-ldp-sources
           - discover-settlement-sources
@@ -116,6 +118,8 @@ jobs:
       SOURCE_EXPANSION_CONSTRAINT_MEASURE_MODE: "auto"
       SOURCE_EXPANSION_MAX_MEASURE_FEATURES: "2500"
       SOURCE_EXPANSION_MAX_MEASURE_LAYERS: "1"
+      TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE: "10"
+      TITLE_RESOLUTION_MIN_OVERLAP_SQM: "1"
       MIRROR_LAND_OBJECTS: "false"
 
     steps:
@@ -199,7 +203,7 @@ jobs:
 
           is_source_expansion_ingest() {
             case "$1" in
-              ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features)
+              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features)
                 return 0
                 ;;
               *)
@@ -231,6 +235,7 @@ jobs:
             python -m src.source_estate_registry probe-source-estate
             python -m src.source_policy_discovery discover-ldp-geonetwork
             python -m src.source_policy_discovery register-settlement-boundaries
+            python -m src.source_expansion_runner_wfs_paging resolve-title-numbers
             python -m src.source_expansion_runner_wfs_paging audit-title-number-control
             python -m src.source_estate_registry audit-source-estate
             python -m src.source_freshness_audit audit-source-freshness

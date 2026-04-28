@@ -70,21 +70,21 @@ sources:
 
   - source_key: title_number_control_spine
     source_family: title_number
-    source_name: "Title number validation and control spine"
+    source_name: "Title number resolution bridge and control spine"
     source_group: control
     phase_one_role: critical
     source_status: live_internal_validation
-    orchestration_mode: site_title_validation
-    target_table: public.site_title_validation
-    reconciliation_path: "canonical/live site geometry -> title evidence -> normalized title number -> control review"
-    evidence_path: "public.site_title_validation, landintel.site_source_links, landintel.evidence_references"
+    orchestration_mode: ros_cadastral_spatial_bridge
+    target_table: public.site_title_resolution_candidates
+    reconciliation_path: "TOID/site geometry -> RoS cadastral parcel -> title-number candidate -> public.site_title_validation"
+    evidence_path: "public.site_title_resolution_candidates, public.site_title_validation, landintel.site_source_links, landintel.evidence_references"
     signal_output: "control_readiness and ownership_control caveats"
     ranking_impact: "Control gate first. Planning upside is not commercially actionable until title/control evidence is known."
-    resurfacing_trigger: "new title number, validation-status change, title conflict, or manual control review"
-    data_age_basis: "public.site_title_validation updated_at and title_source metadata"
+    resurfacing_trigger: "new title candidate, licensed-bridge match, validation-status change, title conflict, or manual control review"
+    data_age_basis: "public.site_title_resolution_candidates and public.site_title_validation updated_at"
     ranking_eligible: true
     review_output_eligible: true
-    notes: "Highest-priority control source. This is the deal-control layer before LDP and settlement interpretation."
+    notes: "Highest-priority control source. RoS ScotLIS is title-number-first, so the bridge resolves candidates from geometry before API validation and never treats a cadastral identifier as a confirmed title unless it matches the RoS title-number pattern."
 
   - source_key: ldp_spatialhub_package
     source_family: ldp

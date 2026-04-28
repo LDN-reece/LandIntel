@@ -154,7 +154,8 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         source_by_family = {source["source_family"]: source for source in manifest["sources"]}
 
         self.assertEqual(source_by_family["title_number"]["source_status"], "live_internal_validation")
-        self.assertEqual(source_by_family["title_number"]["target_table"], "public.site_title_validation")
+        self.assertEqual(source_by_family["title_number"]["orchestration_mode"], "ros_cadastral_spatial_bridge")
+        self.assertEqual(source_by_family["title_number"]["target_table"], "public.site_title_resolution_candidates")
         self.assertEqual(source_by_family["ldp"]["source_status"], "live_target")
         self.assertEqual(source_by_family["ldp"]["orchestration_mode"], "spatialhub_ckan_package_zips")
         self.assertEqual(source_by_family["ldp"]["target_table"], "landintel.ldp_site_records")

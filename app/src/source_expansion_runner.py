@@ -204,6 +204,8 @@ class SourceExpansionRunner:
     def run_command(self, command: str) -> dict[str, Any]:
         if command == "audit-source-expansion":
             return self.audit_source_expansion()
+        if command == "resolve-title-numbers":
+            return self.resolve_title_numbers()
         if command == "audit-title-number-control":
             return self.audit_title_number_control()
         if command == "promote-ldp-authority-source":
@@ -258,28 +260,128 @@ class SourceExpansionRunner:
         self.logger.info("source_expansion_audit", extra=payload)
         return payload
 
+    def resolve_title_numbers(self) -> dict[str, Any]:
+        sources = self._sources_for_family("title_number")
+        for source in sources:
+            self._upsert_source_estate(source)
+
+        max_candidates = self._env_int("TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE", 10)
+        min_overlap_sqm = self._env_float("TITLE_RESOLUTION_MIN_OVERLAP_SQM", 1.0)
+        proof = self.database.fetch_one(
+            """
+            select *
+            from public.refresh_site_title_resolution_bridge(
+                :max_candidates_per_site,
+                :min_overlap_sqm
+            )
+            """,
+            {
+                "max_candidates_per_site": max_candidates,
+                "min_overlap_sqm": min_overlap_sqm,
+            },
+        ) or {}
+
+        candidate_rows = int(proof.get("candidate_rows") or 0)
+        candidate_site_count = int(proof.get("candidate_site_count") or 0)
+        promoted_title_rows = int(proof.get("promoted_title_rows") or 0)
+        licensed_bridge_required_rows = int(proof.get("licensed_bridge_required_rows") or 0)
+        ros_parcel_count = int(proof.get("ros_parcel_count") or 0)
+        canonical_site_count = int(proof.get("canonical_site_count") or 0)
+
+        if ros_parcel_count == 0:
+            status = "title_bridge_blocked_ros_cadastral_missing"
+            summary = "RoS cadastral parcels are not populated. Run ingest-ros-cadastral before resolving title numbers."
+        elif canonical_site_count == 0:
+            status = "title_bridge_blocked_canonical_sites_missing"
+            summary = "Canonical site geometry is not populated, so title candidates cannot be spatially resolved."
+        elif promoted_title_rows > 0:
+            status = "title_bridge_probable_titles_promoted"
+            summary = "RoS cadastral spatial bridge generated title candidates and promoted valid title-number-shaped values for control review."
+        elif candidate_rows > 0:
+            status = "title_bridge_candidates_need_licensed_bridge"
+            summary = "RoS cadastral spatial bridge generated candidates, but no candidate exposes a valid ScotLIS title number without the licensed title bridge."
+        else:
+            status = "title_bridge_no_spatial_matches"
+            summary = "No RoS cadastral parcels intersected canonical site geometry."
+
+        result = {
+            "command": "resolve-title-numbers",
+            "source_family": "title_number",
+            "status": status,
+            "summary": summary,
+            "max_candidates_per_site": max_candidates,
+            "min_overlap_sqm": min_overlap_sqm,
+            **proof,
+        }
+
+        if sources:
+            self._record_source_freshness(
+                sources[0],
+                "current" if candidate_rows or promoted_title_rows else "empty",
+                "reachable" if ros_parcel_count else "blocked_missing_ros_cadastral",
+                candidate_rows,
+                result,
+            )
+        self._record_expansion_event(
+            command_name="resolve-title-numbers",
+            source_key=sources[0]["source_key"] if sources else "title_number_control_spine",
+            source_family="title_number",
+            status=status,
+            raw_rows=candidate_rows,
+            linked_rows=candidate_site_count,
+            measured_rows=promoted_title_rows,
+            summary=summary,
+            metadata=result,
+        )
+        self.logger.info("title_number_resolution_bridge", extra=result)
+        return result
+
     def audit_title_number_control(self) -> dict[str, Any]:
         summary = self.database.fetch_one(
             """
-            select
-                count(*)::bigint as title_rows,
-                count(*) filter (
-                    where validation_status in ('matched', 'probable', 'manual_review')
-                )::bigint as review_ready_rows,
-                count(distinct site_id)::bigint as site_count,
-                count(distinct normalized_title_number)::bigint as normalized_title_count,
-                max(updated_at) as latest_title_validation_at
-            from public.site_title_validation
+            with title_validation as (
+                select
+                    count(*)::bigint as title_rows,
+                    count(*) filter (
+                        where validation_status in ('matched', 'probable', 'manual_review')
+                    )::bigint as review_ready_rows,
+                    count(distinct site_id)::bigint as site_count,
+                    count(distinct normalized_title_number)::bigint as normalized_title_count,
+                    max(updated_at) as latest_title_validation_at
+                from public.site_title_validation
+            ), bridge_candidates as (
+                select
+                    count(*)::bigint as title_candidate_rows,
+                    count(*) filter (where resolution_status = 'probable_title')::bigint as probable_title_candidate_rows,
+                    count(*) filter (where resolution_status = 'needs_licensed_bridge')::bigint as licensed_bridge_required_rows,
+                    count(distinct site_id)::bigint as candidate_site_count,
+                    max(updated_at) as latest_title_candidate_at
+                from public.site_title_resolution_candidates
+            )
+            select *
+            from title_validation
+            cross join bridge_candidates
             """
         ) or {}
         title_rows = int(summary.get("title_rows") or 0)
         review_ready_rows = int(summary.get("review_ready_rows") or 0)
-        status = "control_wired_proven" if title_rows and review_ready_rows else "control_source_not_yet_populated"
+        title_candidate_rows = int(summary.get("title_candidate_rows") or 0)
+        licensed_bridge_required_rows = int(summary.get("licensed_bridge_required_rows") or 0)
+        if title_rows and review_ready_rows:
+            status = "control_wired_proven"
+        elif title_candidate_rows:
+            status = (
+                "title_bridge_candidates_need_licensed_bridge"
+                if licensed_bridge_required_rows
+                else "control_title_candidates_need_review"
+            )
+        else:
+            status = "control_source_not_yet_populated"
         result = {
             "command": "audit-title-number-control",
             "source_family": "title_number",
             "status": status,
-            "summary": "Title number control spine audited from public.site_title_validation.",
+            "summary": "Title number control spine audited from public.site_title_validation and the RoS cadastral bridge.",
             **summary,
         }
         self._record_expansion_event(
@@ -287,8 +389,8 @@ class SourceExpansionRunner:
             source_key="title_number_control_spine",
             source_family="title_number",
             status=status,
-            raw_rows=title_rows,
-            linked_rows=int(summary.get("site_count") or 0),
+            raw_rows=title_rows + title_candidate_rows,
+            linked_rows=max(int(summary.get("site_count") or 0), int(summary.get("candidate_site_count") or 0)),
             measured_rows=review_ready_rows,
             summary=result["summary"],
             metadata=result,
@@ -2227,6 +2329,15 @@ class SourceExpansionRunner:
         except ValueError:
             return default
 
+    def _env_float(self, name: str, default: float) -> float:
+        value = os.getenv(name)
+        if value is None or value == "":
+            return default
+        try:
+            return float(value)
+        except ValueError:
+            return default
+
 
 def _pick_text(row: dict[str, Any], candidates: tuple[str, ...] | list[str]) -> str | None:
     lowered_lookup = {str(key).lower(): key for key in row.keys()}
@@ -2345,6 +2456,7 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         choices=(
             "audit-source-expansion",
+            "resolve-title-numbers",
             "audit-title-number-control",
             "ingest-ldp",
             "ingest-settlement-boundaries",

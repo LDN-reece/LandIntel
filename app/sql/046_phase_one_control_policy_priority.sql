@@ -55,7 +55,7 @@ create or replace view analytics.v_phase_one_source_expansion_readiness
 with (security_invoker = true) as
 with expected_sources(priority_rank, source_family, command_name, target_table, source_role) as (
     values
-        (1, 'title_number', 'audit-title-number-control', 'public.site_title_validation', 'control'),
+        (1, 'title_number', 'resolve-title-numbers', 'public.site_title_resolution_candidates -> public.site_title_validation', 'control'),
         (2, 'ldp', 'ingest-ldp', 'landintel.ldp_site_records', 'policy_core'),
         (3, 'settlement', 'ingest-settlement-boundaries', 'landintel.settlement_boundary_records', 'policy_core'),
         (10, 'ela', 'ingest-ela', 'landintel.ela_site_records', 'future_context'),

@@ -9,6 +9,7 @@ WORKFLOW = (APP_DIR.parent / ".github" / "workflows" / "run-landintel-sources.ym
 RUNNER = (APP_DIR / "src" / "source_expansion_runner.py").read_text(encoding="utf-8")
 PAGED_RUNNER = (APP_DIR / "src" / "source_expansion_runner_wfs_paging.py").read_text(encoding="utf-8")
 MIGRATION = (APP_DIR / "sql" / "044_phase_one_source_expansion.sql").read_text(encoding="utf-8")
+TITLE_BRIDGE_MIGRATION = (APP_DIR / "sql" / "047_title_resolution_bridge.sql").read_text(encoding="utf-8")
 MANIFEST = (APP_DIR / "config" / "phase_one_source_estate.yaml").read_text(encoding="utf-8")
 
 
@@ -16,6 +17,7 @@ class SourceExpansionContractTests(unittest.TestCase):
     def test_workflow_exposes_missing_source_universe_commands(self) -> None:
         for command in (
             "audit-source-expansion",
+            "resolve-title-numbers",
             "audit-title-number-control",
             "ingest-ldp",
             "ingest-ela",
@@ -203,6 +205,7 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("def _fetch_settlement_boundary_frame", RUNNER)
         self.assertIn("def _replace_settlement_boundary_rows", RUNNER)
         self.assertIn("(1, 'title_number'", priority_migration)
+        self.assertIn("'resolve-title-numbers'", priority_migration)
         self.assertIn("(2, 'ldp', 'ingest-ldp'", priority_migration)
         self.assertIn("(3, 'settlement', 'ingest-settlement-boundaries'", priority_migration)
         self.assertIn("core_policy_storage_proven_licence_gated", priority_migration)
@@ -210,6 +213,25 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("landintel_ldp_site_records_source_record_uidx", priority_migration)
         self.assertIn("landintel_settlement_boundary_records_source_record_uidx", priority_migration)
         self.assertIn("control_wired_proven", RUNNER)
+
+    def test_title_resolution_bridge_is_candidate_first_and_api_safe(self) -> None:
+        self.assertIn("public.site_title_resolution_candidates", TITLE_BRIDGE_MIGRATION)
+        self.assertIn("public.refresh_site_title_resolution_bridge", TITLE_BRIDGE_MIGRATION)
+        self.assertIn("public.extract_ros_title_number_candidate", TITLE_BRIDGE_MIGRATION)
+        self.assertIn("site_or_toid_geometry_to_ros_cadastral", TITLE_BRIDGE_MIGRATION)
+        self.assertIn("needs_licensed_bridge", TITLE_BRIDGE_MIGRATION)
+        self.assertIn("RoS Land Register API is title-number-first", TITLE_BRIDGE_MIGRATION)
+        self.assertIn("enable row level security", TITLE_BRIDGE_MIGRATION)
+        self.assertIn("revoke all on function public.refresh_site_title_resolution_bridge", TITLE_BRIDGE_MIGRATION)
+        self.assertIn("def resolve_title_numbers", RUNNER)
+        self.assertIn("refresh_site_title_resolution_bridge", RUNNER)
+        self.assertIn("title_bridge_candidates_need_licensed_bridge", RUNNER)
+        self.assertIn("title_bridge_probable_titles_promoted", RUNNER)
+        self.assertIn("TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE", WORKFLOW)
+        self.assertIn("TITLE_RESOLUTION_MIN_OVERLAP_SQM", WORKFLOW)
+        self.assertIn("ingest-ros-cadastral", WORKFLOW)
+        self.assertIn("ros_cadastral_spatial_bridge", MANIFEST)
+        self.assertIn("TOID/site geometry -> RoS cadastral parcel -> title-number candidate", MANIFEST)
 
 
 if __name__ == "__main__":

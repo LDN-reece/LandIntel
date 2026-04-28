@@ -276,8 +276,8 @@ class SourceExpansionRunner:
             """
             select *
             from public.refresh_site_title_resolution_bridge(
-                :max_candidates_per_site,
-                :min_overlap_sqm
+                cast(:max_candidates_per_site as integer),
+                cast(:min_overlap_sqm as numeric)
             )
             """,
             {

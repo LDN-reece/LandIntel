@@ -238,6 +238,8 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("revoke all on function public.refresh_site_title_resolution_bridge", TITLE_BRIDGE_MIGRATION)
         self.assertIn("def resolve_title_numbers", RUNNER)
         self.assertIn("refresh_site_title_resolution_bridge", RUNNER)
+        self.assertIn("cast(:max_candidates_per_site as integer)", RUNNER)
+        self.assertIn("cast(:min_overlap_sqm as numeric)", RUNNER)
         self.assertIn("title_bridge_candidates_need_licensed_bridge", RUNNER)
         self.assertIn("title_bridge_probable_titles_promoted", RUNNER)
         self.assertIn("TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE", WORKFLOW)

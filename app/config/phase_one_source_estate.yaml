@@ -17,8 +17,8 @@ discovery:
     review_output_eligible: true
   settlement:
     source_family: settlement
-    search_url: "https://maps.gov.scot/server/services/NRS/NRS/MapServer/WFSServer?service=WFS&request=GetCapabilities"
-    query: "NRS:SettlementBoundaries"
+    search_url: "https://maps.gov.scot/server/rest/services/NRS/NRS/MapServer/5?f=json"
+    query: "SettlementBoundaries"
     source_status: live_target
     defer_reason_code: settlement_position_overlay_not_promoted
     ranking_eligible: false
@@ -115,11 +115,11 @@ sources:
     source_group: policy
     phase_one_role: critical
     source_status: live_target
-    orchestration_mode: nrs_wfs_geojson
-    endpoint_url: "https://maps.gov.scot/server/services/NRS/NRS/MapServer/WFSServer"
+    orchestration_mode: nrs_arcgis_geojson
+    endpoint_url: "https://maps.gov.scot/server/rest/services/NRS/NRS/MapServer/5"
     auth_env_vars: [BOUNDARY_AUTHKEY]
     target_table: landintel.settlement_boundary_records
-    reconciliation_path: "NRS WFS -> settlement_boundary_records -> later canonical settlement-position overlay"
+    reconciliation_path: "NRS ArcGIS REST GeoJSON -> settlement_boundary_records -> later canonical settlement-position overlay"
     evidence_path: "settlement_boundary_records raw_payload, source_expansion_events, source_freshness_states"
     signal_output: "settlement_position and planning_context caveats"
     ranking_impact: "Core planning-thesis source. Stored now; ranking remains interpreter-gated until canonical inside/outside/edge overlay is validated."
@@ -130,6 +130,7 @@ sources:
     metadata_uuid: "e457f123-09df-4d67-ac81-d7bb2e470499"
     nrs_identifier: "NRS_SettlementBdry"
     wfs_type_name: "NRS:SettlementBoundaries"
+    arcgis_layer_url: "https://maps.gov.scot/server/rest/services/NRS/NRS/MapServer/5"
     source_revision_date: "2023-07-11"
     information_url: "https://www.nrscotland.gov.uk/publications/population-estimates-for-settlements-and-localities-in-scotland-mid-2020/"
     license: "Open Government Licence"

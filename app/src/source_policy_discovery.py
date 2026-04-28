@@ -8,7 +8,6 @@ import json
 import os
 import re
 from typing import Any
-import xml.etree.ElementTree as ET
 
 import httpx
 
@@ -20,6 +19,7 @@ from src.logging_config import configure_logging
 GEONETWORK_SEARCH_URL = "https://www.spatialdata.gov.scot/geonetwork/srv/api/search/records/_search"
 LDP_SPATIALHUB_PACKAGE_URL = "https://data.spatialhub.scot/api/3/action/package_show?id=local_development_plans-is"
 NRS_SETTLEMENT_WFS_URL = "https://maps.gov.scot/server/services/NRS/NRS/MapServer/WFSServer"
+NRS_SETTLEMENT_ARCGIS_LAYER_URL = "https://maps.gov.scot/server/rest/services/NRS/NRS/MapServer/5"
 NRS_SETTLEMENT_TYPE_NAME = "NRS:SettlementBoundaries"
 NRS_SETTLEMENT_METADATA_UUID = "e457f123-09df-4d67-ac81-d7bb2e470499"
 
@@ -286,12 +286,8 @@ class SourcePolicyDiscoveryRunner:
         return result
 
     def register_settlement_boundaries(self) -> dict[str, Any]:
-        capabilities = self.client.get(
-            NRS_SETTLEMENT_WFS_URL,
-            params={"service": "WFS", "request": "GetCapabilities", **_boundary_auth_params()},
-            headers={"Accept": "text/xml,application/xml"},
-        )
-        capabilities.raise_for_status()
+        layer_response = self.client.get(NRS_SETTLEMENT_ARCGIS_LAYER_URL, params={"f": "json"})
+        layer_response.raise_for_status()
         feature_count = self._settlement_hit_count()
         source = {
             "source_key": "nrs_settlement_boundaries",
@@ -300,11 +296,11 @@ class SourcePolicyDiscoveryRunner:
             "source_group": "policy",
             "phase_one_role": "critical",
             "source_status": "live_target",
-            "orchestration_mode": "nrs_wfs_geojson",
-            "endpoint_url": NRS_SETTLEMENT_WFS_URL,
+            "orchestration_mode": "nrs_arcgis_geojson",
+            "endpoint_url": NRS_SETTLEMENT_ARCGIS_LAYER_URL,
             "auth_env_vars": ["BOUNDARY_AUTHKEY"],
             "target_table": "landintel.settlement_boundary_records",
-            "reconciliation_path": "NRS WFS -> settlement_boundary_records -> later canonical settlement-position overlay",
+            "reconciliation_path": "NRS ArcGIS REST GeoJSON -> settlement_boundary_records -> later canonical settlement-position overlay",
             "evidence_path": "settlement_boundary_records raw_payload, source_expansion_events, source_freshness_states",
             "signal_output": POLICY_DISCOVERY["settlement"]["signal_output"],
             "ranking_impact": POLICY_DISCOVERY["settlement"]["ranking_impact"],
@@ -317,6 +313,7 @@ class SourcePolicyDiscoveryRunner:
                 "metadata_uuid": NRS_SETTLEMENT_METADATA_UUID,
                 "nrs_identifier": "NRS_SettlementBdry",
                 "wfs_type_name": NRS_SETTLEMENT_TYPE_NAME,
+                "arcgis_layer_url": NRS_SETTLEMENT_ARCGIS_LAYER_URL,
                 "source_revision_date": "2023-07-11",
                 "license": "Open Government Licence",
                 "feature_count": feature_count,
@@ -327,13 +324,14 @@ class SourcePolicyDiscoveryRunner:
             source,
             freshness_status="current",
             live_access_status="reachable",
-            summary="NRS settlement WFS registered; features are storage-live and interpreter-gated.",
+            summary="NRS settlement ArcGIS REST layer registered; features are storage-live and interpreter-gated.",
             records_observed=feature_count,
         )
         result = {
             "source_family": "settlement",
             "source_key": source["source_key"],
             "wfs_type_name": NRS_SETTLEMENT_TYPE_NAME,
+            "arcgis_layer_url": NRS_SETTLEMENT_ARCGIS_LAYER_URL,
             "feature_count": feature_count,
         }
         self.logger.info("settlement_boundaries_registered", extra=result)
@@ -341,22 +339,16 @@ class SourcePolicyDiscoveryRunner:
 
     def _settlement_hit_count(self) -> int:
         response = self.client.get(
-            NRS_SETTLEMENT_WFS_URL,
+            f"{NRS_SETTLEMENT_ARCGIS_LAYER_URL}/query",
             params={
-                "service": "WFS",
-                "version": "2.0.0",
-                "request": "GetFeature",
-                "typeNames": NRS_SETTLEMENT_TYPE_NAME,
-                "resultType": "hits",
-                **_boundary_auth_params(),
+                "f": "json",
+                "where": "1=1",
+                "returnCountOnly": "true",
             },
         )
         response.raise_for_status()
-        try:
-            root = ET.fromstring(response.text.encode("utf-8"))
-        except ET.ParseError:
-            return 0
-        value = root.attrib.get("numberMatched") or root.attrib.get("numberOfFeatures")
+        payload = response.json()
+        value = payload.get("count")
         try:
             return int(str(value))
         except (TypeError, ValueError):

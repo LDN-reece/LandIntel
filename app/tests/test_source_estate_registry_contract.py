@@ -163,9 +163,13 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
         self.assertFalse(source_by_family["ldp"]["ranking_eligible"])
         self.assertTrue(source_by_family["ldp"]["review_output_eligible"])
         self.assertEqual(source_by_family["settlement"]["source_status"], "live_target")
-        self.assertEqual(source_by_family["settlement"]["orchestration_mode"], "nrs_wfs_geojson")
+        self.assertEqual(source_by_family["settlement"]["orchestration_mode"], "nrs_arcgis_geojson")
         self.assertEqual(source_by_family["settlement"]["target_table"], "landintel.settlement_boundary_records")
         self.assertEqual(source_by_family["settlement"]["wfs_type_name"], "NRS:SettlementBoundaries")
+        self.assertEqual(
+            source_by_family["settlement"]["arcgis_layer_url"],
+            "https://maps.gov.scot/server/rest/services/NRS/NRS/MapServer/5",
+        )
         self.assertEqual(source_by_family["settlement"]["auth_env_vars"], ["BOUNDARY_AUTHKEY"])
         self.assertFalse(source_by_family["settlement"]["ranking_eligible"])
         self.assertTrue(source_by_family["settlement"]["review_output_eligible"])

@@ -37,6 +37,7 @@ from src.models.source_registry import SourceRegistryRecord
 from src.source_phase_runner import SourcePhaseRunner, _geometry_hex, _normalize_ref, _polygonize_geometry
 
 MANIFEST_PATH = Path(__file__).resolve().parents[1] / "config" / "phase_one_source_estate.yaml"
+NRS_SETTLEMENT_ARCGIS_LAYER_URL = "https://maps.gov.scot/server/rest/services/NRS/NRS/MapServer/5"
 
 FUTURE_CONTEXT_FAMILIES = {"ela", "vdl"}
 POLICY_PACKAGE_FAMILIES = {"ldp"}
@@ -911,6 +912,26 @@ class SourceExpansionRunner:
         return self._normalise_frame_crs(frame)
 
     def _fetch_settlement_boundary_frame(self, source: dict[str, Any]) -> gpd.GeoDataFrame:
+        endpoint_url = str(source.get("endpoint_url") or "")
+        if self._settlement_uses_arcgis(source):
+            return self._fetch_settlement_boundary_arcgis_frame(source, endpoint_url)
+        try:
+            return self._fetch_settlement_boundary_wfs_frame(source)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 403:
+                raise
+            self.logger.warning(
+                "nrs_settlement_wfs_forbidden_using_arcgis_rest",
+                extra={"source_key": source.get("source_key"), "endpoint_url": endpoint_url},
+            )
+            return self._fetch_settlement_boundary_arcgis_frame(source)
+
+    def _settlement_uses_arcgis(self, source: dict[str, Any]) -> bool:
+        endpoint_url = str(source.get("endpoint_url") or "")
+        mode = str(source.get("orchestration_mode") or "")
+        return "/rest/services/" in endpoint_url.lower() or "arcgis" in mode.lower()
+
+    def _fetch_settlement_boundary_wfs_frame(self, source: dict[str, Any]) -> gpd.GeoDataFrame:
         endpoint_url = str(source["endpoint_url"])
         type_name = str(source.get("wfs_type_name") or "NRS:SettlementBoundaries")
         frames: list[gpd.GeoDataFrame] = []
@@ -943,6 +964,64 @@ class SourceExpansionRunner:
             response.raise_for_status()
             payload = self._json_payload(response, f"NRS settlement WFS {source['source_key']} {type_name}")
             frame = self._feature_collection_to_gdf(payload, source, type_name)
+            if frame.empty:
+                break
+
+            frame = frame.copy()
+            frame["geometry"] = frame.geometry.apply(
+                lambda geometry: force_2d(geometry) if geometry is not None else None
+            )
+            frames.append(gpd.GeoDataFrame(frame, geometry="geometry", crs=frame.crs or 27700))
+
+            batch_count = len(frame)
+            fetched += batch_count
+            if batch_count < batch_limit:
+                break
+            offset += batch_count
+
+        if not frames:
+            return gpd.GeoDataFrame({"geometry": []}, geometry="geometry", crs=27700)
+        combined = pd.concat(frames, ignore_index=True)
+        return gpd.GeoDataFrame(combined, geometry="geometry", crs=frames[0].crs or 27700)
+
+    def _fetch_settlement_boundary_arcgis_frame(
+        self,
+        source: dict[str, Any],
+        layer_url: str | None = None,
+    ) -> gpd.GeoDataFrame:
+        metadata = source.get("metadata") if isinstance(source.get("metadata"), dict) else {}
+        endpoint_url = (
+            layer_url
+            or str(source.get("arcgis_layer_url") or metadata.get("arcgis_layer_url") or "")
+            or NRS_SETTLEMENT_ARCGIS_LAYER_URL
+        )
+        frames: list[gpd.GeoDataFrame] = []
+        fetched = 0
+        offset = 0
+        page_size = max(1, min(self.page_size, 1000))
+        layer_name = "SettlementBoundaries"
+
+        while True:
+            batch_limit = page_size
+            if self.max_features > 0:
+                remaining = self.max_features - fetched
+                if remaining <= 0:
+                    break
+                batch_limit = min(batch_limit, remaining)
+
+            params: dict[str, Any] = {
+                "f": "geojson",
+                "where": "1=1",
+                "outFields": "*",
+                "returnGeometry": "true",
+                "outSR": "27700",
+                "resultOffset": str(offset),
+                "resultRecordCount": str(batch_limit),
+            }
+            response = self.client.get(f"{endpoint_url.rstrip('/')}/query", params=params)
+            response.raise_for_status()
+            payload = self._json_payload(response, f"NRS settlement ArcGIS REST {source['source_key']}")
+            frame = self._feature_collection_to_gdf(payload, source, layer_name)
             if frame.empty:
                 break
 

@@ -214,6 +214,12 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("landintel_settlement_boundary_records_source_record_uidx", priority_migration)
         self.assertIn("control_wired_proven", RUNNER)
 
+    def test_ckan_package_fetches_preserve_query_string_ids(self) -> None:
+        registry_runner = (APP_DIR / "src" / "source_estate_registry.py").read_text(encoding="utf-8")
+
+        self.assertIn("self.client.get(url, params=params or None)", RUNNER)
+        self.assertIn("self.client.get(url, params=params or None)", registry_runner)
+
     def test_title_resolution_bridge_is_candidate_first_and_api_safe(self) -> None:
         self.assertIn("public.site_title_resolution_candidates", TITLE_BRIDGE_MIGRATION)
         self.assertIn("public.refresh_site_title_resolution_bridge", TITLE_BRIDGE_MIGRATION)

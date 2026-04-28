@@ -513,7 +513,7 @@ class SourceEstateRegistryRunner:
             return 0
 
     def _fetch_json(self, url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        response = self.client.get(url, params=params)
+        response = self.client.get(url, params=params or None)
         response.raise_for_status()
         return response.json()
 

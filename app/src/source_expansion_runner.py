@@ -2302,7 +2302,7 @@ class SourceExpansionRunner:
         return hashlib.md5(geometry_wkb.encode("utf-8")).hexdigest() if geometry_wkb else None
 
     def _fetch_json(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
-        response = self.client.get(url, params=params)
+        response = self.client.get(url, params=params or None)
         response.raise_for_status()
         return self._json_payload(response, url)
 

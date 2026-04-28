@@ -38,6 +38,10 @@ from src.source_phase_runner import SourcePhaseRunner, _geometry_hex, _normalize
 
 MANIFEST_PATH = Path(__file__).resolve().parents[1] / "config" / "phase_one_source_estate.yaml"
 NRS_SETTLEMENT_ARCGIS_LAYER_URL = "https://maps.gov.scot/server/rest/services/NRS/NRS/MapServer/5"
+NRS_REQUEST_HEADERS = {
+    "Accept": "application/geo+json,application/json,*/*",
+    "User-Agent": "LandIntel/1.0 (+https://github.com/LDN-reece/LandIntel)",
+}
 
 FUTURE_CONTEXT_FAMILIES = {"ela", "vdl"}
 POLICY_PACKAGE_FAMILIES = {"ldp"}
@@ -960,7 +964,7 @@ class SourceExpansionRunner:
             if offset > 0:
                 params["startIndex"] = str(offset)
 
-            response = self.client.get(endpoint_url, params=params)
+            response = self.client.get(endpoint_url, params=params, headers=NRS_REQUEST_HEADERS)
             response.raise_for_status()
             payload = self._json_payload(response, f"NRS settlement WFS {source['source_key']} {type_name}")
             frame = self._feature_collection_to_gdf(payload, source, type_name)
@@ -1018,7 +1022,12 @@ class SourceExpansionRunner:
                 "resultOffset": str(offset),
                 "resultRecordCount": str(batch_limit),
             }
-            response = self.client.get(f"{endpoint_url.rstrip('/')}/query", params=params)
+            params.update(self._auth_params(source))
+            response = self.client.get(
+                f"{endpoint_url.rstrip('/')}/query",
+                params=params,
+                headers=NRS_REQUEST_HEADERS,
+            )
             response.raise_for_status()
             payload = self._json_payload(response, f"NRS settlement ArcGIS REST {source['source_key']}")
             frame = self._feature_collection_to_gdf(payload, source, layer_name)

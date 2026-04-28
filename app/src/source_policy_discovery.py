@@ -22,6 +22,10 @@ NRS_SETTLEMENT_WFS_URL = "https://maps.gov.scot/server/services/NRS/NRS/MapServe
 NRS_SETTLEMENT_ARCGIS_LAYER_URL = "https://maps.gov.scot/server/rest/services/NRS/NRS/MapServer/5"
 NRS_SETTLEMENT_TYPE_NAME = "NRS:SettlementBoundaries"
 NRS_SETTLEMENT_METADATA_UUID = "e457f123-09df-4d67-ac81-d7bb2e470499"
+NRS_REQUEST_HEADERS = {
+    "Accept": "application/geo+json,application/json,*/*",
+    "User-Agent": "LandIntel/1.0 (+https://github.com/LDN-reece/LandIntel)",
+}
 
 
 def _boundary_auth_params() -> dict[str, str]:
@@ -286,7 +290,11 @@ class SourcePolicyDiscoveryRunner:
         return result
 
     def register_settlement_boundaries(self) -> dict[str, Any]:
-        layer_response = self.client.get(NRS_SETTLEMENT_ARCGIS_LAYER_URL, params={"f": "json"})
+        layer_response = self.client.get(
+            NRS_SETTLEMENT_ARCGIS_LAYER_URL,
+            params={"f": "json", **_boundary_auth_params()},
+            headers=NRS_REQUEST_HEADERS,
+        )
         layer_response.raise_for_status()
         feature_count = self._settlement_hit_count()
         source = {
@@ -308,7 +316,7 @@ class SourcePolicyDiscoveryRunner:
             "data_age_basis": "NRS metadata revision date and latest successful ingest run.",
             "ranking_eligible": False,
             "review_output_eligible": True,
-            "notes": "NRS settlement WFS is reachable and storage-live; ranking waits for canonical settlement-position overlay.",
+            "notes": "NRS settlement ArcGIS REST GeoJSON is reachable and storage-live; ranking waits for canonical settlement-position overlay.",
             "metadata": {
                 "metadata_uuid": NRS_SETTLEMENT_METADATA_UUID,
                 "nrs_identifier": "NRS_SettlementBdry",
@@ -344,7 +352,9 @@ class SourcePolicyDiscoveryRunner:
                 "f": "json",
                 "where": "1=1",
                 "returnCountOnly": "true",
+                **_boundary_auth_params(),
             },
+            headers=NRS_REQUEST_HEADERS,
         )
         response.raise_for_status()
         payload = response.json()

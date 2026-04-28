@@ -5,3 +5,4 @@
 
 drop view if exists analytics.v_phase_one_source_estate_matrix;
 drop view if exists analytics.v_live_source_coverage_freshness;
+drop view if exists analytics.v_phase_one_control_policy_priority;

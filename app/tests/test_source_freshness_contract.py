@@ -70,6 +70,7 @@ class SourceFreshnessContractTests(unittest.TestCase):
 
         self.assertIn("drop view if exists analytics.v_phase_one_source_estate_matrix;", preflight)
         self.assertIn("drop view if exists analytics.v_live_source_coverage_freshness;", preflight)
+        self.assertIn("drop view if exists analytics.v_phase_one_control_policy_priority;", preflight)
         self.assertLess(
             migration_names.index(preflight_path.name),
             migration_names.index("033_landintel_live_audit_views.sql"),
@@ -77,6 +78,14 @@ class SourceFreshnessContractTests(unittest.TestCase):
         self.assertLess(
             migration_names.index(preflight_path.name),
             migration_names.index("042_source_freshness.sql"),
+        )
+        self.assertLess(
+            migration_names.index(preflight_path.name),
+            migration_names.index("044_phase_one_source_expansion.sql"),
+        )
+        self.assertLess(
+            migration_names.index(preflight_path.name),
+            migration_names.index("046_phase_one_control_policy_priority.sql"),
         )
 
     def test_raw_sql_migrations_escape_literal_percent_for_psycopg(self) -> None:

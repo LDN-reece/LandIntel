@@ -11,6 +11,7 @@ SQL_INDEXES = (APP_DIR / "sql" / "035_constraints_measurement_indexes.sql").read
 SQL_VIEWS = (APP_DIR / "sql" / "036_constraints_measurement_views.sql").read_text(encoding="utf-8")
 SQL_POLICIES = (APP_DIR / "sql" / "037_constraints_measurement_policies.sql").read_text(encoding="utf-8")
 SQL_COMMENTS = (APP_DIR / "sql" / "038_constraints_measurement_comments.sql").read_text(encoding="utf-8")
+SQL_ENGINE = (APP_DIR / "sql" / "049_constraint_measurement_engine.sql").read_text(encoding="utf-8")
 SQL_SMOKE = (APP_DIR / "sql_checks" / "constraints_measurement_smoke.sql").read_text(encoding="utf-8")
 DOC_CONSTRAINTS = (APP_DIR / "docs" / "constraints-tab-mvp.md").read_text(encoding="utf-8")
 DOC_QUALIFICATION = (APP_DIR / "docs" / "site-qualification-mvp.md").read_text(encoding="utf-8")
@@ -187,6 +188,34 @@ class ConstraintsMeasurementContractTests(unittest.TestCase):
             "column_name like '%pass_fail%'",
         ):
             self.assertIn(snippet, SQL_SMOKE)
+
+    def test_priority_zero_engine_is_material_change_and_geometry_mode_aware(self) -> None:
+        for snippet in (
+            "public.refresh_constraint_measurements_for_layer_sites",
+            "feature_geometry_dimension",
+            "overlap_character",
+            "constraint_character",
+            "summary_signature",
+            "tmp_constraint_changed_sites",
+            "source_expansion_constraint",
+            "constraint_evidence_state_changed",
+            "constraint_measurement_engine",
+            "analytics.v_constraint_measurement_coverage",
+            "analytics.v_constraint_measurement_layer_coverage",
+        ):
+            self.assertIn(snippet, SQL_ENGINE)
+
+        for snippet in (
+            "st_dimension(feature_geometry) = 2",
+            "st_collectionextract(st_intersection(site_geometry, feature_geometry), 3)",
+            "OPERATOR(extensions.&&)",
+            "st_dwithin(anchor.geometry, feature.geometry, layer_row.buffer_distance_m)",
+            "st_intersects(anchor.geometry, feature.geometry)",
+        ):
+            self.assertIn(snippet, SQL_ENGINE)
+
+        for forbidden in (" pass ", " fail ", " red ", " amber ", " green ", " viable ", " unviable "):
+            self.assertNotIn(forbidden, f" {SQL_ENGINE.lower()} ")
 
 
 if __name__ == "__main__":

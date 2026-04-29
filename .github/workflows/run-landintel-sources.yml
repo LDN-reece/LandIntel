@@ -35,6 +35,8 @@ on:
           - audit-site-parcel-links
           - resolve-title-numbers
           - audit-title-number-control
+          - measure-constraints
+          - audit-constraint-measurements
           - discover-ldp-sources
           - discover-settlement-sources
           - ingest-ldp
@@ -120,6 +122,12 @@ jobs:
       SOURCE_EXPANSION_CONSTRAINT_MEASURE_MODE: "auto"
       SOURCE_EXPANSION_MAX_MEASURE_FEATURES: "2500"
       SOURCE_EXPANSION_MAX_MEASURE_LAYERS: "1"
+      CONSTRAINT_MEASURE_SITE_BATCH_SIZE: "250"
+      CONSTRAINT_MEASURE_MAX_BATCHES: "0"
+      CONSTRAINT_MEASURE_RUNTIME_MINUTES: "40"
+      CONSTRAINT_MEASURE_MIN_AREA_ACRES: "0"
+      CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT: "1"
+      CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"
       TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE: "10"
       TITLE_RESOLUTION_MIN_OVERLAP_SQM: "1"
       TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE: "0"
@@ -287,6 +295,15 @@ jobs:
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate
             python -m src.source_expansion_runner_wfs_paging audit-title-number-control
+          elif [ "$SELECTED_COMMAND" = "measure-constraints" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_estate_registry register-source-estate
+            python -m src.source_policy_discovery register-supplemental-sources
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging measure-constraints
+            python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
+          elif [ "$SELECTED_COMMAND" = "audit-constraint-measurements" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
           elif [ "$SELECTED_COMMAND" = "discover-ldp-sources" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate

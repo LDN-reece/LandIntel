@@ -12,6 +12,7 @@ LOADER = (APP_DIR / "src" / "loaders" / "supabase_loader.py").read_text(encoding
 MIGRATION = (APP_DIR / "sql" / "044_phase_one_source_expansion.sql").read_text(encoding="utf-8")
 TITLE_BRIDGE_MIGRATION = (APP_DIR / "sql" / "047_title_resolution_bridge.sql").read_text(encoding="utf-8")
 SITE_PARCEL_LINK_MIGRATION = (APP_DIR / "sql" / "048_site_ros_parcel_linking.sql").read_text(encoding="utf-8")
+CONSTRAINT_ENGINE_MIGRATION = (APP_DIR / "sql" / "049_constraint_measurement_engine.sql").read_text(encoding="utf-8")
 MANIFEST = (APP_DIR / "config" / "phase_one_source_estate.yaml").read_text(encoding="utf-8")
 
 
@@ -23,6 +24,8 @@ class SourceExpansionContractTests(unittest.TestCase):
             "audit-site-parcel-links",
             "resolve-title-numbers",
             "audit-title-number-control",
+            "measure-constraints",
+            "audit-constraint-measurements",
             "ingest-ldp",
             "ingest-ela",
             "ingest-vdl",
@@ -307,6 +310,31 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn('elif [ "$SELECTED_COMMAND" = "link-sites-to-ros-parcels" ]; then', WORKFLOW)
         self.assertIn("python -m src.source_expansion_runner_wfs_paging audit-site-parcel-links", WORKFLOW)
         self.assertIn('SITE_PARCEL_LINK_SITE_BATCH_SIZE: "250"', WORKFLOW)
+
+    def test_priority_zero_constraint_measurement_engine_is_batched_and_delta_based(self) -> None:
+        self.assertIn("def measure_constraints", RUNNER)
+        self.assertIn("def audit_constraint_measurements", RUNNER)
+        self.assertIn("refresh_constraint_measurements_for_layer_sites", RUNNER)
+        self.assertIn("CONSTRAINT_MEASURE_SITE_BATCH_SIZE", RUNNER)
+        self.assertIn("CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT", RUNNER)
+        self.assertIn("CONSTRAINT_MATERIAL_DISTANCE_DELTA_M", RUNNER)
+        self.assertIn("constraint_measurement_batch_completed", RUNNER)
+        self.assertIn("only for material evidence-state changes", RUNNER)
+        self.assertIn("refresh_constraint_measurements_for_layer_sites", CONSTRAINT_ENGINE_MIGRATION)
+        self.assertIn("tmp_constraint_changed_sites", CONSTRAINT_ENGINE_MIGRATION)
+        self.assertIn("constraint_relationship_added", CONSTRAINT_ENGINE_MIGRATION)
+        self.assertIn("constraint_relationship_removed", CONSTRAINT_ENGINE_MIGRATION)
+        self.assertIn("overlap_pct_changed", CONSTRAINT_ENGINE_MIGRATION)
+        self.assertIn("nearest_distance_changed", CONSTRAINT_ENGINE_MIGRATION)
+        self.assertIn("OPERATOR(extensions.&&)", CONSTRAINT_ENGINE_MIGRATION)
+        self.assertIn("st_dwithin", CONSTRAINT_ENGINE_MIGRATION.lower())
+        self.assertIn("st_intersects", CONSTRAINT_ENGINE_MIGRATION.lower())
+        self.assertIn("analytics.v_constraint_measurement_coverage", CONSTRAINT_ENGINE_MIGRATION)
+        self.assertIn("analytics.v_constraint_measurement_layer_coverage", CONSTRAINT_ENGINE_MIGRATION)
+        self.assertIn("- measure-constraints", WORKFLOW)
+        self.assertIn("- audit-constraint-measurements", WORKFLOW)
+        self.assertIn('elif [ "$SELECTED_COMMAND" = "measure-constraints" ]; then', WORKFLOW)
+        self.assertIn("python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements", WORKFLOW)
 
 
 if __name__ == "__main__":

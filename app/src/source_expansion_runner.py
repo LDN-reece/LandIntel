@@ -7,7 +7,7 @@ planning/HLA loop remains a support path rather than the product spine.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
@@ -217,6 +217,10 @@ class SourceExpansionRunner:
             return self.resolve_title_numbers()
         if command == "audit-title-number-control":
             return self.audit_title_number_control()
+        if command == "measure-constraints":
+            return self.measure_constraints()
+        if command == "audit-constraint-measurements":
+            return self.audit_constraint_measurements()
         if command == "promote-ldp-authority-source":
             return self._record_policy_promotion_placeholder("ldp", command)
         if command not in COMMAND_TO_FAMILIES:
@@ -818,6 +822,285 @@ class SourceExpansionRunner:
             metadata=result,
         )
         self.logger.info("title_number_control_audit", extra=result)
+        return result
+
+    def measure_constraints(self) -> dict[str, Any]:
+        layer_key_filter = (os.getenv("CONSTRAINT_MEASURE_LAYER_KEY") or "").strip() or None
+        source_family_filter = (os.getenv("CONSTRAINT_MEASURE_SOURCE_FAMILY") or "").strip() or None
+        authority_filter = (os.getenv("CONSTRAINT_MEASURE_AUTHORITY") or "").strip() or None
+        batch_size = max(self._env_int("CONSTRAINT_MEASURE_SITE_BATCH_SIZE", 250), 1)
+        max_batches = max(self._env_int("CONSTRAINT_MEASURE_MAX_BATCHES", 0), 0)
+        runtime_minutes = max(self._env_int("CONSTRAINT_MEASURE_RUNTIME_MINUTES", 40), 1)
+        min_area_acres = self._env_float("CONSTRAINT_MEASURE_MIN_AREA_ACRES", 0.0)
+        overlap_delta_pct = self._env_float("CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT", 1.0)
+        distance_delta_m = self._env_float("CONSTRAINT_MATERIAL_DISTANCE_DELTA_M", 25.0)
+        refresh_existing = str(os.getenv("CONSTRAINT_MEASURE_REFRESH_EXISTING") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "force",
+        }
+
+        for source_family in sorted(CONSTRAINT_FAMILIES):
+            for source in self._sources_for_family(source_family):
+                self._upsert_source_estate(source)
+
+        layers = self.database.fetch_all(
+            """
+            select
+                layer.layer_key,
+                layer.layer_name,
+                layer.source_family,
+                count(feature.id)::integer as source_feature_count
+            from public.constraint_layer_registry as layer
+            join public.constraint_source_features as feature
+              on feature.constraint_layer_id = layer.id
+            where layer.is_active = true
+              and (:layer_key_filter is null or layer.layer_key = :layer_key_filter)
+              and (:source_family_filter is null or layer.source_family = :source_family_filter)
+            group by layer.layer_key, layer.layer_name, layer.source_family
+            order by layer.source_family, layer.layer_key
+            """,
+            {"layer_key_filter": layer_key_filter, "source_family_filter": source_family_filter},
+        )
+
+        deadline = datetime.now(timezone.utc) + timedelta(minutes=runtime_minutes)
+        proof: dict[str, Any] = {
+            "command": "measure-constraints",
+            "layer_key_filter": layer_key_filter,
+            "source_family_filter": source_family_filter,
+            "authority_filter": authority_filter,
+            "batch_size": batch_size,
+            "max_batches": max_batches,
+            "runtime_minutes": runtime_minutes,
+            "min_area_acres": min_area_acres,
+            "refresh_existing": refresh_existing,
+            "material_overlap_delta_pct": overlap_delta_pct,
+            "material_distance_delta_m": distance_delta_m,
+            "layer_count": len(layers),
+            "source_feature_count": sum(int(layer.get("source_feature_count") or 0) for layer in layers),
+            "processed_site_count": 0,
+            "processed_batch_count": 0,
+            "measurement_count": 0,
+            "summary_count": 0,
+            "friction_fact_count": 0,
+            "evidence_count": 0,
+            "signal_count": 0,
+            "change_event_count": 0,
+            "affected_site_count": 0,
+            "material_change_count": 0,
+            "layers": [],
+        }
+
+        for layer in layers:
+            if datetime.now(timezone.utc) >= deadline:
+                break
+            if max_batches and proof["processed_batch_count"] >= max_batches:
+                break
+
+            layer_key = str(layer["layer_key"])
+            layer_payload: dict[str, Any] = {
+                "layer_key": layer_key,
+                "layer_name": layer.get("layer_name"),
+                "source_family": layer.get("source_family"),
+                "source_feature_count": int(layer.get("source_feature_count") or 0),
+                "processed_site_count": 0,
+                "processed_batch_count": 0,
+                "measurement_count": 0,
+                "summary_count": 0,
+                "friction_fact_count": 0,
+                "evidence_count": 0,
+                "signal_count": 0,
+                "change_event_count": 0,
+                "affected_site_count": 0,
+                "material_change_count": 0,
+            }
+            after_site_location_id: str | None = None
+
+            while datetime.now(timezone.utc) < deadline:
+                if max_batches and proof["processed_batch_count"] >= max_batches:
+                    break
+                site_rows = self.database.fetch_all(
+                    """
+                    with layer_row as (
+                        select id
+                        from public.constraint_layer_registry
+                        where layer_key = :layer_key
+                    ), anchor as (
+                        select *
+                        from public.constraints_site_anchor()
+                        where geometry is not null
+                          and (:authority_filter is null or lower(authority_name) = lower(:authority_filter))
+                          and (:after_site_location_id is null or site_location_id > :after_site_location_id)
+                          and (
+                              cast(:min_area_acres as numeric) <= 0
+                              or coalesce(area_acres, public.calculate_area_acres(st_area(geometry)::numeric))
+                                  >= cast(:min_area_acres as numeric)
+                          )
+                    )
+                    select anchor.site_location_id
+                    from anchor
+                    cross join layer_row
+                    where (
+                        cast(:refresh_existing as boolean)
+                        or not exists (
+                            select 1
+                            from public.site_constraint_group_summaries as summary
+                            where summary.constraint_layer_id = layer_row.id
+                              and summary.site_location_id = anchor.site_location_id
+                        )
+                    )
+                    order by anchor.site_location_id
+                    limit :batch_size
+                    """,
+                    {
+                        "layer_key": layer_key,
+                        "authority_filter": authority_filter,
+                        "after_site_location_id": after_site_location_id,
+                        "min_area_acres": min_area_acres,
+                        "refresh_existing": refresh_existing,
+                        "batch_size": batch_size,
+                    },
+                )
+                if not site_rows:
+                    break
+
+                site_location_ids = [str(row["site_location_id"]) for row in site_rows]
+                batch_proof = self.database.fetch_one(
+                    """
+                    select *
+                    from public.refresh_constraint_measurements_for_layer_sites(
+                        :layer_key,
+                        cast(:site_location_ids as text[]),
+                        cast(:overlap_delta_pct as numeric),
+                        cast(:distance_delta_m as numeric)
+                    )
+                    """,
+                    {
+                        "layer_key": layer_key,
+                        "site_location_ids": site_location_ids,
+                        "overlap_delta_pct": overlap_delta_pct,
+                        "distance_delta_m": distance_delta_m,
+                    },
+                ) or {}
+                after_site_location_id = site_location_ids[-1]
+                layer_payload["processed_site_count"] += len(site_location_ids)
+                layer_payload["processed_batch_count"] += 1
+                proof["processed_site_count"] += len(site_location_ids)
+                proof["processed_batch_count"] += 1
+
+                for key in (
+                    "measurement_count",
+                    "summary_count",
+                    "friction_fact_count",
+                    "evidence_count",
+                    "signal_count",
+                    "change_event_count",
+                    "affected_site_count",
+                    "material_change_count",
+                ):
+                    increment = int(batch_proof.get(key) or 0)
+                    layer_payload[key] += increment
+                    proof[key] += increment
+
+                self.logger.info(
+                    "constraint_measurement_batch_completed",
+                    extra={
+                        "layer_key": layer_key,
+                        "site_batch_count": len(site_location_ids),
+                        "last_site_location_id": after_site_location_id,
+                        **batch_proof,
+                    },
+                )
+
+            proof["layers"].append(layer_payload)
+
+        if proof["measurement_count"]:
+            status = "constraint_measurements_refreshed"
+        elif proof["processed_site_count"]:
+            status = "constraint_measurements_scanned_no_material_change"
+        else:
+            status = "constraint_measurements_no_pending_sites"
+        proof["status"] = status
+
+        self._record_expansion_event(
+            command_name="measure-constraints",
+            source_key=layer_key_filter,
+            source_family=source_family_filter or "constraint_measurement",
+            status=status,
+            raw_rows=int(proof["source_feature_count"]),
+            linked_rows=int(proof["affected_site_count"]),
+            measured_rows=int(proof["measurement_count"]),
+            evidence_rows=int(proof["evidence_count"]),
+            signal_rows=int(proof["signal_count"]),
+            change_event_rows=int(proof["change_event_count"]),
+            summary="Constraint measurements refreshed in site batches; downstream proof rows emitted only for material evidence-state changes.",
+            metadata=proof,
+        )
+        self.logger.info("constraint_measurement_command_completed", extra=proof)
+        return proof
+
+    def audit_constraint_measurements(self) -> dict[str, Any]:
+        coverage = self.database.fetch_one("select * from analytics.v_constraint_measurement_coverage") or {}
+        layer_coverage = self.database.fetch_all(
+            """
+            select *
+            from analytics.v_constraint_measurement_layer_coverage
+            order by measured_row_count desc, source_feature_count desc, source_family, layer_key
+            """
+        )
+        top_measurements = self.database.fetch_all(
+            """
+            select *
+            from analytics.v_constraints_tab_measurements
+            order by measured_at desc nulls last, overlap_pct_of_site desc nulls last, nearest_distance_m nulls last
+            limit 20
+            """
+        )
+        multi_group_sites = self.database.fetch_all(
+            """
+            select
+                site_id,
+                site_location_id,
+                site_name,
+                count(distinct constraint_group)::integer as constraint_group_count,
+                array_agg(distinct constraint_group order by constraint_group) as constraint_groups,
+                max(measured_at) as latest_measured_at
+            from analytics.v_constraints_tab_group_summaries
+            group by site_id, site_location_id, site_name
+            having count(distinct constraint_group) > 1
+            order by constraint_group_count desc, latest_measured_at desc nulls last
+            limit 10
+            """
+        )
+        status = (
+            "constraint_measurements_live_proven"
+            if int(coverage.get("measured_site_constraint_row_count") or 0) > 0
+            and int(coverage.get("grouped_summary_row_count") or 0) > 0
+            and int(coverage.get("commercial_friction_fact_count") or 0) > 0
+            else "constraint_measurements_not_yet_proven"
+        )
+        result = {
+            "command": "audit-constraint-measurements",
+            "status": status,
+            "coverage": coverage,
+            "layer_coverage": layer_coverage,
+            "top_measurements": top_measurements,
+            "multi_group_sites": multi_group_sites,
+        }
+        self._record_expansion_event(
+            command_name="audit-constraint-measurements",
+            source_key=None,
+            source_family="constraint_measurement",
+            status=status,
+            raw_rows=int(coverage.get("source_constraint_feature_count") or 0),
+            linked_rows=int(coverage.get("canonical_sites_with_measured_constraints") or 0),
+            measured_rows=int(coverage.get("measured_site_constraint_row_count") or 0),
+            evidence_rows=int(coverage.get("commercial_friction_fact_count") or 0),
+            summary="Constraint measurement proof audited from Priority Zero analytics views.",
+            metadata=result,
+        )
+        self.logger.info("constraint_measurement_audit", extra=result)
         return result
 
     def _run_family_command(self, command: str, source_family: str) -> dict[str, Any]:
@@ -2969,6 +3252,8 @@ def build_parser() -> argparse.ArgumentParser:
             "audit-site-parcel-links",
             "resolve-title-numbers",
             "audit-title-number-control",
+            "measure-constraints",
+            "audit-constraint-measurements",
             "ingest-ldp",
             "ingest-settlement-boundaries",
             "ingest-ela",

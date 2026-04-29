@@ -210,6 +210,7 @@ class ConstraintsMeasurementContractTests(unittest.TestCase):
 
         for snippet in (
             "st_dimension(feature_geometry) = 2",
+            "when st_isvalid(feature_geometry) then feature_geometry",
             "st_collectionextract(st_intersection(site_geometry, feature_geometry), 3)",
             "join lateral",
             "feature.geometry OPERATOR(extensions.&&)",

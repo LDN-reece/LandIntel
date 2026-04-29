@@ -73,8 +73,16 @@ set search_path = pg_catalog, public, extensions
 as $$
     with cleaned as (
         select
-            case when site_geometry is null then null else st_makevalid(site_geometry) end as site_geometry,
-            case when feature_geometry is null then null else st_makevalid(feature_geometry) end as feature_geometry,
+            case
+                when site_geometry is null then null
+                when st_isvalid(site_geometry) then site_geometry
+                else st_makevalid(site_geometry)
+            end as site_geometry,
+            case
+                when feature_geometry is null then null
+                when st_isvalid(feature_geometry) then feature_geometry
+                else st_makevalid(feature_geometry)
+            end as feature_geometry,
             greatest(coalesce(buffer_distance_m, 0), 0) as buffer_distance_m
     ),
     metrics as (

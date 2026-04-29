@@ -1145,31 +1145,12 @@ class SourceExpansionRunner:
             """,
             {"layer_key_filter": layer_key_filter, "source_family_filter": source_family_filter},
         )
-        site_rows = self._debug_constraint_site_sample(site_count, feature_probe_limit, authority_filter)
-        site_location_ids = [str(row["site_location_id"]) for row in site_rows if row.get("site_location_id")]
-        if not site_location_ids:
-            site_rows = self.database.fetch_all(
-                """
-                select site_location_id
-                from public.constraints_site_anchor()
-                where geometry is not null
-                  and (
-                      cast(:authority_filter as text) is null
-                      or lower(authority_name) = lower(cast(:authority_filter as text))
-                  )
-                order by site_location_id
-                limit :site_count
-                """,
-                {"site_count": site_count, "authority_filter": authority_filter},
-            )
-            site_location_ids = [str(row["site_location_id"]) for row in site_rows if row.get("site_location_id")]
-
         proof: dict[str, Any] = {
             "command": "measure-constraints-debug-all-layers",
             "layer_key_filter": layer_key_filter,
             "source_family_filter": source_family_filter,
             "authority_filter": authority_filter,
-            "debug_site_count": len(site_location_ids),
+            "debug_site_count_per_layer": site_count,
             "requested_debug_site_count": site_count,
             "feature_probe_limit": feature_probe_limit,
             "layer_count": len(layers),
@@ -1188,6 +1169,40 @@ class SourceExpansionRunner:
 
         for layer in layers:
             layer_key = str(layer["layer_key"])
+            site_rows = self._debug_constraint_site_sample_for_layer(
+                layer_key,
+                site_count,
+                authority_filter,
+            )
+            sample_method = "layer_spatial_probe"
+            site_location_ids = [str(row["site_location_id"]) for row in site_rows if row.get("site_location_id")]
+            if not site_location_ids:
+                site_rows = self._fallback_constraint_site_sample(site_count, authority_filter)
+                sample_method = "fallback_canonical_site_order"
+                site_location_ids = [
+                    str(row["site_location_id"]) for row in site_rows if row.get("site_location_id")
+                ]
+            if not site_location_ids:
+                layer_payload = {
+                    "layer_key": layer_key,
+                    "layer_name": layer.get("layer_name"),
+                    "source_family": layer.get("source_family"),
+                    "source_feature_count": int(layer.get("source_feature_count") or 0),
+                    "debug_site_count": 0,
+                    "sample_method": "none",
+                    "measurement_count": 0,
+                    "summary_count": 0,
+                    "friction_fact_count": 0,
+                    "evidence_count": 0,
+                    "signal_count": 0,
+                    "change_event_count": 0,
+                    "affected_site_count": 0,
+                    "material_change_count": 0,
+                }
+                proof["layers"].append(layer_payload)
+                self.logger.info("constraint_measurement_debug_layer_completed", extra=layer_payload)
+                continue
+
             batch_proof = self.database.fetch_one(
                 """
                 select *
@@ -1210,6 +1225,8 @@ class SourceExpansionRunner:
                 "layer_name": layer.get("layer_name"),
                 "source_family": layer.get("source_family"),
                 "source_feature_count": int(layer.get("source_feature_count") or 0),
+                "debug_site_count": len(site_location_ids),
+                "sample_method": sample_method,
                 **batch_proof,
             }
             proof["processed_site_layer_pair_count"] += len(site_location_ids)
@@ -1242,11 +1259,18 @@ class SourceExpansionRunner:
             from public.site_constraint_measurements as measurement
             join public.constraint_layer_registry as layer
               on layer.id = measurement.constraint_layer_id
-            where measurement.site_location_id = any(cast(:site_location_ids as text[]))
+            where (
+                cast(:source_family_filter as text) is null
+                or layer.source_family = cast(:source_family_filter as text)
+            )
+              and (
+                cast(:layer_key_filter as text) is null
+                or layer.layer_key = cast(:layer_key_filter as text)
+              )
             group by layer.source_family, layer.constraint_group
             order by measurement_count desc, layer.source_family, layer.constraint_group
             """,
-            {"site_location_ids": site_location_ids},
+            {"source_family_filter": source_family_filter, "layer_key_filter": layer_key_filter},
         )
         proof["family_coverage"] = family_rows
         proof["measured_source_family_count"] = len({str(row.get("source_family")) for row in family_rows})
@@ -1272,91 +1296,82 @@ class SourceExpansionRunner:
         self.logger.info("constraint_measurement_debug_all_layers_completed", extra=proof)
         return proof
 
-    def _debug_constraint_site_sample(
+    def _debug_constraint_site_sample_for_layer(
+        self,
+        layer_key: str,
+        site_count: int,
+        authority_filter: str | None,
+    ) -> list[dict[str, Any]]:
+        try:
+            return self.database.fetch_all(
+                """
+                with layer_row as (
+                    select id, buffer_distance_m
+                    from public.constraint_layer_registry
+                    where layer_key = :layer_key
+                      and is_active = true
+                )
+                select site.id::text as site_location_id
+                from landintel.canonical_sites as site
+                cross join layer_row
+                where site.geometry is not null
+                  and (
+                      cast(:authority_filter as text) is null
+                      or lower(site.authority_name) = lower(cast(:authority_filter as text))
+                  )
+                  and exists (
+                      select 1
+                      from public.constraint_source_features as feature
+                      where feature.constraint_layer_id = layer_row.id
+                        and feature.geometry is not null
+                        and feature.geometry OPERATOR(extensions.&&)
+                              st_expand(site.geometry, greatest(layer_row.buffer_distance_m, 0)::double precision)
+                        and (
+                              (
+                                  layer_row.buffer_distance_m > 0
+                                  and st_dwithin(site.geometry, feature.geometry, layer_row.buffer_distance_m)
+                              )
+                              or (
+                                  layer_row.buffer_distance_m = 0
+                                  and st_intersects(site.geometry, feature.geometry)
+                              )
+                        )
+                      limit 1
+                  )
+                order by site.id::text
+                limit :site_count
+                """,
+                {
+                    "layer_key": layer_key,
+                    "site_count": site_count,
+                    "authority_filter": authority_filter,
+                },
+            )
+        except Exception as exc:  # pragma: no cover - protects GitHub/Supabase debug runs from probe timeouts.
+            self.logger.warning(
+                "constraint_measurement_debug_layer_sample_failed",
+                extra={"layer_key": layer_key, "error": str(exc)},
+            )
+            return []
+
+    def _fallback_constraint_site_sample(
         self,
         site_count: int,
-        feature_probe_limit: int,
         authority_filter: str | None,
     ) -> list[dict[str, Any]]:
         return self.database.fetch_all(
             """
-            with active_layers as (
-                select
-                    layer.id,
-                    layer.source_family,
-                    layer.buffer_distance_m,
-                    case layer.source_family
-                        when 'sepa_flood' then 0
-                        when 'tpo' then 1
-                        when 'conservation_areas' then 2
-                        when 'naturescot' then 3
-                        when 'hes' then 4
-                        when 'greenbelt' then 5
-                        when 'contaminated_land' then 6
-                        when 'culverts' then 7
-                        when 'coal_authority' then 8
-                        else 9
-                    end as family_priority
-                from public.constraint_layer_registry as layer
-                where layer.is_active = true
-                  and exists (
-                      select 1
-                      from public.constraint_source_features as feature
-                      where feature.constraint_layer_id = layer.id
-                  )
-            ), feature_sample as (
-                select
-                    active_layers.source_family,
-                    active_layers.family_priority,
-                    active_layers.buffer_distance_m,
-                    feature.geometry
-                from active_layers
-                join lateral (
-                    select geometry
-                    from public.constraint_source_features as feature
-                    where feature.constraint_layer_id = active_layers.id
-                      and feature.geometry is not null
-                    order by feature.id
-                    limit :feature_probe_limit
-                ) as feature on true
-            ), candidate_hits as (
-                select distinct on (anchor.site_location_id)
-                    anchor.site_location_id,
-                    min(feature_sample.family_priority) over (partition by anchor.site_location_id) as family_priority
-                from feature_sample
-                join lateral (
-                    select site_location_id, geometry, authority_name
-                    from public.constraints_site_anchor() as anchor
-                    where anchor.geometry is not null
-                      and (
-                          cast(:authority_filter as text) is null
-                          or lower(anchor.authority_name) = lower(cast(:authority_filter as text))
-                      )
-                      and anchor.geometry OPERATOR(extensions.&&)
-                          st_expand(feature_sample.geometry, greatest(feature_sample.buffer_distance_m, 0))
-                      and (
-                            (
-                                feature_sample.buffer_distance_m > 0
-                                and st_dwithin(anchor.geometry, feature_sample.geometry, feature_sample.buffer_distance_m)
-                            )
-                            or (
-                                feature_sample.buffer_distance_m = 0
-                                and st_intersects(anchor.geometry, feature_sample.geometry)
-                            )
-                      )
-                    limit 1
-                ) as anchor on true
-            )
-            select site_location_id
-            from candidate_hits
-            order by family_priority, site_location_id
+            select site.id::text as site_location_id
+            from landintel.canonical_sites as site
+            where site.geometry is not null
+              and (
+                  cast(:authority_filter as text) is null
+                  or lower(site.authority_name) = lower(cast(:authority_filter as text))
+              )
+            order by site.id::text
             limit :site_count
             """,
-            {
-                "site_count": site_count,
-                "feature_probe_limit": feature_probe_limit,
-                "authority_filter": authority_filter,
-            },
+            {"site_count": site_count, "authority_filter": authority_filter},
         )
 
     def audit_constraint_measurements(self) -> dict[str, Any]:

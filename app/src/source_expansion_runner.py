@@ -1102,6 +1102,11 @@ class SourceExpansionRunner:
         site_count = max(self._env_int("CONSTRAINT_MEASURE_DEBUG_SITE_COUNT", 10), 1)
         feature_probe_limit = max(self._env_int("CONSTRAINT_MEASURE_DEBUG_FEATURE_PROBE_LIMIT", 50), 1)
         runtime_minutes = max(self._env_int("CONSTRAINT_MEASURE_RUNTIME_MINUTES", 10), 1)
+        fallback_canonical_sample = str(os.getenv("CONSTRAINT_MEASURE_DEBUG_FALLBACK_CANONICAL") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
         deadline = datetime.now(timezone.utc) + timedelta(minutes=runtime_minutes)
         overlap_delta_pct = self._env_float("CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT", 1.0)
         distance_delta_m = self._env_float("CONSTRAINT_MATERIAL_DISTANCE_DELTA_M", 25.0)
@@ -1155,6 +1160,7 @@ class SourceExpansionRunner:
             "debug_site_count_per_layer": site_count,
             "requested_debug_site_count": site_count,
             "feature_probe_limit": feature_probe_limit,
+            "fallback_canonical_sample": fallback_canonical_sample,
             "runtime_minutes": runtime_minutes,
             "layer_count": len(layers),
             "source_feature_count": sum(int(layer.get("source_feature_count") or 0) for layer in layers),
@@ -1182,7 +1188,7 @@ class SourceExpansionRunner:
             )
             sample_method = "layer_spatial_probe"
             site_location_ids = [str(row["site_location_id"]) for row in site_rows if row.get("site_location_id")]
-            if not site_location_ids:
+            if not site_location_ids and fallback_canonical_sample:
                 site_rows = self._fallback_constraint_site_sample(site_count, authority_filter)
                 sample_method = "fallback_canonical_site_order"
                 site_location_ids = [
@@ -1336,6 +1342,16 @@ class SourceExpansionRunner:
                     where site.geometry is not null
                       and site.geometry OPERATOR(extensions.&&)
                             st_expand(feature_sample.geometry, greatest(layer_row.buffer_distance_m, 0)::double precision)
+                      and (
+                          (
+                              layer_row.buffer_distance_m > 0
+                              and st_dwithin(site.geometry, feature_sample.geometry, layer_row.buffer_distance_m)
+                          )
+                          or (
+                              layer_row.buffer_distance_m = 0
+                              and st_intersects(site.geometry, feature_sample.geometry)
+                          )
+                      )
                       and (
                           cast(:authority_filter as text) is null
                           or lower(site.authority_name) = lower(cast(:authority_filter as text))

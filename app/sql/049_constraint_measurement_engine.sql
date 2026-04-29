@@ -495,14 +495,17 @@ begin
             )
         from public.constraint_layer_registry as layer_row
         join lateral (
-            select anchor.*
-            from public.constraints_site_anchor() as anchor
+            select
+                site.id::text as site_id,
+                site.id::text as site_location_id,
+                site.geometry
+            from landintel.canonical_sites as site
             join (
                 select distinct input.site_location_id
                 from unnest(p_site_location_ids) as input(site_location_id)
             ) as requested
-              on requested.site_location_id = anchor.site_location_id
-            where anchor.geometry is not null
+              on requested.site_location_id = site.id::text
+            where site.geometry is not null
         ) as anchor on true
         join lateral (
             select feature.*

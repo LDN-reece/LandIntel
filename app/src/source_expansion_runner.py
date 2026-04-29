@@ -272,6 +272,7 @@ class SourceExpansionRunner:
 
         max_candidates = self._env_int("TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE", 10)
         min_overlap_sqm = self._env_float("TITLE_RESOLUTION_MIN_OVERLAP_SQM", 1.0)
+        min_operational_area_acres = self._env_float("MIN_OPERATIONAL_AREA_ACRES", 0.0)
         site_batch_size = max(self._env_int("TITLE_RESOLUTION_SITE_BATCH_SIZE", 10), 1)
         parcel_title_batch_size = max(self._env_int("TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE", 0), 0)
         parcel_title_refresh = (
@@ -297,8 +298,13 @@ class SourceExpansionRunner:
             from public.constraints_site_anchor()
             where geometry is not null
               and authority_name is not null
+              and (
+                  cast(:min_operational_area_acres as numeric) <= 0
+                  or coalesce(area_acres, public.calculate_area_acres(st_area(geometry)::numeric)) >= cast(:min_operational_area_acres as numeric)
+              )
             order by site_location_id
-            """
+            """,
+            {"min_operational_area_acres": min_operational_area_acres},
         )
         proof: dict[str, Any] = {
             "candidate_rows": 0,
@@ -310,6 +316,7 @@ class SourceExpansionRunner:
             "parcel_title_count": int(proof_counts.get("parcel_title_count") or 0),
             "canonical_site_count": int(proof_counts.get("canonical_site_count") or 0),
             "processed_site_count": 0,
+            "min_operational_area_acres": min_operational_area_acres,
             "site_batch_size": site_batch_size,
             "parcel_title_batch_size": parcel_title_batch_size,
             **parcel_title_refresh,

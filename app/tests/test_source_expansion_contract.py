@@ -252,6 +252,8 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("def resolve_title_numbers", RUNNER)
         self.assertIn("refresh_site_title_resolution_bridge_for_sites", RUNNER)
         self.assertIn("_refresh_ros_parcel_title_numbers", RUNNER)
+        self.assertIn("MIN_OPERATIONAL_AREA_ACRES", RUNNER)
+        self.assertIn("min_operational_area_acres", RUNNER)
         self.assertIn("TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE", RUNNER)
         self.assertIn("TITLE_RESOLUTION_SITE_BATCH_SIZE", RUNNER)
         self.assertIn("ros_parcel_title_batch_completed", RUNNER)

@@ -273,10 +273,13 @@ class SourceExpansionRunner:
         max_candidates = self._env_int("TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE", 10)
         min_overlap_sqm = self._env_float("TITLE_RESOLUTION_MIN_OVERLAP_SQM", 1.0)
         site_batch_size = max(self._env_int("TITLE_RESOLUTION_SITE_BATCH_SIZE", 10), 1)
+        parcel_title_batch_size = max(self._env_int("TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE", 50000), 1)
+        parcel_title_refresh = self._refresh_ros_parcel_title_numbers(parcel_title_batch_size)
         proof_counts = self.database.fetch_one(
             """
             select
                 (select count(*)::bigint from public.ros_cadastral_parcels) as ros_parcel_count,
+                (select count(*)::bigint from public.ros_cadastral_parcels where normalized_title_number is not null) as parcel_title_count,
                 (select count(*)::bigint from public.constraints_site_anchor()) as canonical_site_count
             """
         ) or {}
@@ -296,9 +299,12 @@ class SourceExpansionRunner:
             "probable_title_rows": 0,
             "licensed_bridge_required_rows": 0,
             "ros_parcel_count": int(proof_counts.get("ros_parcel_count") or 0),
+            "parcel_title_count": int(proof_counts.get("parcel_title_count") or 0),
             "canonical_site_count": int(proof_counts.get("canonical_site_count") or 0),
             "processed_site_count": 0,
             "site_batch_size": site_batch_size,
+            "parcel_title_batch_size": parcel_title_batch_size,
+            **parcel_title_refresh,
         }
 
         if proof["ros_parcel_count"] and anchor_rows:
@@ -418,6 +424,80 @@ class SourceExpansionRunner:
         )
         self.logger.info("title_number_resolution_bridge", extra=result)
         return result
+
+    def _refresh_ros_parcel_title_numbers(self, batch_size: int) -> dict[str, int]:
+        total_updated = 0
+        total_titles_populated = 0
+        total_scanned = 0
+        batch_index = 0
+        after_id: str | None = None
+        while True:
+            batch_index += 1
+            proof = self.database.fetch_one(
+                """
+                with candidate_batch as (
+                    select
+                        parcel.id,
+                        parcel.title_number,
+                        parcel.normalized_title_number,
+                        public.extract_ros_title_number_candidate(parcel.raw_attributes, parcel.ros_inspire_id) as candidate_title_number
+                    from public.ros_cadastral_parcels as parcel
+                    where parcel.ros_inspire_id is not null
+                      and (cast(:after_id as uuid) is null or parcel.id > cast(:after_id as uuid))
+                    order by id
+                    limit :batch_size
+                ), prepared as (
+                    select
+                        id,
+                        candidate_title_number,
+                        public.normalize_site_title_number(candidate_title_number) as candidate_normalized_title_number
+                    from candidate_batch
+                    where title_number is distinct from candidate_title_number
+                       or normalized_title_number is distinct from public.normalize_site_title_number(candidate_title_number)
+                ), updated as (
+                    update public.ros_cadastral_parcels as parcel
+                    set title_number = prepared.candidate_title_number,
+                        normalized_title_number = prepared.candidate_normalized_title_number,
+                        updated_at = now()
+                    from prepared
+                    where parcel.id = prepared.id
+                    returning prepared.candidate_title_number
+                )
+                select
+                    (select count(*)::bigint from candidate_batch) as scanned_rows,
+                    (select max(id)::text from candidate_batch) as last_id,
+                    (select count(*)::bigint from updated) as updated_rows,
+                    (select count(*) filter (where candidate_title_number is not null)::bigint from updated) as title_rows
+                """,
+                {"batch_size": batch_size, "after_id": after_id},
+            ) or {}
+            scanned_rows = int(proof.get("scanned_rows") or 0)
+            updated_rows = int(proof.get("updated_rows") or 0)
+            title_rows = int(proof.get("title_rows") or 0)
+            last_id = proof.get("last_id")
+            if scanned_rows == 0 or not last_id:
+                break
+            after_id = str(last_id)
+            total_scanned += scanned_rows
+            total_updated += updated_rows
+            total_titles_populated += title_rows
+            self.logger.info(
+                "ros_parcel_title_batch_completed",
+                extra={
+                    "batch_index": batch_index,
+                    "batch_size": batch_size,
+                    "scanned_rows": scanned_rows,
+                    "updated_rows": updated_rows,
+                    "title_rows": title_rows,
+                },
+            )
+            if scanned_rows < batch_size:
+                break
+        return {
+            "parcel_title_scanned_rows": total_scanned,
+            "parcel_title_updated_rows": total_updated,
+            "parcel_title_populated_rows": total_titles_populated,
+        }
 
     def audit_title_number_control(self) -> dict[str, Any]:
         summary = self.database.fetch_one(

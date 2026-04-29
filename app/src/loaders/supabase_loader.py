@@ -423,6 +423,8 @@ class SupabaseLoader:
         sql = """
             insert into public.ros_cadastral_parcels (
                 ros_inspire_id,
+                title_number,
+                normalized_title_number,
                 authority_name,
                 source_county,
                 geometry,
@@ -438,6 +440,8 @@ class SupabaseLoader:
             )
             values (
                 :ros_inspire_id,
+                public.extract_ros_title_number_candidate(cast(:raw_attributes as jsonb), :ros_inspire_id),
+                public.normalize_site_title_number(public.extract_ros_title_number_candidate(cast(:raw_attributes as jsonb), :ros_inspire_id)),
                 :authority_name,
                 :source_county,
                 ST_Multi(ST_GeomFromWKB(decode(:geometry_wkb, 'hex'), 27700)),
@@ -457,6 +461,8 @@ class SupabaseLoader:
             on conflict (ros_inspire_id, authority_name)
             where ros_inspire_id is not null
             do update set
+                title_number = excluded.title_number,
+                normalized_title_number = excluded.normalized_title_number,
                 source_county = excluded.source_county,
                 geometry = excluded.geometry,
                 centroid = excluded.centroid,

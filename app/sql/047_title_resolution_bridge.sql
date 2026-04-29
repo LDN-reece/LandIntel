@@ -110,6 +110,20 @@ as $$
     );
 $$;
 
+alter table public.ros_cadastral_parcels
+    add column if not exists title_number text;
+
+alter table public.ros_cadastral_parcels
+    add column if not exists normalized_title_number text;
+
+create index if not exists ros_cadastral_parcels_title_number_idx
+    on public.ros_cadastral_parcels (title_number)
+    where title_number is not null;
+
+create index if not exists ros_cadastral_parcels_normalized_title_idx
+    on public.ros_cadastral_parcels (normalized_title_number)
+    where normalized_title_number is not null;
+
 create or replace function public.refresh_site_title_resolution_bridge(
     max_candidates_per_site integer default 10,
     min_overlap_sqm numeric default 1
@@ -145,7 +159,19 @@ begin
             parcel.ros_inspire_id,
             parcel.authority_name as parcel_authority_name,
             public.extract_ros_cadastral_identifier(parcel.raw_attributes, parcel.ros_inspire_id) as cadastral_unit_identifier,
-            public.extract_ros_title_number_candidate(parcel.raw_attributes, parcel.ros_inspire_id) as candidate_title_number,
+            coalesce(
+                parcel.title_number,
+                public.extract_ros_title_number_candidate(parcel.raw_attributes, parcel.ros_inspire_id)
+            ) as candidate_title_number,
+            coalesce(
+                parcel.normalized_title_number,
+                public.normalize_site_title_number(
+                    coalesce(
+                        parcel.title_number,
+                        public.extract_ros_title_number_candidate(parcel.raw_attributes, parcel.ros_inspire_id)
+                    )
+                )
+            ) as candidate_normalized_title_number,
             metrics.overlap_area_sqm,
             metrics.overlap_pct_of_site,
             metrics.overlap_pct_of_parcel,
@@ -202,7 +228,7 @@ begin
             ros_inspire_id,
             cadastral_unit_identifier,
             candidate_title_number,
-            public.normalize_site_title_number(candidate_title_number) as normalized_title_number,
+            coalesce(candidate_normalized_title_number, public.normalize_site_title_number(candidate_title_number)) as normalized_title_number,
             'ros_cadastral_spatial_intersection'::text as candidate_source,
             case
                 when candidate_title_number is not null then 'probable_title'
@@ -418,7 +444,19 @@ begin
             parcel.ros_inspire_id,
             parcel.authority_name as parcel_authority_name,
             public.extract_ros_cadastral_identifier(parcel.raw_attributes, parcel.ros_inspire_id) as cadastral_unit_identifier,
-            public.extract_ros_title_number_candidate(parcel.raw_attributes, parcel.ros_inspire_id) as candidate_title_number,
+            coalesce(
+                parcel.title_number,
+                public.extract_ros_title_number_candidate(parcel.raw_attributes, parcel.ros_inspire_id)
+            ) as candidate_title_number,
+            coalesce(
+                parcel.normalized_title_number,
+                public.normalize_site_title_number(
+                    coalesce(
+                        parcel.title_number,
+                        public.extract_ros_title_number_candidate(parcel.raw_attributes, parcel.ros_inspire_id)
+                    )
+                )
+            ) as candidate_normalized_title_number,
             metrics.overlap_area_sqm,
             metrics.overlap_pct_of_site,
             metrics.overlap_pct_of_parcel,
@@ -474,7 +512,7 @@ begin
             ros_inspire_id,
             cadastral_unit_identifier,
             candidate_title_number,
-            public.normalize_site_title_number(candidate_title_number) as normalized_title_number,
+            coalesce(candidate_normalized_title_number, public.normalize_site_title_number(candidate_title_number)) as normalized_title_number,
             'ros_cadastral_spatial_intersection'::text as candidate_source,
             case
                 when candidate_title_number is not null then 'probable_title'
@@ -654,6 +692,12 @@ comment on table public.site_title_resolution_candidates is
 
 comment on column public.site_title_resolution_candidates.cadastral_unit_identifier is
     'RoS cadastral map identifier observed on the parcel. This is useful bridge evidence but is not assumed to be a ScotLIS API title number unless it matches the title-number pattern.';
+
+comment on column public.ros_cadastral_parcels.title_number is
+    'Title-number-shaped value bulk-derived from the RoS INSPIRE identifier or parcel attributes. This is the open-data title spine for Scotland MVP control evidence.';
+
+comment on column public.ros_cadastral_parcels.normalized_title_number is
+    'Normalized form of the RoS cadastral title number for indexed matching and promotion into site_title_validation.';
 
 comment on function public.refresh_site_title_resolution_bridge(integer, numeric) is
     'Refreshes site-to-RoS-cadastral candidates and promotes only valid title-number-shaped candidates into public.site_title_validation. The ScotLIS API remains title-number-first.';

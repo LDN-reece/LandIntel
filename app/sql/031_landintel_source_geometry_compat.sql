@@ -43,7 +43,7 @@ begin
         end if;
 
         execute format(
-            'alter table %I.%I alter column geometry type geometry(Geometry, 27700) using case when geometry is null then null else ST_SetSRID(geometry, 27700) end',
+            'alter table %%I.%%I alter column geometry type geometry(Geometry, 27700) using case when geometry is null then null else ST_SetSRID(geometry, 27700) end',
             target.schema_name,
             target.table_name
         );

@@ -273,8 +273,16 @@ class SourceExpansionRunner:
         max_candidates = self._env_int("TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE", 10)
         min_overlap_sqm = self._env_float("TITLE_RESOLUTION_MIN_OVERLAP_SQM", 1.0)
         site_batch_size = max(self._env_int("TITLE_RESOLUTION_SITE_BATCH_SIZE", 10), 1)
-        parcel_title_batch_size = max(self._env_int("TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE", 50000), 1)
-        parcel_title_refresh = self._refresh_ros_parcel_title_numbers(parcel_title_batch_size)
+        parcel_title_batch_size = max(self._env_int("TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE", 0), 0)
+        parcel_title_refresh = (
+            self._refresh_ros_parcel_title_numbers(parcel_title_batch_size)
+            if parcel_title_batch_size > 0
+            else {
+                "parcel_title_scanned_rows": 0,
+                "parcel_title_updated_rows": 0,
+                "parcel_title_populated_rows": 0,
+            }
+        )
         proof_counts = self.database.fetch_one(
             """
             select

@@ -263,6 +263,7 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE", WORKFLOW)
         self.assertIn("TITLE_RESOLUTION_MIN_OVERLAP_SQM", WORKFLOW)
         self.assertIn("TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE", WORKFLOW)
+        self.assertIn('TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE: "0"', WORKFLOW)
         self.assertIn("TITLE_RESOLUTION_SITE_BATCH_SIZE", WORKFLOW)
         self.assertIn("title_number,", LOADER)
         self.assertIn("normalized_title_number,", LOADER)

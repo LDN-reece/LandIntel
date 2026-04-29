@@ -217,11 +217,11 @@ begin
         return;
     end if;
 
-    select id, source_family, constraint_group, layer_name
+    select layer_row.id, layer_row.source_family, layer_row.constraint_group, layer_row.layer_name
       into v_layer_id, v_source_family, v_constraint_group, v_layer_name
-    from public.constraint_layer_registry
-    where layer_key = p_layer_key
-      and is_active = true;
+    from public.constraint_layer_registry as layer_row
+    where layer_row.layer_key = p_layer_key
+      and layer_row.is_active = true;
 
     if v_layer_id is null then
         raise exception using message = concat('Unknown active constraint layer key: ', p_layer_key);

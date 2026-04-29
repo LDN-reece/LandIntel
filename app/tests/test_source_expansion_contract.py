@@ -241,6 +241,8 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("set_config('statement_timeout', '15min', true)", TITLE_BRIDGE_MIGRATION)
         self.assertIn("parcel.authority_name = anchor.authority_name", TITLE_BRIDGE_MIGRATION)
         self.assertIn("parcel.geometry OPERATOR(extensions.&&) anchor.geometry", TITLE_BRIDGE_MIGRATION)
+        self.assertIn("site_geometry_to_ros_cadastral_fast_candidate", TITLE_BRIDGE_MIGRATION)
+        self.assertIn("fast_centroid_candidate_with_intersect_fallback", TITLE_BRIDGE_MIGRATION)
         self.assertIn("needs_licensed_bridge", TITLE_BRIDGE_MIGRATION)
         self.assertIn("RoS Land Register API is title-number-first", TITLE_BRIDGE_MIGRATION)
         self.assertIn("enable row level security", TITLE_BRIDGE_MIGRATION)

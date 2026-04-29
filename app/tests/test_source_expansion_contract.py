@@ -339,6 +339,9 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("- audit-constraint-measurements", WORKFLOW)
         self.assertIn('elif [ "$SELECTED_COMMAND" = "measure-constraints" ]; then', WORKFLOW)
         self.assertIn("python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements", WORKFLOW)
+        self.assertIn("constraint_measure_max_batches", WORKFLOW)
+        self.assertIn("CONSTRAINT_MEASURE_SITE_BATCH_SIZE: ${{ inputs.constraint_measure_site_batch_size || '25' }}", WORKFLOW)
+        self.assertIn("CONSTRAINT_MEASURE_MAX_BATCHES: ${{ inputs.constraint_measure_max_batches || '4' }}", WORKFLOW)
 
 
 if __name__ == "__main__":

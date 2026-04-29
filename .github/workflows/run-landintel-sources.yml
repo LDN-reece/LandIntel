@@ -64,6 +64,18 @@ on:
           - refresh-affected-sites
           - weekly-reconcile-maintenance
           - ingest-bgs
+      constraint_measure_site_batch_size:
+        description: Site batch size for measure-constraints runs
+        required: false
+        default: "25"
+      constraint_measure_max_batches:
+        description: Maximum batches for measure-constraints runs; use 0 only for an intentional full sweep
+        required: false
+        default: "4"
+      constraint_measure_runtime_minutes:
+        description: Runtime budget for measure-constraints runs
+        required: false
+        default: "10"
 
 # Automated schedules are intentionally paused during incremental reconcile burn-in.
 # Push runs are validation-only. Source-estate maintenance is manual-only during
@@ -122,9 +134,9 @@ jobs:
       SOURCE_EXPANSION_CONSTRAINT_MEASURE_MODE: "auto"
       SOURCE_EXPANSION_MAX_MEASURE_FEATURES: "2500"
       SOURCE_EXPANSION_MAX_MEASURE_LAYERS: "1"
-      CONSTRAINT_MEASURE_SITE_BATCH_SIZE: "250"
-      CONSTRAINT_MEASURE_MAX_BATCHES: "0"
-      CONSTRAINT_MEASURE_RUNTIME_MINUTES: "40"
+      CONSTRAINT_MEASURE_SITE_BATCH_SIZE: ${{ inputs.constraint_measure_site_batch_size || '25' }}
+      CONSTRAINT_MEASURE_MAX_BATCHES: ${{ inputs.constraint_measure_max_batches || '4' }}
+      CONSTRAINT_MEASURE_RUNTIME_MINUTES: ${{ inputs.constraint_measure_runtime_minutes || '10' }}
       CONSTRAINT_MEASURE_MIN_AREA_ACRES: "0"
       CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT: "1"
       CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"

@@ -69,7 +69,7 @@ returns table (
 )
 language sql
 immutable
-set search_path = pg_catalog, public
+set search_path = pg_catalog, public, extensions
 as $$
     with cleaned as (
         select
@@ -137,7 +137,7 @@ create or replace function public.classify_constraint_overlap(
 returns text
 language sql
 immutable
-set search_path = pg_catalog, public
+set search_path = pg_catalog, public, extensions
 as $$
     select case
         when coalesce(p_intersects, false) = false and coalesce(p_within_buffer, false) then 'proximity-only'
@@ -195,7 +195,7 @@ returns table (
     material_change_count integer
 )
 language plpgsql
-set search_path = pg_catalog, public, landintel
+set search_path = pg_catalog, public, landintel, extensions
 as $$
 declare
     v_layer_id uuid;

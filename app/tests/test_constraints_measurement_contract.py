@@ -200,6 +200,8 @@ class ConstraintsMeasurementContractTests(unittest.TestCase):
             "source_expansion_constraint",
             "constraint_evidence_state_changed",
             "constraint_measurement_engine",
+            "set search_path = pg_catalog, public, extensions",
+            "set search_path = pg_catalog, public, landintel, extensions",
             "analytics.v_constraint_measurement_coverage",
             "analytics.v_constraint_measurement_layer_coverage",
         ):

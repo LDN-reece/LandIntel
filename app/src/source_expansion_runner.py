@@ -1101,6 +1101,8 @@ class SourceExpansionRunner:
         authority_filter = (os.getenv("CONSTRAINT_MEASURE_AUTHORITY") or "").strip() or None
         site_count = max(self._env_int("CONSTRAINT_MEASURE_DEBUG_SITE_COUNT", 10), 1)
         feature_probe_limit = max(self._env_int("CONSTRAINT_MEASURE_DEBUG_FEATURE_PROBE_LIMIT", 50), 1)
+        runtime_minutes = max(self._env_int("CONSTRAINT_MEASURE_RUNTIME_MINUTES", 10), 1)
+        deadline = datetime.now(timezone.utc) + timedelta(minutes=runtime_minutes)
         overlap_delta_pct = self._env_float("CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT", 1.0)
         distance_delta_m = self._env_float("CONSTRAINT_MATERIAL_DISTANCE_DELTA_M", 25.0)
 
@@ -1153,6 +1155,7 @@ class SourceExpansionRunner:
             "debug_site_count_per_layer": site_count,
             "requested_debug_site_count": site_count,
             "feature_probe_limit": feature_probe_limit,
+            "runtime_minutes": runtime_minutes,
             "layer_count": len(layers),
             "source_feature_count": sum(int(layer.get("source_feature_count") or 0) for layer in layers),
             "processed_site_layer_pair_count": 0,
@@ -1168,10 +1171,13 @@ class SourceExpansionRunner:
         }
 
         for layer in layers:
+            if datetime.now(timezone.utc) >= deadline:
+                break
             layer_key = str(layer["layer_key"])
             site_rows = self._debug_constraint_site_sample_for_layer(
                 layer_key,
                 site_count,
+                feature_probe_limit,
                 authority_filter,
             )
             sample_method = "layer_spatial_probe"
@@ -1300,6 +1306,7 @@ class SourceExpansionRunner:
         self,
         layer_key: str,
         site_count: int,
+        feature_probe_limit: int,
         authority_filter: str | None,
     ) -> list[dict[str, Any]]:
         try:
@@ -1310,40 +1317,37 @@ class SourceExpansionRunner:
                     from public.constraint_layer_registry
                     where layer_key = :layer_key
                       and is_active = true
+                ), feature_sample as (
+                    select feature.geometry
+                    from public.constraint_source_features as feature
+                    join layer_row
+                      on layer_row.id = feature.constraint_layer_id
+                    where feature.geometry is not null
+                    order by feature.id
+                    limit :feature_probe_limit
                 )
-                select site.id::text as site_location_id
-                from landintel.canonical_sites as site
-                cross join layer_row
-                where site.geometry is not null
-                  and (
-                      cast(:authority_filter as text) is null
-                      or lower(site.authority_name) = lower(cast(:authority_filter as text))
-                  )
-                  and exists (
-                      select 1
-                      from public.constraint_source_features as feature
-                      where feature.constraint_layer_id = layer_row.id
-                        and feature.geometry is not null
-                        and feature.geometry OPERATOR(extensions.&&)
-                              st_expand(site.geometry, greatest(layer_row.buffer_distance_m, 0)::double precision)
-                        and (
-                              (
-                                  layer_row.buffer_distance_m > 0
-                                  and st_dwithin(site.geometry, feature.geometry, layer_row.buffer_distance_m)
-                              )
-                              or (
-                                  layer_row.buffer_distance_m = 0
-                                  and st_intersects(site.geometry, feature.geometry)
-                              )
-                        )
-                      limit 1
-                  )
-                order by site.id::text
+                select distinct candidate.site_location_id
+                from layer_row
+                join feature_sample
+                  on true
+                join lateral (
+                    select site.id::text as site_location_id
+                    from landintel.canonical_sites as site
+                    where site.geometry is not null
+                      and site.geometry OPERATOR(extensions.&&)
+                            st_expand(feature_sample.geometry, greatest(layer_row.buffer_distance_m, 0)::double precision)
+                      and (
+                          cast(:authority_filter as text) is null
+                          or lower(site.authority_name) = lower(cast(:authority_filter as text))
+                      )
+                    limit :site_count
+                ) as candidate on true
                 limit :site_count
                 """,
                 {
                     "layer_key": layer_key,
                     "site_count": site_count,
+                    "feature_probe_limit": feature_probe_limit,
                     "authority_filter": authority_filter,
                 },
             )

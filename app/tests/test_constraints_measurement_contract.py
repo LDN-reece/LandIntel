@@ -211,6 +211,8 @@ class ConstraintsMeasurementContractTests(unittest.TestCase):
         for snippet in (
             "st_dimension(feature_geometry) = 2",
             "when st_isvalid(feature_geometry) then feature_geometry",
+            "when site_inside_feature then coalesce(site_area_sqm, 0)",
+            "when intersects then 0::double precision",
             "st_collectionextract(st_intersection(site_geometry, feature_geometry), 3)",
             "join lateral",
             "feature.geometry OPERATOR(extensions.&&)",

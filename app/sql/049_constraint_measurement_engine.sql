@@ -85,8 +85,12 @@ as $$
             end as feature_geometry,
             greatest(coalesce(buffer_distance_m, 0), 0) as buffer_distance_m
     ),
-    metrics as (
+    prepared as (
         select
+            site_geometry,
+            feature_geometry,
+            buffer_distance_m,
+            st_dimension(feature_geometry) as feature_dimension,
             st_intersects(site_geometry, feature_geometry) as intersects,
             case
                 when buffer_distance_m > 0 then st_dwithin(site_geometry, feature_geometry, buffer_distance_m)
@@ -94,13 +98,6 @@ as $$
             end as within_buffer,
             st_coveredby(site_geometry, feature_geometry) as site_inside_feature,
             st_coveredby(feature_geometry, site_geometry) as feature_inside_site,
-            case
-                when st_intersects(site_geometry, feature_geometry)
-                 and st_dimension(feature_geometry) = 2
-                    then st_area(st_collectionextract(st_intersection(site_geometry, feature_geometry), 3))
-                else 0::double precision
-            end as overlap_area_sqm,
-            st_distance(site_geometry, feature_geometry) as nearest_distance_m,
             nullif(st_area(site_geometry), 0) as site_area_sqm,
             case
                 when st_dimension(feature_geometry) = 2 then nullif(st_area(feature_geometry), 0)
@@ -109,6 +106,26 @@ as $$
         from cleaned
         where site_geometry is not null
           and feature_geometry is not null
+    ),
+    metrics as (
+        select
+            intersects,
+            within_buffer,
+            site_inside_feature,
+            feature_inside_site,
+            site_area_sqm,
+            feature_area_sqm,
+            case
+                when not intersects or feature_dimension <> 2 then 0::double precision
+                when site_inside_feature then coalesce(site_area_sqm, 0)
+                when feature_inside_site then coalesce(feature_area_sqm, 0)
+                else st_area(st_collectionextract(st_intersection(site_geometry, feature_geometry), 3))
+            end as overlap_area_sqm,
+            case
+                when intersects then 0::double precision
+                else st_distance(site_geometry, feature_geometry)
+            end as nearest_distance_m
+        from prepared
     )
     select
         metrics.intersects,

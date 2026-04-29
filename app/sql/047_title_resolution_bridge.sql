@@ -90,7 +90,7 @@ as $$
     )
     select title_number
     from normalized
-    where title_number ~ '^[A-Z]{3}[0-9]{1,8}$'
+    where title_number ~ '^[A-Z]{3}[0-9]{1,10}$'
     order by priority_rank
     limit 1;
 $$;
@@ -439,7 +439,8 @@ begin
     ), anchor_prepared as (
         select
             anchor.*,
-            nullif(st_area(anchor.geometry), 0) as site_area_sqm
+            nullif(st_area(anchor.geometry), 0) as site_area_sqm,
+            st_pointonsurface(anchor.geometry) as anchor_point
         from anchor_page as anchor
     ), ranked_candidates as (
         select
@@ -468,9 +469,11 @@ begin
             metrics.overlap_pct_of_site,
             metrics.overlap_pct_of_parcel,
             metrics.nearest_distance_m,
+            metrics.centroid_inside,
             row_number() over (
                 partition by anchor.site_location_id
-                order by metrics.overlap_pct_of_site desc nulls last,
+                order by metrics.centroid_inside desc,
+                         metrics.overlap_pct_of_site desc nulls last,
                          metrics.nearest_distance_m asc nulls last,
                          parcel.id
             ) as candidate_rank
@@ -481,25 +484,58 @@ begin
             where parcel.geometry is not null
               and parcel.centroid is not null
               and parcel.authority_name = anchor.authority_name
-              and parcel.geometry OPERATOR(extensions.&&) anchor.geometry
-              and parcel.centroid OPERATOR(extensions.&&) anchor.geometry
-              and st_covers(anchor.geometry, parcel.centroid)
-            order by parcel.id
-            limit greatest(v_max_candidates_per_site * 25, 250)
+              and parcel.centroid OPERATOR(extensions.&&) st_expand(anchor.geometry, 500)
+            order by parcel.centroid OPERATOR(extensions.<->) anchor.anchor_point,
+                     parcel.id
+            limit greatest(v_max_candidates_per_site * 8, 50)
         ) as parcel on true
         cross join lateral (
             select
                 nullif(st_area(parcel.geometry), 0) as parcel_area_sqm,
-                st_distance(st_pointonsurface(anchor.geometry), parcel.centroid) as nearest_distance_m
+                st_distance(anchor.geometry, parcel.centroid) as nearest_distance_m,
+                st_covers(anchor.geometry, parcel.centroid) as centroid_inside
         ) as prepared_metrics
         cross join lateral (
             select
-                round(least(coalesce(prepared_metrics.parcel_area_sqm, 0), coalesce(anchor.site_area_sqm, 0))::numeric, 2) as overlap_area_sqm,
-                round(coalesce((least(coalesce(prepared_metrics.parcel_area_sqm, 0), coalesce(anchor.site_area_sqm, 0)) / anchor.site_area_sqm) * 100, 0)::numeric, 4) as overlap_pct_of_site,
-                round(coalesce((least(coalesce(prepared_metrics.parcel_area_sqm, 0), coalesce(anchor.site_area_sqm, 0)) / prepared_metrics.parcel_area_sqm) * 100, 0)::numeric, 4) as overlap_pct_of_parcel,
-                round(prepared_metrics.nearest_distance_m::numeric, 2) as nearest_distance_m
+                round(
+                    case
+                        when prepared_metrics.centroid_inside
+                            then least(coalesce(prepared_metrics.parcel_area_sqm, 0), coalesce(anchor.site_area_sqm, 0))
+                        else 0
+                    end::numeric,
+                    2
+                ) as overlap_area_sqm,
+                round(
+                    coalesce(
+                        (
+                            case
+                                when prepared_metrics.centroid_inside
+                                    then least(coalesce(prepared_metrics.parcel_area_sqm, 0), coalesce(anchor.site_area_sqm, 0))
+                                else 0
+                            end / anchor.site_area_sqm
+                        ) * 100,
+                        0
+                    )::numeric,
+                    4
+                ) as overlap_pct_of_site,
+                round(
+                    coalesce(
+                        (
+                            case
+                                when prepared_metrics.centroid_inside
+                                    then least(coalesce(prepared_metrics.parcel_area_sqm, 0), coalesce(anchor.site_area_sqm, 0))
+                                else 0
+                            end / prepared_metrics.parcel_area_sqm
+                        ) * 100,
+                        0
+                    )::numeric,
+                    4
+                ) as overlap_pct_of_parcel,
+                round(prepared_metrics.nearest_distance_m::numeric, 2) as nearest_distance_m,
+                prepared_metrics.centroid_inside
         ) as metrics
         where metrics.overlap_area_sqm >= v_min_overlap_sqm
+           or metrics.nearest_distance_m <= 25
     ), bounded_candidates as (
         select *
         from ranked_candidates
@@ -532,6 +568,7 @@ begin
             overlap_pct_of_site,
             overlap_pct_of_parcel,
             nearest_distance_m,
+            centroid_inside,
             jsonb_build_object(
                 'bridge', 'site_or_toid_geometry_to_ros_cadastral',
                 'site_name', site_name,
@@ -540,8 +577,9 @@ begin
                 'candidate_rank', candidate_rank,
                 'ros_title_candidate_present', candidate_title_number is not null,
                 'requires_licensed_title_bridge', candidate_title_number is null,
-                'measurement_mode', 'fast_centroid_candidate',
-                'note', 'RoS Land Register API is title-number-first; this fast bridge creates title candidates before slower exact overlap enrichment.'
+                'centroid_inside_site', centroid_inside,
+                'measurement_mode', 'knn_nearest_centroid_candidate',
+                'note', 'RoS Land Register API is title-number-first; this KNN bridge creates title candidates before slower exact overlap enrichment.'
             ) as metadata
         from bounded_candidates
     ), inserted_candidates as (

@@ -500,74 +500,9 @@ begin
                 round(prepared_metrics.nearest_distance_m::numeric, 2) as nearest_distance_m
         ) as metrics
         where metrics.overlap_area_sqm >= v_min_overlap_sqm
-    ), fallback_ranked_candidates as (
-        select
-            anchor.site_id,
-            anchor.site_location_id,
-            anchor.site_name,
-            anchor.authority_name as site_authority_name,
-            parcel.id as ros_parcel_id,
-            parcel.ros_inspire_id,
-            parcel.authority_name as parcel_authority_name,
-            public.extract_ros_cadastral_identifier(parcel.raw_attributes, parcel.ros_inspire_id) as cadastral_unit_identifier,
-            coalesce(
-                parcel.title_number,
-                public.extract_ros_title_number_candidate(parcel.raw_attributes, parcel.ros_inspire_id)
-            ) as candidate_title_number,
-            coalesce(
-                parcel.normalized_title_number,
-                public.normalize_site_title_number(
-                    coalesce(
-                        parcel.title_number,
-                        public.extract_ros_title_number_candidate(parcel.raw_attributes, parcel.ros_inspire_id)
-                    )
-                )
-            ) as candidate_normalized_title_number,
-            metrics.overlap_area_sqm,
-            metrics.overlap_pct_of_site,
-            metrics.overlap_pct_of_parcel,
-            metrics.nearest_distance_m,
-            row_number() over (
-                partition by anchor.site_location_id
-                order by metrics.nearest_distance_m asc nulls last,
-                         parcel.id
-            ) as candidate_rank
-        from anchor_prepared as anchor
-        join lateral (
-            select parcel.*
-            from public.ros_cadastral_parcels as parcel
-            where parcel.geometry is not null
-              and parcel.authority_name = anchor.authority_name
-              and parcel.geometry OPERATOR(extensions.&&) anchor.geometry
-              and st_intersects(parcel.geometry, anchor.geometry)
-            order by parcel.id
-            limit greatest(v_max_candidates_per_site * 5, 50)
-        ) as parcel on true
-        cross join lateral (
-            select
-                st_distance(st_pointonsurface(anchor.geometry), coalesce(parcel.centroid, st_pointonsurface(parcel.geometry))) as nearest_distance_m
-        ) as prepared_metrics
-        cross join lateral (
-            select
-                round(v_min_overlap_sqm::numeric, 2) as overlap_area_sqm,
-                0.01::numeric as overlap_pct_of_site,
-                0.01::numeric as overlap_pct_of_parcel,
-                round(prepared_metrics.nearest_distance_m::numeric, 2) as nearest_distance_m
-        ) as metrics
-        where not exists (
-            select 1
-            from ranked_candidates as existing
-            where existing.site_location_id = anchor.site_location_id
-        )
-    ), combined_ranked_candidates as (
-        select *
-        from ranked_candidates
-        union all
-        select *
-        from fallback_ranked_candidates
     ), bounded_candidates as (
         select *
-        from combined_ranked_candidates
+        from ranked_candidates
         where candidate_rank <= v_max_candidates_per_site
     ), prepared_candidates as (
         select
@@ -605,7 +540,7 @@ begin
                 'candidate_rank', candidate_rank,
                 'ros_title_candidate_present', candidate_title_number is not null,
                 'requires_licensed_title_bridge', candidate_title_number is null,
-                'measurement_mode', 'fast_centroid_candidate_with_intersect_fallback',
+                'measurement_mode', 'fast_centroid_candidate',
                 'note', 'RoS Land Register API is title-number-first; this fast bridge creates title candidates before slower exact overlap enrichment.'
             ) as metadata
         from bounded_candidates
@@ -769,7 +704,7 @@ comment on function public.refresh_site_title_resolution_bridge(integer, numeric
     'Refreshes site-to-RoS-cadastral candidates and promotes only valid title-number-shaped candidates into public.site_title_validation. The ScotLIS API remains title-number-first.';
 
 comment on function public.refresh_site_title_resolution_bridge_for_sites(integer, numeric, jsonb) is
-    'Fast batch-safe site-to-RoS-cadastral title candidate refresh for selected site_location_ids. Uses centroid candidates with an intersect fallback so sourcing is not blocked by exact overlap enrichment.';
+    'Fast batch-safe site-to-RoS-cadastral title candidate refresh for selected site_location_ids. Uses centroid-contained RoS parcels so sourcing is not blocked by exact overlap enrichment.';
 
 drop trigger if exists trg_touch_updated_at_site_title_resolution_candidates on public.site_title_resolution_candidates;
 create trigger trg_touch_updated_at_site_title_resolution_candidates

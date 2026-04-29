@@ -77,6 +77,22 @@ on:
         description: Runtime budget for measure-constraints runs
         required: false
         default: "10"
+      constraint_measure_source_family:
+        description: Optional constraint source family filter, for example sepa_flood, tpo, conservation_areas
+        required: false
+        default: ""
+      constraint_measure_layer_key:
+        description: Optional exact constraint layer_key filter for targeted measurement
+        required: false
+        default: ""
+      constraint_measure_authority:
+        description: Optional authority_name filter for targeted measurement
+        required: false
+        default: ""
+      constraint_measure_debug_feature_probe_limit:
+        description: Feature probe cap for measure-constraints-debug-all-layers
+        required: false
+        default: "50"
 
 # Automated schedules are intentionally paused during incremental reconcile burn-in.
 # Push runs are validation-only. Source-estate maintenance is manual-only during
@@ -140,8 +156,11 @@ jobs:
       CONSTRAINT_MEASURE_MAX_BATCHES_PER_LAYER: "1"
       CONSTRAINT_MEASURE_RUNTIME_MINUTES: ${{ inputs.constraint_measure_runtime_minutes || '10' }}
       CONSTRAINT_MEASURE_MIN_AREA_ACRES: "0"
+      CONSTRAINT_MEASURE_SOURCE_FAMILY: ${{ inputs.constraint_measure_source_family || '' }}
+      CONSTRAINT_MEASURE_LAYER_KEY: ${{ inputs.constraint_measure_layer_key || '' }}
+      CONSTRAINT_MEASURE_AUTHORITY: ${{ inputs.constraint_measure_authority || '' }}
       CONSTRAINT_MEASURE_DEBUG_SITE_COUNT: ${{ inputs.constraint_measure_site_batch_size || '25' }}
-      CONSTRAINT_MEASURE_DEBUG_FEATURE_PROBE_LIMIT: "50"
+      CONSTRAINT_MEASURE_DEBUG_FEATURE_PROBE_LIMIT: ${{ inputs.constraint_measure_debug_feature_probe_limit || '50' }}
       CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT: "1"
       CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"
       TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE: "10"

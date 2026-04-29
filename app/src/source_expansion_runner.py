@@ -856,8 +856,14 @@ class SourceExpansionRunner:
             join public.constraint_source_features as feature
               on feature.constraint_layer_id = layer.id
             where layer.is_active = true
-              and (:layer_key_filter is null or layer.layer_key = :layer_key_filter)
-              and (:source_family_filter is null or layer.source_family = :source_family_filter)
+              and (
+                  cast(:layer_key_filter as text) is null
+                  or layer.layer_key = cast(:layer_key_filter as text)
+              )
+              and (
+                  cast(:source_family_filter as text) is null
+                  or layer.source_family = cast(:source_family_filter as text)
+              )
             group by layer.layer_key, layer.layer_name, layer.source_family
             order by layer.source_family, layer.layer_key
             """,
@@ -930,8 +936,14 @@ class SourceExpansionRunner:
                         select *
                         from public.constraints_site_anchor()
                         where geometry is not null
-                          and (:authority_filter is null or lower(authority_name) = lower(:authority_filter))
-                          and (:after_site_location_id is null or site_location_id > :after_site_location_id)
+                          and (
+                              cast(:authority_filter as text) is null
+                              or lower(authority_name) = lower(cast(:authority_filter as text))
+                          )
+                          and (
+                              cast(:after_site_location_id as text) is null
+                              or site_location_id > cast(:after_site_location_id as text)
+                          )
                           and (
                               cast(:min_area_acres as numeric) <= 0
                               or coalesce(area_acres, public.calculate_area_acres(st_area(geometry)::numeric))

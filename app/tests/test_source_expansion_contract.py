@@ -11,6 +11,7 @@ PAGED_RUNNER = (APP_DIR / "src" / "source_expansion_runner_wfs_paging.py").read_
 LOADER = (APP_DIR / "src" / "loaders" / "supabase_loader.py").read_text(encoding="utf-8")
 MIGRATION = (APP_DIR / "sql" / "044_phase_one_source_expansion.sql").read_text(encoding="utf-8")
 TITLE_BRIDGE_MIGRATION = (APP_DIR / "sql" / "047_title_resolution_bridge.sql").read_text(encoding="utf-8")
+SITE_PARCEL_LINK_MIGRATION = (APP_DIR / "sql" / "048_site_ros_parcel_linking.sql").read_text(encoding="utf-8")
 MANIFEST = (APP_DIR / "config" / "phase_one_source_estate.yaml").read_text(encoding="utf-8")
 
 
@@ -18,6 +19,8 @@ class SourceExpansionContractTests(unittest.TestCase):
     def test_workflow_exposes_missing_source_universe_commands(self) -> None:
         for command in (
             "audit-source-expansion",
+            "link-sites-to-ros-parcels",
+            "audit-site-parcel-links",
             "resolve-title-numbers",
             "audit-title-number-control",
             "ingest-ldp",
@@ -283,6 +286,27 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("src/main.py", WORKFLOW)
         self.assertIn("ros_cadastral_spatial_bridge", MANIFEST)
         self.assertIn("TOID/site geometry -> RoS cadastral parcel -> title-number candidate", MANIFEST)
+
+    def test_site_to_ros_parcel_linking_is_batched_and_audited(self) -> None:
+        self.assertIn("public.site_ros_parcel_link_candidates", SITE_PARCEL_LINK_MIGRATION)
+        self.assertIn("public.refresh_site_ros_parcel_link_candidates_for_sites", SITE_PARCEL_LINK_MIGRATION)
+        self.assertIn("parcel.centroid OPERATOR(extensions.&&)", SITE_PARCEL_LINK_MIGRATION)
+        self.assertIn("OPERATOR(extensions.<->)", SITE_PARCEL_LINK_MIGRATION)
+        self.assertIn("st_intersection", SITE_PARCEL_LINK_MIGRATION)
+        self.assertIn("primary_ros_parcel_id", SITE_PARCEL_LINK_MIGRATION)
+        self.assertIn("ros_cadastral_site_parcel_link", SITE_PARCEL_LINK_MIGRATION)
+        self.assertIn("def link_sites_to_ros_parcels", RUNNER)
+        self.assertIn("def audit_site_parcel_links", RUNNER)
+        self.assertIn("refresh_site_ros_parcel_link_candidates_for_sites", RUNNER)
+        self.assertIn("SITE_PARCEL_LINK_SITE_BATCH_SIZE", RUNNER)
+        self.assertIn("site_parcel_link_batch_completed", RUNNER)
+        self.assertIn("site_parcel_link_bridge", RUNNER)
+        self.assertIn("site_parcel_link_audit", RUNNER)
+        self.assertIn("- link-sites-to-ros-parcels", WORKFLOW)
+        self.assertIn("- audit-site-parcel-links", WORKFLOW)
+        self.assertIn('elif [ "$SELECTED_COMMAND" = "link-sites-to-ros-parcels" ]; then', WORKFLOW)
+        self.assertIn("python -m src.source_expansion_runner_wfs_paging audit-site-parcel-links", WORKFLOW)
+        self.assertIn('SITE_PARCEL_LINK_SITE_BATCH_SIZE: "250"', WORKFLOW)
 
 
 if __name__ == "__main__":

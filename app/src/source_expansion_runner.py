@@ -209,6 +209,10 @@ class SourceExpansionRunner:
     def run_command(self, command: str) -> dict[str, Any]:
         if command == "audit-source-expansion":
             return self.audit_source_expansion()
+        if command == "link-sites-to-ros-parcels":
+            return self.link_sites_to_ros_parcels()
+        if command == "audit-site-parcel-links":
+            return self.audit_site_parcel_links()
         if command == "resolve-title-numbers":
             return self.resolve_title_numbers()
         if command == "audit-title-number-control":
@@ -264,6 +268,172 @@ class SourceExpansionRunner:
         }
         self.logger.info("source_expansion_audit", extra=payload)
         return payload
+
+    def link_sites_to_ros_parcels(self) -> dict[str, Any]:
+        sources = self._sources_for_family("title_number")
+        for source in sources:
+            self._upsert_source_estate(source)
+
+        max_candidates = self._env_int("SITE_PARCEL_LINK_MAX_CANDIDATES_PER_SITE", 10)
+        max_distance_m = self._env_float("SITE_PARCEL_LINK_MAX_DISTANCE_M", 250.0)
+        min_overlap_sqm = self._env_float("SITE_PARCEL_LINK_MIN_OVERLAP_SQM", 1.0)
+        min_operational_area_acres = self._env_float("MIN_OPERATIONAL_AREA_ACRES", 0.0)
+        site_batch_size = max(self._env_int("SITE_PARCEL_LINK_SITE_BATCH_SIZE", 250), 1)
+        proof_counts = self.database.fetch_one(
+            """
+            with relation_stats as (
+                select
+                    (
+                        select reltuples
+                        from pg_class
+                        where oid = to_regclass('public.ros_cadastral_parcels')
+                    ) as ros_reltuples,
+                    (
+                        select reltuples
+                        from pg_class
+                        where oid = to_regclass('landintel.canonical_sites')
+                    ) as canonical_site_reltuples
+            )
+            select
+                case
+                    when ros_reltuples is null then 0::bigint
+                    else greatest(ros_reltuples::bigint, 1::bigint)
+                end as ros_parcel_count,
+                case
+                    when canonical_site_reltuples is null then 0::bigint
+                    else greatest(canonical_site_reltuples::bigint, 1::bigint)
+                end as canonical_site_count
+            from relation_stats
+            """
+        ) or {}
+        anchor_rows = self.database.fetch_all(
+            """
+            select site_location_id
+            from public.constraints_site_anchor()
+            where geometry is not null
+              and authority_name is not null
+              and (
+                  cast(:min_operational_area_acres as numeric) <= 0
+                  or coalesce(area_acres, public.calculate_area_acres(st_area(geometry)::numeric)) >= cast(:min_operational_area_acres as numeric)
+              )
+            order by site_location_id
+            """,
+            {"min_operational_area_acres": min_operational_area_acres},
+        )
+        proof: dict[str, Any] = {
+            "candidate_rows": 0,
+            "candidate_site_count": 0,
+            "primary_link_rows": 0,
+            "exact_overlap_candidate_rows": 0,
+            "nearest_candidate_rows": 0,
+            "processed_site_count": 0,
+            "ros_parcel_count": int(proof_counts.get("ros_parcel_count") or 0),
+            "canonical_site_count": int(proof_counts.get("canonical_site_count") or 0),
+            "max_candidates_per_site": max_candidates,
+            "max_distance_m": max_distance_m,
+            "min_overlap_sqm": min_overlap_sqm,
+            "min_operational_area_acres": min_operational_area_acres,
+            "site_batch_size": site_batch_size,
+        }
+
+        if proof["ros_parcel_count"] and anchor_rows:
+            self.database.execute(
+                """
+                delete from public.site_ros_parcel_link_candidates
+                where link_source = 'ros_cadastral_site_parcel_link'
+                """
+            )
+
+            batches = list(chunked(anchor_rows, site_batch_size))
+            for batch_index, batch in enumerate(batches, start=1):
+                site_location_ids = [
+                    str(row["site_location_id"])
+                    for row in batch
+                    if row.get("site_location_id") is not None
+                ]
+                if not site_location_ids:
+                    continue
+                batch_proof = self.database.fetch_one(
+                    """
+                    select *
+                    from public.refresh_site_ros_parcel_link_candidates_for_sites(
+                        cast(:max_candidates_per_site as integer),
+                        cast(:max_distance_m as numeric),
+                        cast(:min_overlap_sqm as numeric),
+                        cast(:site_location_ids as jsonb)
+                    )
+                    """,
+                    {
+                        "max_candidates_per_site": max_candidates,
+                        "max_distance_m": max_distance_m,
+                        "min_overlap_sqm": min_overlap_sqm,
+                        "site_location_ids": json.dumps(site_location_ids),
+                    },
+                ) or {}
+                for key in (
+                    "candidate_rows",
+                    "candidate_site_count",
+                    "primary_link_rows",
+                    "exact_overlap_candidate_rows",
+                    "nearest_candidate_rows",
+                ):
+                    proof[key] = int(proof.get(key) or 0) + int(batch_proof.get(key) or 0)
+                proof["processed_site_count"] = int(proof.get("processed_site_count") or 0) + len(site_location_ids)
+                self.logger.info(
+                    "site_parcel_link_batch_completed",
+                    extra={
+                        "batch_index": batch_index,
+                        "batch_count": len(batches),
+                        "site_count": len(site_location_ids),
+                        "candidate_rows": int(batch_proof.get("candidate_rows") or 0),
+                        "primary_link_rows": int(batch_proof.get("primary_link_rows") or 0),
+                    },
+                )
+
+        candidate_rows = int(proof.get("candidate_rows") or 0)
+        primary_link_rows = int(proof.get("primary_link_rows") or 0)
+        ros_parcel_count = int(proof.get("ros_parcel_count") or 0)
+        if ros_parcel_count == 0:
+            status = "site_parcel_link_blocked_ros_cadastral_missing"
+            summary = "RoS cadastral parcels are not populated. Run ingest-ros-cadastral before site-to-parcel linking."
+        elif primary_link_rows > 0:
+            status = "site_parcel_links_promoted"
+            summary = "RoS parcel linker generated candidates and promoted high-confidence primary parcel links for site intelligence."
+        elif candidate_rows > 0:
+            status = "site_parcel_candidates_need_review"
+            summary = "RoS parcel linker generated candidates but did not promote high-confidence primary links."
+        else:
+            status = "site_parcel_link_no_candidates"
+            summary = "No RoS cadastral parcel candidates were found for the current operational site scope."
+
+        result = {
+            "command": "link-sites-to-ros-parcels",
+            "source_family": "title_number",
+            "status": status,
+            "summary": summary,
+            **proof,
+        }
+        if sources:
+            self._record_source_freshness(
+                sources[0],
+                "current" if candidate_rows or primary_link_rows else "empty",
+                "reachable" if ros_parcel_count else "blocked_missing_ros_cadastral",
+                candidate_rows,
+                result,
+            )
+        self._record_expansion_event(
+            command_name="link-sites-to-ros-parcels",
+            source_key="ros_cadastral_site_parcel_link",
+            source_family="title_number",
+            status=status,
+            raw_rows=candidate_rows,
+            linked_rows=primary_link_rows,
+            measured_rows=int(proof.get("exact_overlap_candidate_rows") or 0),
+            summary=summary,
+            metadata=result,
+        )
+        self.logger.info("site_parcel_link_bridge", extra=result)
+        return result
 
     def resolve_title_numbers(self) -> dict[str, Any]:
         sources = self._sources_for_family("title_number")
@@ -458,6 +628,60 @@ class SourceExpansionRunner:
             metadata=result,
         )
         self.logger.info("title_number_resolution_bridge", extra=result)
+        return result
+
+    def audit_site_parcel_links(self) -> dict[str, Any]:
+        summary = self.database.fetch_one(
+            """
+            with link_candidates as (
+                select
+                    count(*)::bigint as parcel_candidate_rows,
+                    count(*) filter (where link_status = 'primary')::bigint as primary_candidate_rows,
+                    count(*) filter (where match_method = 'exact_overlap_candidate')::bigint as exact_overlap_candidate_rows,
+                    count(*) filter (where match_method = 'nearest_centroid')::bigint as nearest_candidate_rows,
+                    count(distinct site_id)::bigint as candidate_site_count,
+                    max(updated_at) as latest_candidate_at
+                from public.site_ros_parcel_link_candidates
+                where link_source = 'ros_cadastral_site_parcel_link'
+            ), primary_sites as (
+                select
+                    count(*)::bigint as primary_ros_parcel_site_rows
+                from landintel.canonical_sites
+                where primary_ros_parcel_id is not null
+            )
+            select *
+            from link_candidates
+            cross join primary_sites
+            """
+        ) or {}
+        parcel_candidate_rows = int(summary.get("parcel_candidate_rows") or 0)
+        primary_candidate_rows = int(summary.get("primary_candidate_rows") or 0)
+        primary_ros_parcel_site_rows = int(summary.get("primary_ros_parcel_site_rows") or 0)
+        if primary_candidate_rows > 0 and primary_ros_parcel_site_rows > 0:
+            status = "site_parcel_links_wired_proven"
+        elif parcel_candidate_rows > 0:
+            status = "site_parcel_candidates_need_review"
+        else:
+            status = "site_parcel_links_not_yet_populated"
+        result = {
+            "command": "audit-site-parcel-links",
+            "source_family": "title_number",
+            "status": status,
+            "summary": "RoS site-to-parcel link spine audited from public.site_ros_parcel_link_candidates and landintel.canonical_sites.primary_ros_parcel_id.",
+            **summary,
+        }
+        self._record_expansion_event(
+            command_name="audit-site-parcel-links",
+            source_key="ros_cadastral_site_parcel_link",
+            source_family="title_number",
+            status=status,
+            raw_rows=parcel_candidate_rows,
+            linked_rows=primary_candidate_rows,
+            measured_rows=int(summary.get("exact_overlap_candidate_rows") or 0),
+            summary=result["summary"],
+            metadata=result,
+        )
+        self.logger.info("site_parcel_link_audit", extra=result)
         return result
 
     def _refresh_ros_parcel_title_numbers(self, batch_size: int) -> dict[str, int]:
@@ -2741,6 +2965,8 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         choices=(
             "audit-source-expansion",
+            "link-sites-to-ros-parcels",
+            "audit-site-parcel-links",
             "resolve-title-numbers",
             "audit-title-number-control",
             "ingest-ldp",

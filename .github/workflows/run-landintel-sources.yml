@@ -31,6 +31,8 @@ on:
           - audit-source-estate
           - audit-source-expansion
           - ingest-ros-cadastral
+          - link-sites-to-ros-parcels
+          - audit-site-parcel-links
           - resolve-title-numbers
           - audit-title-number-control
           - discover-ldp-sources
@@ -122,6 +124,10 @@ jobs:
       TITLE_RESOLUTION_MIN_OVERLAP_SQM: "1"
       TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE: "0"
       TITLE_RESOLUTION_SITE_BATCH_SIZE: "500"
+      SITE_PARCEL_LINK_MAX_CANDIDATES_PER_SITE: "10"
+      SITE_PARCEL_LINK_MAX_DISTANCE_M: "250"
+      SITE_PARCEL_LINK_MIN_OVERLAP_SQM: "1"
+      SITE_PARCEL_LINK_SITE_BATCH_SIZE: "250"
       MIRROR_LAND_OBJECTS: "false"
 
     steps:
@@ -239,6 +245,15 @@ jobs:
             python -m src.source_phase_runner run-migrations
             python -m src.main ingest-ros-cadastral
             python -m src.source_expansion_runner_wfs_paging audit-title-number-control
+          elif [ "$SELECTED_COMMAND" = "link-sites-to-ros-parcels" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_estate_registry register-source-estate
+            python -m src.source_policy_discovery register-supplemental-sources
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging link-sites-to-ros-parcels
+            python -m src.source_expansion_runner_wfs_paging audit-site-parcel-links
+          elif [ "$SELECTED_COMMAND" = "audit-site-parcel-links" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_expansion_runner_wfs_paging audit-site-parcel-links
           elif [ "$SELECTED_COMMAND" = "resolve-title-numbers" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate
@@ -252,6 +267,8 @@ jobs:
             python -m src.source_estate_registry probe-source-estate
             python -m src.source_policy_discovery discover-ldp-geonetwork
             python -m src.source_policy_discovery register-settlement-boundaries
+            python -m src.source_expansion_runner_wfs_paging link-sites-to-ros-parcels
+            python -m src.source_expansion_runner_wfs_paging audit-site-parcel-links
             python -m src.source_expansion_runner_wfs_paging resolve-title-numbers
             python -m src.source_expansion_runner_wfs_paging audit-title-number-control
             python -m src.source_estate_registry audit-source-estate

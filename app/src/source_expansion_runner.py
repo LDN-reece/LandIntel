@@ -286,10 +286,30 @@ class SourceExpansionRunner:
         )
         proof_counts = self.database.fetch_one(
             """
+            with relation_stats as (
+                select
+                    (
+                        select reltuples
+                        from pg_class
+                        where oid = to_regclass('public.ros_cadastral_parcels')
+                    ) as ros_reltuples,
+                    (
+                        select reltuples
+                        from pg_class
+                        where oid = to_regclass('landintel.canonical_sites')
+                    ) as canonical_site_reltuples
+            )
             select
-                (select count(*)::bigint from public.ros_cadastral_parcels) as ros_parcel_count,
-                (select count(*)::bigint from public.ros_cadastral_parcels where normalized_title_number is not null) as parcel_title_count,
-                (select count(*)::bigint from public.constraints_site_anchor()) as canonical_site_count
+                case
+                    when ros_reltuples is null then 0::bigint
+                    else greatest(ros_reltuples::bigint, 1::bigint)
+                end as ros_parcel_count,
+                0::bigint as parcel_title_count,
+                case
+                    when canonical_site_reltuples is null then 0::bigint
+                    else greatest(canonical_site_reltuples::bigint, 1::bigint)
+                end as canonical_site_count
+            from relation_stats
             """
         ) or {}
         anchor_rows = self.database.fetch_all(

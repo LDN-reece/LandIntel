@@ -382,8 +382,8 @@ begin
         (select count(*)::bigint from promoted_titles),
         count(*) filter (where resolution_status = 'probable_title')::bigint,
         count(*) filter (where resolution_status = 'needs_licensed_bridge')::bigint,
-        (select count(*)::bigint from public.ros_cadastral_parcels),
-        (select count(*)::bigint from public.constraints_site_anchor())
+        null::bigint,
+        null::bigint
     into
         candidate_rows,
         candidate_site_count,
@@ -671,8 +671,8 @@ begin
         (select count(*)::bigint from promoted_titles),
         count(*) filter (where resolution_status = 'probable_title')::bigint,
         count(*) filter (where resolution_status = 'needs_licensed_bridge')::bigint,
-        (select count(*)::bigint from public.ros_cadastral_parcels),
-        (select count(*)::bigint from public.constraints_site_anchor())
+        null::bigint,
+        null::bigint
     into
         candidate_rows,
         candidate_site_count,

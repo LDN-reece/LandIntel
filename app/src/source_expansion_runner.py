@@ -862,47 +862,65 @@ class SourceExpansionRunner:
                     count(*)::integer as scan_state_row_count
                 from public.site_constraint_measurement_scan_state
                 group by constraint_layer_id
+            ), layer_rows as (
+                select
+                    layer.layer_key,
+                    layer.layer_name,
+                    layer.source_family,
+                    count(feature.id)::integer as source_feature_count,
+                    coalesce(scan_state.scan_state_row_count, 0)::integer as scan_state_row_count,
+                    case layer.source_family
+                        when 'sepa_flood' then 0
+                        when 'tpo' then 1
+                        when 'conservation_areas' then 2
+                        when 'naturescot' then 3
+                        when 'hes' then 4
+                        when 'greenbelt' then 5
+                        when 'contaminated_land' then 6
+                        when 'culverts' then 7
+                        when 'coal_authority' then 8
+                        else 9
+                    end as source_family_priority
+                from public.constraint_layer_registry as layer
+                join public.constraint_source_features as feature
+                  on feature.constraint_layer_id = layer.id
+                left join scan_state
+                  on scan_state.constraint_layer_id = layer.id
+                where layer.is_active = true
+                  and (
+                      cast(:layer_key_filter as text) is null
+                      or layer.layer_key = cast(:layer_key_filter as text)
+                  )
+                  and (
+                      cast(:source_family_filter as text) is null
+                      or layer.source_family = cast(:source_family_filter as text)
+                  )
+                group by
+                    layer.id,
+                    layer.layer_key,
+                    layer.layer_name,
+                    layer.source_family,
+                    scan_state.scan_state_row_count
+            ), ranked_layers as (
+                select
+                    *,
+                    row_number() over (
+                        partition by source_family
+                        order by scan_state_row_count, layer_key
+                    ) as source_family_layer_rank
+                from layer_rows
             )
             select
                 layer.layer_key,
                 layer.layer_name,
                 layer.source_family,
-                count(feature.id)::integer as source_feature_count,
-                coalesce(scan_state.scan_state_row_count, 0)::integer as scan_state_row_count
-            from public.constraint_layer_registry as layer
-            join public.constraint_source_features as feature
-              on feature.constraint_layer_id = layer.id
-            left join scan_state
-              on scan_state.constraint_layer_id = layer.id
-            where layer.is_active = true
-              and (
-                  cast(:layer_key_filter as text) is null
-                  or layer.layer_key = cast(:layer_key_filter as text)
-              )
-              and (
-                  cast(:source_family_filter as text) is null
-                  or layer.source_family = cast(:source_family_filter as text)
-              )
-            group by
-                layer.id,
-                layer.layer_key,
-                layer.layer_name,
-                layer.source_family,
-                scan_state.scan_state_row_count
+                layer.source_feature_count,
+                layer.scan_state_row_count
+            from ranked_layers as layer
             order by
-                coalesce(scan_state.scan_state_row_count, 0),
-                case layer.source_family
-                    when 'sepa_flood' then 0
-                    when 'tpo' then 1
-                    when 'conservation_areas' then 2
-                    when 'naturescot' then 3
-                    when 'hes' then 4
-                    when 'greenbelt' then 5
-                    when 'contaminated_land' then 6
-                    when 'culverts' then 7
-                    when 'coal_authority' then 8
-                    else 9
-                end,
+                layer.source_family_layer_rank,
+                layer.scan_state_row_count,
+                layer.source_family_priority,
                 layer.layer_key
             """,
             {"layer_key_filter": layer_key_filter, "source_family_filter": source_family_filter},
@@ -934,6 +952,8 @@ class SourceExpansionRunner:
             "change_event_count": 0,
             "affected_site_count": 0,
             "material_change_count": 0,
+            "failed_batch_count": 0,
+            "failed_layers": [],
             "layers": [],
         }
 
@@ -960,6 +980,8 @@ class SourceExpansionRunner:
                 "change_event_count": 0,
                 "affected_site_count": 0,
                 "material_change_count": 0,
+                "failed_batch_count": 0,
+                "last_error": None,
             }
             after_site_location_id: str | None = None
 
@@ -1021,23 +1043,47 @@ class SourceExpansionRunner:
                     break
 
                 site_location_ids = [str(row["site_location_id"]) for row in site_rows]
-                batch_proof = self.database.fetch_one(
-                    """
-                    select *
-                    from public.refresh_constraint_measurements_for_layer_sites(
-                        :layer_key,
-                        cast(:site_location_ids as text[]),
-                        cast(:overlap_delta_pct as numeric),
-                        cast(:distance_delta_m as numeric)
+                try:
+                    batch_proof = self.database.fetch_one(
+                        """
+                        select *
+                        from public.refresh_constraint_measurements_for_layer_sites(
+                            :layer_key,
+                            cast(:site_location_ids as text[]),
+                            cast(:overlap_delta_pct as numeric),
+                            cast(:distance_delta_m as numeric)
+                        )
+                        """,
+                        {
+                            "layer_key": layer_key,
+                            "site_location_ids": site_location_ids,
+                            "overlap_delta_pct": overlap_delta_pct,
+                            "distance_delta_m": distance_delta_m,
+                        },
+                    ) or {}
+                except Exception as exc:
+                    error_message = str(exc)
+                    layer_payload["failed_batch_count"] += 1
+                    layer_payload["last_error"] = error_message[:1000]
+                    proof["failed_batch_count"] += 1
+                    proof["failed_layers"].append(
+                        {
+                            "layer_key": layer_key,
+                            "site_count": len(site_location_ids),
+                            "last_site_location_id": site_location_ids[-1],
+                            "error": error_message[:1000],
+                        }
                     )
-                    """,
-                    {
-                        "layer_key": layer_key,
-                        "site_location_ids": site_location_ids,
-                        "overlap_delta_pct": overlap_delta_pct,
-                        "distance_delta_m": distance_delta_m,
-                    },
-                ) or {}
+                    self.logger.warning(
+                        "constraint_measurement_batch_failed",
+                        extra={
+                            "layer_key": layer_key,
+                            "site_batch_count": len(site_location_ids),
+                            "last_site_location_id": site_location_ids[-1],
+                            "error": error_message,
+                        },
+                    )
+                    break
                 after_site_location_id = site_location_ids[-1]
                 layer_payload["processed_site_count"] += len(site_location_ids)
                 layer_payload["processed_batch_count"] += 1
@@ -1070,7 +1116,9 @@ class SourceExpansionRunner:
 
             proof["layers"].append(layer_payload)
 
-        if proof["measurement_count"]:
+        if proof["failed_batch_count"]:
+            status = "constraint_measurements_completed_with_layer_failures"
+        elif proof["measurement_count"]:
             status = "constraint_measurements_refreshed"
         elif proof["processed_site_count"]:
             status = "constraint_measurements_scanned_no_material_change"
@@ -1117,37 +1165,55 @@ class SourceExpansionRunner:
 
         layers = self.database.fetch_all(
             """
+            with layer_rows as (
+                select
+                    layer.layer_key,
+                    layer.layer_name,
+                    layer.source_family,
+                    count(feature.id)::integer as source_feature_count,
+                    case layer.source_family
+                        when 'sepa_flood' then 0
+                        when 'tpo' then 1
+                        when 'conservation_areas' then 2
+                        when 'naturescot' then 3
+                        when 'hes' then 4
+                        when 'greenbelt' then 5
+                        when 'contaminated_land' then 6
+                        when 'culverts' then 7
+                        when 'coal_authority' then 8
+                        else 9
+                    end as source_family_priority
+                from public.constraint_layer_registry as layer
+                join public.constraint_source_features as feature
+                  on feature.constraint_layer_id = layer.id
+                where layer.is_active = true
+                  and (
+                      cast(:layer_key_filter as text) is null
+                      or layer.layer_key = cast(:layer_key_filter as text)
+                  )
+                  and (
+                      cast(:source_family_filter as text) is null
+                      or layer.source_family = cast(:source_family_filter as text)
+                  )
+                group by layer.layer_key, layer.layer_name, layer.source_family
+            ), ranked_layers as (
+                select
+                    *,
+                    row_number() over (
+                        partition by source_family
+                        order by layer_key
+                    ) as source_family_layer_rank
+                from layer_rows
+            )
             select
                 layer.layer_key,
                 layer.layer_name,
                 layer.source_family,
-                count(feature.id)::integer as source_feature_count
-            from public.constraint_layer_registry as layer
-            join public.constraint_source_features as feature
-              on feature.constraint_layer_id = layer.id
-            where layer.is_active = true
-              and (
-                  cast(:layer_key_filter as text) is null
-                  or layer.layer_key = cast(:layer_key_filter as text)
-              )
-              and (
-                  cast(:source_family_filter as text) is null
-                  or layer.source_family = cast(:source_family_filter as text)
-              )
-            group by layer.layer_key, layer.layer_name, layer.source_family
+                layer.source_feature_count
+            from ranked_layers as layer
             order by
-                case layer.source_family
-                    when 'sepa_flood' then 0
-                    when 'tpo' then 1
-                    when 'conservation_areas' then 2
-                    when 'naturescot' then 3
-                    when 'hes' then 4
-                    when 'greenbelt' then 5
-                    when 'contaminated_land' then 6
-                    when 'culverts' then 7
-                    when 'coal_authority' then 8
-                    else 9
-                end,
+                layer.source_family_layer_rank,
+                layer.source_family_priority,
                 layer.layer_key
             """,
             {"layer_key_filter": layer_key_filter, "source_family_filter": source_family_filter},
@@ -1173,6 +1239,8 @@ class SourceExpansionRunner:
             "change_event_count": 0,
             "affected_site_count": 0,
             "material_change_count": 0,
+            "failed_layer_count": 0,
+            "failed_layers": [],
             "layers": [],
         }
 
@@ -1215,23 +1283,58 @@ class SourceExpansionRunner:
                 self.logger.info("constraint_measurement_debug_layer_completed", extra=layer_payload)
                 continue
 
-            batch_proof = self.database.fetch_one(
-                """
-                select *
-                from public.refresh_constraint_measurements_for_layer_sites(
-                    :layer_key,
-                    cast(:site_location_ids as text[]),
-                    cast(:overlap_delta_pct as numeric),
-                    cast(:distance_delta_m as numeric)
-                )
-                """,
-                {
+            try:
+                batch_proof = self.database.fetch_one(
+                    """
+                    select *
+                    from public.refresh_constraint_measurements_for_layer_sites(
+                        :layer_key,
+                        cast(:site_location_ids as text[]),
+                        cast(:overlap_delta_pct as numeric),
+                        cast(:distance_delta_m as numeric)
+                    )
+                    """,
+                    {
+                        "layer_key": layer_key,
+                        "site_location_ids": site_location_ids,
+                        "overlap_delta_pct": overlap_delta_pct,
+                        "distance_delta_m": distance_delta_m,
+                    },
+                ) or {}
+            except Exception as exc:
+                error_message = str(exc)
+                layer_payload = {
                     "layer_key": layer_key,
-                    "site_location_ids": site_location_ids,
-                    "overlap_delta_pct": overlap_delta_pct,
-                    "distance_delta_m": distance_delta_m,
-                },
-            ) or {}
+                    "layer_name": layer.get("layer_name"),
+                    "source_family": layer.get("source_family"),
+                    "source_feature_count": int(layer.get("source_feature_count") or 0),
+                    "debug_site_count": len(site_location_ids),
+                    "sample_method": sample_method,
+                    "status": "measurement_failed",
+                    "last_error": error_message[:1000],
+                    "measurement_count": 0,
+                    "summary_count": 0,
+                    "friction_fact_count": 0,
+                    "evidence_count": 0,
+                    "signal_count": 0,
+                    "change_event_count": 0,
+                    "affected_site_count": 0,
+                    "material_change_count": 0,
+                }
+                proof["failed_layer_count"] += 1
+                proof["failed_layers"].append(
+                    {
+                        "layer_key": layer_key,
+                        "site_count": len(site_location_ids),
+                        "error": error_message[:1000],
+                    }
+                )
+                proof["layers"].append(layer_payload)
+                self.logger.warning(
+                    "constraint_measurement_debug_layer_failed",
+                    extra={"site_count": len(site_location_ids), **layer_payload},
+                )
+                continue
             layer_payload: dict[str, Any] = {
                 "layer_key": layer_key,
                 "layer_name": layer.get("layer_name"),
@@ -1286,11 +1389,12 @@ class SourceExpansionRunner:
         )
         proof["family_coverage"] = family_rows
         proof["measured_source_family_count"] = len({str(row.get("source_family")) for row in family_rows})
-        proof["status"] = (
-            "constraint_debug_multi_family_proven"
-            if proof["measured_source_family_count"] > 1 and proof["measurement_count"] > 0
-            else "constraint_debug_completed_single_or_no_family"
-        )
+        if proof["failed_layer_count"]:
+            proof["status"] = "constraint_debug_completed_with_layer_failures"
+        elif proof["measured_source_family_count"] > 1 and proof["measurement_count"] > 0:
+            proof["status"] = "constraint_debug_multi_family_proven"
+        else:
+            proof["status"] = "constraint_debug_completed_single_or_no_family"
         self._record_expansion_event(
             command_name="measure-constraints-debug-all-layers",
             source_key=None,

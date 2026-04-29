@@ -219,6 +219,8 @@ class SourceExpansionRunner:
             return self.audit_title_number_control()
         if command == "measure-constraints":
             return self.measure_constraints()
+        if command == "measure-constraints-debug-all-layers":
+            return self.measure_constraints_debug_all_layers()
         if command == "audit-constraint-measurements":
             return self.audit_constraint_measurements()
         if command == "promote-ldp-authority-source":
@@ -830,6 +832,13 @@ class SourceExpansionRunner:
         authority_filter = (os.getenv("CONSTRAINT_MEASURE_AUTHORITY") or "").strip() or None
         batch_size = max(self._env_int("CONSTRAINT_MEASURE_SITE_BATCH_SIZE", 250), 1)
         max_batches = max(self._env_int("CONSTRAINT_MEASURE_MAX_BATCHES", 0), 0)
+        max_batches_per_layer = max(
+            self._env_int(
+                "CONSTRAINT_MEASURE_MAX_BATCHES_PER_LAYER",
+                1 if max_batches else 0,
+            ),
+            0,
+        )
         runtime_minutes = max(self._env_int("CONSTRAINT_MEASURE_RUNTIME_MINUTES", 40), 1)
         min_area_acres = self._env_float("CONSTRAINT_MEASURE_MIN_AREA_ACRES", 0.0)
         overlap_delta_pct = self._env_float("CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT", 1.0)
@@ -847,14 +856,24 @@ class SourceExpansionRunner:
 
         layers = self.database.fetch_all(
             """
+            with scan_state as (
+                select
+                    constraint_layer_id,
+                    count(*)::integer as scan_state_row_count
+                from public.site_constraint_measurement_scan_state
+                group by constraint_layer_id
+            )
             select
                 layer.layer_key,
                 layer.layer_name,
                 layer.source_family,
-                count(feature.id)::integer as source_feature_count
+                count(feature.id)::integer as source_feature_count,
+                coalesce(scan_state.scan_state_row_count, 0)::integer as scan_state_row_count
             from public.constraint_layer_registry as layer
             join public.constraint_source_features as feature
               on feature.constraint_layer_id = layer.id
+            left join scan_state
+              on scan_state.constraint_layer_id = layer.id
             where layer.is_active = true
               and (
                   cast(:layer_key_filter as text) is null
@@ -864,8 +883,27 @@ class SourceExpansionRunner:
                   cast(:source_family_filter as text) is null
                   or layer.source_family = cast(:source_family_filter as text)
               )
-            group by layer.layer_key, layer.layer_name, layer.source_family
-            order by layer.source_family, layer.layer_key
+            group by
+                layer.id,
+                layer.layer_key,
+                layer.layer_name,
+                layer.source_family,
+                scan_state.scan_state_row_count
+            order by
+                coalesce(scan_state.scan_state_row_count, 0),
+                case layer.source_family
+                    when 'sepa_flood' then 0
+                    when 'tpo' then 1
+                    when 'conservation_areas' then 2
+                    when 'naturescot' then 3
+                    when 'hes' then 4
+                    when 'greenbelt' then 5
+                    when 'contaminated_land' then 6
+                    when 'culverts' then 7
+                    when 'coal_authority' then 8
+                    else 9
+                end,
+                layer.layer_key
             """,
             {"layer_key_filter": layer_key_filter, "source_family_filter": source_family_filter},
         )
@@ -878,6 +916,7 @@ class SourceExpansionRunner:
             "authority_filter": authority_filter,
             "batch_size": batch_size,
             "max_batches": max_batches,
+            "max_batches_per_layer": max_batches_per_layer,
             "runtime_minutes": runtime_minutes,
             "min_area_acres": min_area_acres,
             "refresh_existing": refresh_existing,
@@ -910,6 +949,7 @@ class SourceExpansionRunner:
                 "layer_name": layer.get("layer_name"),
                 "source_family": layer.get("source_family"),
                 "source_feature_count": int(layer.get("source_feature_count") or 0),
+                "starting_scan_state_row_count": int(layer.get("scan_state_row_count") or 0),
                 "processed_site_count": 0,
                 "processed_batch_count": 0,
                 "measurement_count": 0,
@@ -925,6 +965,8 @@ class SourceExpansionRunner:
 
             while datetime.now(timezone.utc) < deadline:
                 if max_batches and proof["processed_batch_count"] >= max_batches:
+                    break
+                if max_batches_per_layer and layer_payload["processed_batch_count"] >= max_batches_per_layer:
                     break
                 site_rows = self.database.fetch_all(
                     """
@@ -1053,6 +1095,270 @@ class SourceExpansionRunner:
         self.logger.info("constraint_measurement_command_completed", extra=proof)
         return proof
 
+    def measure_constraints_debug_all_layers(self) -> dict[str, Any]:
+        layer_key_filter = (os.getenv("CONSTRAINT_MEASURE_LAYER_KEY") or "").strip() or None
+        source_family_filter = (os.getenv("CONSTRAINT_MEASURE_SOURCE_FAMILY") or "").strip() or None
+        authority_filter = (os.getenv("CONSTRAINT_MEASURE_AUTHORITY") or "").strip() or None
+        site_count = max(self._env_int("CONSTRAINT_MEASURE_DEBUG_SITE_COUNT", 10), 1)
+        feature_probe_limit = max(self._env_int("CONSTRAINT_MEASURE_DEBUG_FEATURE_PROBE_LIMIT", 50), 1)
+        overlap_delta_pct = self._env_float("CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT", 1.0)
+        distance_delta_m = self._env_float("CONSTRAINT_MATERIAL_DISTANCE_DELTA_M", 25.0)
+
+        for source_family in sorted(CONSTRAINT_FAMILIES):
+            for source in self._sources_for_family(source_family):
+                self._upsert_source_estate(source)
+
+        layers = self.database.fetch_all(
+            """
+            select
+                layer.layer_key,
+                layer.layer_name,
+                layer.source_family,
+                count(feature.id)::integer as source_feature_count
+            from public.constraint_layer_registry as layer
+            join public.constraint_source_features as feature
+              on feature.constraint_layer_id = layer.id
+            where layer.is_active = true
+              and (
+                  cast(:layer_key_filter as text) is null
+                  or layer.layer_key = cast(:layer_key_filter as text)
+              )
+              and (
+                  cast(:source_family_filter as text) is null
+                  or layer.source_family = cast(:source_family_filter as text)
+              )
+            group by layer.layer_key, layer.layer_name, layer.source_family
+            order by
+                case layer.source_family
+                    when 'sepa_flood' then 0
+                    when 'tpo' then 1
+                    when 'conservation_areas' then 2
+                    when 'naturescot' then 3
+                    when 'hes' then 4
+                    when 'greenbelt' then 5
+                    when 'contaminated_land' then 6
+                    when 'culverts' then 7
+                    when 'coal_authority' then 8
+                    else 9
+                end,
+                layer.layer_key
+            """,
+            {"layer_key_filter": layer_key_filter, "source_family_filter": source_family_filter},
+        )
+        site_rows = self._debug_constraint_site_sample(site_count, feature_probe_limit, authority_filter)
+        site_location_ids = [str(row["site_location_id"]) for row in site_rows if row.get("site_location_id")]
+        if not site_location_ids:
+            site_rows = self.database.fetch_all(
+                """
+                select site_location_id
+                from public.constraints_site_anchor()
+                where geometry is not null
+                  and (
+                      cast(:authority_filter as text) is null
+                      or lower(authority_name) = lower(cast(:authority_filter as text))
+                  )
+                order by site_location_id
+                limit :site_count
+                """,
+                {"site_count": site_count, "authority_filter": authority_filter},
+            )
+            site_location_ids = [str(row["site_location_id"]) for row in site_rows if row.get("site_location_id")]
+
+        proof: dict[str, Any] = {
+            "command": "measure-constraints-debug-all-layers",
+            "layer_key_filter": layer_key_filter,
+            "source_family_filter": source_family_filter,
+            "authority_filter": authority_filter,
+            "debug_site_count": len(site_location_ids),
+            "requested_debug_site_count": site_count,
+            "feature_probe_limit": feature_probe_limit,
+            "layer_count": len(layers),
+            "source_feature_count": sum(int(layer.get("source_feature_count") or 0) for layer in layers),
+            "processed_site_layer_pair_count": 0,
+            "measurement_count": 0,
+            "summary_count": 0,
+            "friction_fact_count": 0,
+            "evidence_count": 0,
+            "signal_count": 0,
+            "change_event_count": 0,
+            "affected_site_count": 0,
+            "material_change_count": 0,
+            "layers": [],
+        }
+
+        for layer in layers:
+            layer_key = str(layer["layer_key"])
+            batch_proof = self.database.fetch_one(
+                """
+                select *
+                from public.refresh_constraint_measurements_for_layer_sites(
+                    :layer_key,
+                    cast(:site_location_ids as text[]),
+                    cast(:overlap_delta_pct as numeric),
+                    cast(:distance_delta_m as numeric)
+                )
+                """,
+                {
+                    "layer_key": layer_key,
+                    "site_location_ids": site_location_ids,
+                    "overlap_delta_pct": overlap_delta_pct,
+                    "distance_delta_m": distance_delta_m,
+                },
+            ) or {}
+            layer_payload: dict[str, Any] = {
+                "layer_key": layer_key,
+                "layer_name": layer.get("layer_name"),
+                "source_family": layer.get("source_family"),
+                "source_feature_count": int(layer.get("source_feature_count") or 0),
+                **batch_proof,
+            }
+            proof["processed_site_layer_pair_count"] += len(site_location_ids)
+            for key in (
+                "measurement_count",
+                "summary_count",
+                "friction_fact_count",
+                "evidence_count",
+                "signal_count",
+                "change_event_count",
+                "affected_site_count",
+                "material_change_count",
+            ):
+                increment = int(batch_proof.get(key) or 0)
+                proof[key] += increment
+            proof["layers"].append(layer_payload)
+            self.logger.info(
+                "constraint_measurement_debug_layer_completed",
+                extra={"site_count": len(site_location_ids), **layer_payload},
+            )
+
+        family_rows = self.database.fetch_all(
+            """
+            select
+                layer.source_family,
+                layer.constraint_group,
+                count(measurement.id)::integer as measurement_count,
+                count(distinct measurement.site_location_id)::integer as site_count,
+                count(*) filter (where measurement.overlap_character is null)::integer as missing_overlap_character_count
+            from public.site_constraint_measurements as measurement
+            join public.constraint_layer_registry as layer
+              on layer.id = measurement.constraint_layer_id
+            where measurement.site_location_id = any(cast(:site_location_ids as text[]))
+            group by layer.source_family, layer.constraint_group
+            order by measurement_count desc, layer.source_family, layer.constraint_group
+            """,
+            {"site_location_ids": site_location_ids},
+        )
+        proof["family_coverage"] = family_rows
+        proof["measured_source_family_count"] = len({str(row.get("source_family")) for row in family_rows})
+        proof["status"] = (
+            "constraint_debug_multi_family_proven"
+            if proof["measured_source_family_count"] > 1 and proof["measurement_count"] > 0
+            else "constraint_debug_completed_single_or_no_family"
+        )
+        self._record_expansion_event(
+            command_name="measure-constraints-debug-all-layers",
+            source_key=None,
+            source_family="constraint_measurement",
+            status=str(proof["status"]),
+            raw_rows=int(proof["source_feature_count"]),
+            linked_rows=int(proof["affected_site_count"]),
+            measured_rows=int(proof["measurement_count"]),
+            evidence_rows=int(proof["evidence_count"]),
+            signal_rows=int(proof["signal_count"]),
+            change_event_rows=int(proof["change_event_count"]),
+            summary="Debug measurement forced a fixed site sample across every active populated constraint layer.",
+            metadata=proof,
+        )
+        self.logger.info("constraint_measurement_debug_all_layers_completed", extra=proof)
+        return proof
+
+    def _debug_constraint_site_sample(
+        self,
+        site_count: int,
+        feature_probe_limit: int,
+        authority_filter: str | None,
+    ) -> list[dict[str, Any]]:
+        return self.database.fetch_all(
+            """
+            with active_layers as (
+                select
+                    layer.id,
+                    layer.source_family,
+                    layer.buffer_distance_m,
+                    case layer.source_family
+                        when 'sepa_flood' then 0
+                        when 'tpo' then 1
+                        when 'conservation_areas' then 2
+                        when 'naturescot' then 3
+                        when 'hes' then 4
+                        when 'greenbelt' then 5
+                        when 'contaminated_land' then 6
+                        when 'culverts' then 7
+                        when 'coal_authority' then 8
+                        else 9
+                    end as family_priority
+                from public.constraint_layer_registry as layer
+                where layer.is_active = true
+                  and exists (
+                      select 1
+                      from public.constraint_source_features as feature
+                      where feature.constraint_layer_id = layer.id
+                  )
+            ), feature_sample as (
+                select
+                    active_layers.source_family,
+                    active_layers.family_priority,
+                    active_layers.buffer_distance_m,
+                    feature.geometry
+                from active_layers
+                join lateral (
+                    select geometry
+                    from public.constraint_source_features as feature
+                    where feature.constraint_layer_id = active_layers.id
+                      and feature.geometry is not null
+                    order by feature.id
+                    limit :feature_probe_limit
+                ) as feature on true
+            ), candidate_hits as (
+                select distinct on (anchor.site_location_id)
+                    anchor.site_location_id,
+                    min(feature_sample.family_priority) over (partition by anchor.site_location_id) as family_priority
+                from feature_sample
+                join lateral (
+                    select site_location_id, geometry, authority_name
+                    from public.constraints_site_anchor() as anchor
+                    where anchor.geometry is not null
+                      and (
+                          cast(:authority_filter as text) is null
+                          or lower(anchor.authority_name) = lower(cast(:authority_filter as text))
+                      )
+                      and anchor.geometry OPERATOR(extensions.&&)
+                          st_expand(feature_sample.geometry, greatest(feature_sample.buffer_distance_m, 0))
+                      and (
+                            (
+                                feature_sample.buffer_distance_m > 0
+                                and st_dwithin(anchor.geometry, feature_sample.geometry, feature_sample.buffer_distance_m)
+                            )
+                            or (
+                                feature_sample.buffer_distance_m = 0
+                                and st_intersects(anchor.geometry, feature_sample.geometry)
+                            )
+                      )
+                    limit 1
+                ) as anchor on true
+            )
+            select site_location_id
+            from candidate_hits
+            order by family_priority, site_location_id
+            limit :site_count
+            """,
+            {
+                "site_count": site_count,
+                "feature_probe_limit": feature_probe_limit,
+                "authority_filter": authority_filter,
+            },
+        )
+
     def audit_constraint_measurements(self) -> dict[str, Any]:
         coverage = self.database.fetch_one("select * from analytics.v_constraint_measurement_coverage") or {}
         layer_coverage = self.database.fetch_all(
@@ -1086,11 +1392,70 @@ class SourceExpansionRunner:
             limit 10
             """
         )
+        family_coverage = self.database.fetch_all(
+            """
+            select
+                layer.source_family,
+                layer.constraint_group,
+                count(measurement.id)::integer as measurement_count,
+                count(distinct measurement.site_location_id)::integer as measured_site_count,
+                count(fact.id)::integer as commercial_friction_fact_count,
+                count(*) filter (where measurement.overlap_character is null)::integer as missing_overlap_character_count,
+                array_agg(distinct measurement.overlap_character order by measurement.overlap_character)
+                    filter (where measurement.overlap_character is not null) as overlap_characters
+            from public.site_constraint_measurements as measurement
+            join public.constraint_layer_registry as layer
+              on layer.id = measurement.constraint_layer_id
+            left join public.site_commercial_friction_facts as fact
+              on fact.constraint_layer_id = measurement.constraint_layer_id
+             and fact.site_location_id = measurement.site_location_id
+            group by layer.source_family, layer.constraint_group
+            order by measurement_count desc, layer.source_family, layer.constraint_group
+            """
+        )
+        flood_proof = self.database.fetch_one(
+            """
+            select
+                (select count(*)::integer from landintel.flood_records) as flood_record_count,
+                (
+                    select count(*)::integer
+                    from public.constraint_source_features as feature
+                    join public.constraint_layer_registry as layer
+                      on layer.id = feature.constraint_layer_id
+                    where layer.source_family = 'sepa_flood'
+                ) as sepa_flood_source_feature_count,
+                (
+                    select count(*)::integer
+                    from public.site_constraint_measurements as measurement
+                    join public.constraint_layer_registry as layer
+                      on layer.id = measurement.constraint_layer_id
+                    where layer.source_family = 'sepa_flood'
+                ) as sepa_flood_measurement_count,
+                (
+                    select count(distinct measurement.site_location_id)::integer
+                    from public.site_constraint_measurements as measurement
+                    join public.constraint_layer_registry as layer
+                      on layer.id = measurement.constraint_layer_id
+                    where layer.source_family = 'sepa_flood'
+                ) as sepa_flood_measured_site_count
+            """
+        ) or {}
+        overlap_character_proof = self.database.fetch_all(
+            """
+            select
+                overlap_character,
+                count(*)::integer as measurement_count
+            from public.site_constraint_measurements
+            group by overlap_character
+            order by measurement_count desc, overlap_character
+            """
+        )
         status = (
             "constraint_measurements_live_proven"
             if int(coverage.get("measured_site_constraint_row_count") or 0) > 0
             and int(coverage.get("grouped_summary_row_count") or 0) > 0
             and int(coverage.get("commercial_friction_fact_count") or 0) > 0
+            and int(coverage.get("missing_overlap_character_count") or 0) == 0
             else "constraint_measurements_not_yet_proven"
         )
         result = {
@@ -1098,6 +1463,9 @@ class SourceExpansionRunner:
             "status": status,
             "coverage": coverage,
             "layer_coverage": layer_coverage,
+            "family_coverage": family_coverage,
+            "flood_proof": flood_proof,
+            "overlap_character_proof": overlap_character_proof,
             "top_measurements": top_measurements,
             "multi_group_sites": multi_group_sites,
         }
@@ -1258,12 +1626,18 @@ class SourceExpansionRunner:
                 signal_rows += int(proof.get("signal_count") or 0)
                 affected_site_count += int(proof.get("affected_site_count") or 0)
                 layer_results.append({**layer, **proof})
+        flood_record_rows = (
+            self._sync_flood_records_from_constraint_features()
+            if source_family == "sepa_flood"
+            else 0
+        )
 
         result = {
             "command": command,
             "source_family": source_family,
             "source_keys": [source["source_key"] for source in sources],
             "raw_rows": raw_rows,
+            "flood_record_rows": flood_record_rows,
             "measured_rows": measured_rows,
             "linked_rows": affected_site_count,
             "evidence_rows": evidence_rows,
@@ -2473,6 +2847,15 @@ class SourceExpansionRunner:
             """,
             params,
         )
+        if source_family == "sepa_flood":
+            self.database.execute(
+                """
+                delete from landintel.flood_records
+                where flood_source = 'sepa_flood'
+                   or flood_source like 'sepa_flood:%'
+                   or raw_payload ->> 'source_expansion_constraint' = 'true'
+                """
+            )
         self.database.execute(
             "delete from landintel.site_signals where source_family = :source_family",
             params,
@@ -2485,6 +2868,62 @@ class SourceExpansionRunner:
             """,
             params,
         )
+
+    def _sync_flood_records_from_constraint_features(self) -> int:
+        proof = self.database.fetch_one(
+            """
+            with deleted_duplicates as (
+                delete from landintel.flood_records as duplicate
+                using landintel.flood_records as keeper
+                where duplicate.source_record_id = keeper.source_record_id
+                  and duplicate.flood_source = keeper.flood_source
+                  and duplicate.id > keeper.id
+                returning duplicate.id
+            ), synced as (
+                insert into landintel.flood_records (
+                    source_record_id,
+                    authority_name,
+                    flood_source,
+                    severity_band,
+                    geometry,
+                    raw_payload,
+                    created_at,
+                    updated_at
+                )
+                select distinct on (feature.source_feature_key, layer.layer_key)
+                    feature.source_feature_key,
+                    feature.authority_name,
+                    layer.layer_key,
+                    coalesce(feature.severity_label, layer.layer_name),
+                    feature.geometry,
+                    coalesce(feature.metadata, '{}'::jsonb)
+                        || jsonb_build_object(
+                            'constraint_layer_key', layer.layer_key,
+                            'constraint_group', layer.constraint_group,
+                            'constraint_type', layer.constraint_type,
+                            'source_expansion_constraint', true,
+                            'flood_constraint_feature_id', feature.id
+                        ),
+                    now(),
+                    now()
+                from public.constraint_source_features as feature
+                join public.constraint_layer_registry as layer
+                  on layer.id = feature.constraint_layer_id
+                where layer.source_family = 'sepa_flood'
+                  and feature.geometry is not null
+                on conflict (source_record_id, flood_source) do update set
+                    authority_name = excluded.authority_name,
+                    severity_band = excluded.severity_band,
+                    geometry = excluded.geometry,
+                    raw_payload = excluded.raw_payload,
+                    updated_at = now()
+                returning id
+            )
+            select count(*)::integer as flood_record_rows
+            from synced
+            """
+        ) or {}
+        return int(proof.get("flood_record_rows") or 0)
 
     def _clear_future_context_publish_rows(self, source_family: str, source_dataset: str) -> None:
         params = {"source_family": source_family, "source_dataset": source_dataset}
@@ -3266,6 +3705,7 @@ def build_parser() -> argparse.ArgumentParser:
             "resolve-title-numbers",
             "audit-title-number-control",
             "measure-constraints",
+            "measure-constraints-debug-all-layers",
             "audit-constraint-measurements",
             "ingest-ldp",
             "ingest-settlement-boundaries",

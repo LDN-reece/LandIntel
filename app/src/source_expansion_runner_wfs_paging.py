@@ -131,6 +131,11 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
                     measurement_deferred_layers += 1
                     layer_payload.update(self._deferred_measurement_payload(gate["gate_reason"]))
                 layer_results.append(layer_payload)
+        flood_record_rows = (
+            self._sync_flood_records_from_constraint_features()
+            if source_family == "sepa_flood"
+            else 0
+        )
 
         if raw_rows == 0:
             event_status = "empty_source_response"
@@ -146,6 +151,7 @@ class PagedWfsSourceExpansionRunner(SourceExpansionRunner):
             "source_family": source_family,
             "source_keys": [source["source_key"] for source in sources],
             "raw_rows": raw_rows,
+            "flood_record_rows": flood_record_rows,
             "measured_rows": measured_rows,
             "linked_rows": affected_site_count,
             "evidence_rows": evidence_rows,

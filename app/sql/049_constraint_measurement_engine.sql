@@ -202,6 +202,10 @@ as $$
         when coalesce(p_intersects, false) = false and coalesce(p_within_buffer, false) then 'proximity-only'
         when coalesce(p_intersects, false) = false then 'unknown'
         when p_feature_geometry is not null and st_dimension(p_feature_geometry) = 1 then 'linear'
+        when p_feature_geometry is not null
+         and st_dimension(p_feature_geometry) = 2
+         and st_numgeometries(p_feature_geometry) > 1
+         and coalesce(p_overlap_pct_of_site, 0) > 0 then 'fragmented'
         when coalesce(p_overlap_pct_of_site, 0) >= 50 then 'central'
         when coalesce(p_overlap_pct_of_site, 0) >= 15 then 'core-based'
         when coalesce(p_overlap_pct_of_site, 0) > 0 then 'edge-based'
@@ -234,6 +238,75 @@ as $$
         coalesce(p_constraint_character, 'unknown')
     ));
 $$;
+
+update public.site_constraint_measurements as measurement
+set
+    feature_geometry_dimension = coalesce(
+        measurement.feature_geometry_dimension,
+        st_dimension(feature.geometry)
+    ),
+    overlap_character = coalesce(
+        public.classify_constraint_overlap(
+            measurement.intersects,
+            measurement.within_buffer,
+            measurement.overlap_pct_of_site,
+            feature.geometry
+        ),
+        'unknown'
+    ),
+    measurement_signature = coalesce(
+        measurement.measurement_signature,
+        md5(concat_ws(
+            '|',
+            measurement.site_location_id,
+            feature.id::text,
+            measurement.intersects::text,
+            measurement.within_buffer::text,
+            round(coalesce(measurement.overlap_pct_of_site, 0), 4)::text,
+            round(coalesce(measurement.nearest_distance_m, -1), 2)::text,
+            coalesce(
+                public.classify_constraint_overlap(
+                    measurement.intersects,
+                    measurement.within_buffer,
+                    measurement.overlap_pct_of_site,
+                    feature.geometry
+                ),
+                'unknown'
+            )
+        ))
+    ),
+    metadata = coalesce(measurement.metadata, '{}'::jsonb)
+        || jsonb_build_object(
+            'constraint_character',
+            coalesce(
+                public.classify_constraint_overlap(
+                    measurement.intersects,
+                    measurement.within_buffer,
+                    measurement.overlap_pct_of_site,
+                    feature.geometry
+                ),
+                'unknown'
+            ),
+            'feature_geometry_dimension',
+            st_dimension(feature.geometry)
+        )
+from public.constraint_source_features as feature
+where feature.id = measurement.constraint_feature_id
+  and (
+      measurement.overlap_character is null
+      or measurement.feature_geometry_dimension is null
+      or measurement.measurement_signature is null
+  );
+
+update public.site_constraint_measurements
+set overlap_character = 'unknown'
+where overlap_character is null;
+
+alter table public.site_constraint_measurements
+    alter column overlap_character set default 'unknown';
+
+alter table public.site_constraint_measurements
+    alter column overlap_character set not null;
 
 create or replace function public.refresh_constraint_measurements_for_layer_sites(
     p_layer_key text,
@@ -976,7 +1049,7 @@ select
     measurements.overlap_pct_of_feature,
     measurements.nearest_distance_m,
     measurements.measured_at,
-    measurements.overlap_character,
+    coalesce(measurements.overlap_character, measurements.metadata ->> 'constraint_character', 'unknown') as overlap_character,
     measurements.feature_geometry_dimension
 from public.site_constraint_measurements as measurements
 join site_anchor
@@ -1077,6 +1150,8 @@ select
     count(distinct fact.id)::bigint as commercial_friction_fact_count,
     count(distinct scan_state.id)::bigint as scan_state_row_count,
     count(distinct scan_state.site_location_id)::bigint as scanned_site_count,
+    count(distinct measurement.id) filter (where measurement.overlap_character is null)::bigint as missing_overlap_character_count,
+    count(distinct measurement.overlap_character)::bigint as overlap_character_type_count,
     max(measurement.measured_at) as latest_measured_at
 from public.constraint_layer_registry as layer
 left join public.constraint_source_features as feature
@@ -1120,10 +1195,76 @@ select
     (select count(*)::bigint from public.site_constraint_group_summaries) as grouped_summary_row_count,
     (select count(*)::bigint from public.site_commercial_friction_facts) as commercial_friction_fact_count,
     (select count(*)::bigint from public.site_constraint_measurement_scan_state) as constraint_scan_state_row_count,
+    (
+        select count(*)::bigint
+        from public.site_constraint_measurements
+        where overlap_character is null
+    ) as missing_overlap_character_count,
+    (
+        select count(distinct layer.source_family)::bigint
+        from public.site_constraint_measurements as measurement
+        join public.constraint_layer_registry as layer
+          on layer.id = measurement.constraint_layer_id
+    ) as measured_constraint_source_family_count,
+    (
+        select count(*)::bigint
+        from landintel.flood_records
+    ) as flood_record_count,
+    (
+        select count(*)::bigint
+        from public.constraint_source_features as feature
+        join public.constraint_layer_registry as layer
+          on layer.id = feature.constraint_layer_id
+        where layer.source_family = 'sepa_flood'
+    ) as sepa_flood_source_feature_count,
+    (
+        select count(*)::bigint
+        from public.site_constraint_measurements as measurement
+        join public.constraint_layer_registry as layer
+          on layer.id = measurement.constraint_layer_id
+        where layer.source_family = 'sepa_flood'
+    ) as sepa_flood_measurement_count,
     count(*)::bigint as canonical_site_geometry_count,
     count(*) filter (where measured_sites.site_location_id is not null)::bigint as canonical_sites_with_measured_constraints,
     count(*) filter (where measured_sites.site_location_id is null)::bigint as canonical_sites_without_measured_constraints,
     count(*) filter (where scanned_sites.site_location_id is not null)::bigint as canonical_sites_with_constraint_scan_state,
+    (
+        count(*)::numeric
+        * greatest(
+            (
+                select count(distinct layer.id)::numeric
+                from public.constraint_layer_registry as layer
+                where layer.is_active = true
+                  and exists (
+                      select 1
+                      from public.constraint_source_features as feature
+                      where feature.constraint_layer_id = layer.id
+                  )
+            ),
+            1
+        )
+    )::bigint as canonical_site_layer_pair_count,
+    (select count(*)::bigint from public.site_constraint_measurement_scan_state) as scanned_site_layer_pair_count,
+    round(
+        (
+            (select count(*)::numeric from public.site_constraint_measurement_scan_state)
+            / nullif(
+                count(*)::numeric
+                * (
+                    select count(distinct layer.id)::numeric
+                    from public.constraint_layer_registry as layer
+                    where layer.is_active = true
+                      and exists (
+                          select 1
+                          from public.constraint_source_features as feature
+                          where feature.constraint_layer_id = layer.id
+                      )
+                ),
+                0
+            )
+        ) * 100,
+        4
+    ) as scanned_site_layer_pair_pct,
     (select max(measured_at) from public.site_constraint_measurements) as latest_measured_at
 from site_anchor
 left join measured_sites
@@ -1139,6 +1280,53 @@ comment on function public.refresh_constraint_measurements_for_layer_sites(text,
 
 comment on table public.site_constraint_measurement_scan_state
     is 'Operational scan-state table for Priority Zero constraint measurement batches. It records site/layer pairs that have been scanned even when no constraint relationship exists, so resumable runs advance across the estate instead of repeatedly scanning no-hit batches.';
+
+delete from landintel.flood_records as duplicate
+using landintel.flood_records as keeper
+where duplicate.source_record_id = keeper.source_record_id
+  and duplicate.flood_source = keeper.flood_source
+  and duplicate.id > keeper.id;
+
+create unique index if not exists landintel_flood_records_source_uidx
+    on landintel.flood_records (source_record_id, flood_source);
+
+insert into landintel.flood_records (
+    source_record_id,
+    authority_name,
+    flood_source,
+    severity_band,
+    geometry,
+    raw_payload,
+    created_at,
+    updated_at
+)
+select distinct on (feature.source_feature_key, layer.layer_key)
+    feature.source_feature_key,
+    feature.authority_name,
+    layer.layer_key,
+    coalesce(feature.severity_label, layer.layer_name),
+    feature.geometry,
+    coalesce(feature.metadata, '{}'::jsonb)
+        || jsonb_build_object(
+            'constraint_layer_key', layer.layer_key,
+            'constraint_group', layer.constraint_group,
+            'constraint_type', layer.constraint_type,
+            'source_expansion_constraint', true,
+            'flood_constraint_feature_id', feature.id
+        ),
+    now(),
+    now()
+from public.constraint_source_features as feature
+join public.constraint_layer_registry as layer
+  on layer.id = feature.constraint_layer_id
+where layer.source_family = 'sepa_flood'
+  and feature.geometry is not null
+on conflict (source_record_id, flood_source) do update set
+    authority_name = excluded.authority_name,
+    severity_band = excluded.severity_band,
+    geometry = excluded.geometry,
+    raw_payload = excluded.raw_payload,
+    updated_at = now();
 
 comment on view analytics.v_constraint_measurement_coverage
     is 'Proof view for Priority Zero constraint measurement coverage across live site geometries, measured rows, summaries and descriptive commercial friction facts.';

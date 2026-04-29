@@ -313,12 +313,16 @@ class SourceExpansionContractTests(unittest.TestCase):
 
     def test_priority_zero_constraint_measurement_engine_is_batched_and_delta_based(self) -> None:
         self.assertIn("def measure_constraints", RUNNER)
+        self.assertIn("def measure_constraints_debug_all_layers", RUNNER)
         self.assertIn("def audit_constraint_measurements", RUNNER)
         self.assertIn("refresh_constraint_measurements_for_layer_sites", RUNNER)
         self.assertIn("CONSTRAINT_MEASURE_SITE_BATCH_SIZE", RUNNER)
+        self.assertIn("CONSTRAINT_MEASURE_MAX_BATCHES_PER_LAYER", RUNNER)
+        self.assertIn("measure-constraints-debug-all-layers", RUNNER)
         self.assertIn("CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT", RUNNER)
         self.assertIn("CONSTRAINT_MATERIAL_DISTANCE_DELTA_M", RUNNER)
         self.assertIn("constraint_measurement_batch_completed", RUNNER)
+        self.assertIn("constraint_measurement_debug_all_layers_completed", RUNNER)
         self.assertIn("only for material evidence-state changes", RUNNER)
         self.assertIn("cast(:layer_key_filter as text) is null", RUNNER)
         self.assertIn("cast(:source_family_filter as text) is null", RUNNER)
@@ -338,13 +342,19 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("st_intersects", CONSTRAINT_ENGINE_MIGRATION.lower())
         self.assertIn("analytics.v_constraint_measurement_coverage", CONSTRAINT_ENGINE_MIGRATION)
         self.assertIn("analytics.v_constraint_measurement_layer_coverage", CONSTRAINT_ENGINE_MIGRATION)
+        self.assertIn("missing_overlap_character_count", CONSTRAINT_ENGINE_MIGRATION)
+        self.assertIn("scanned_site_layer_pair_pct", CONSTRAINT_ENGINE_MIGRATION)
+        self.assertIn("landintel.flood_records", CONSTRAINT_ENGINE_MIGRATION)
         self.assertIn("- measure-constraints", WORKFLOW)
+        self.assertIn("- measure-constraints-debug-all-layers", WORKFLOW)
         self.assertIn("- audit-constraint-measurements", WORKFLOW)
         self.assertIn('elif [ "$SELECTED_COMMAND" = "measure-constraints" ]; then', WORKFLOW)
+        self.assertIn('elif [ "$SELECTED_COMMAND" = "measure-constraints-debug-all-layers" ]; then', WORKFLOW)
         self.assertIn("python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements", WORKFLOW)
         self.assertIn("constraint_measure_max_batches", WORKFLOW)
         self.assertIn("CONSTRAINT_MEASURE_SITE_BATCH_SIZE: ${{ inputs.constraint_measure_site_batch_size || '25' }}", WORKFLOW)
         self.assertIn("CONSTRAINT_MEASURE_MAX_BATCHES: ${{ inputs.constraint_measure_max_batches || '4' }}", WORKFLOW)
+        self.assertIn('CONSTRAINT_MEASURE_MAX_BATCHES_PER_LAYER: "1"', WORKFLOW)
 
 
 if __name__ == "__main__":

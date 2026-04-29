@@ -36,6 +36,7 @@ on:
           - resolve-title-numbers
           - audit-title-number-control
           - measure-constraints
+          - measure-constraints-debug-all-layers
           - audit-constraint-measurements
           - discover-ldp-sources
           - discover-settlement-sources
@@ -136,8 +137,11 @@ jobs:
       SOURCE_EXPANSION_MAX_MEASURE_LAYERS: "1"
       CONSTRAINT_MEASURE_SITE_BATCH_SIZE: ${{ inputs.constraint_measure_site_batch_size || '25' }}
       CONSTRAINT_MEASURE_MAX_BATCHES: ${{ inputs.constraint_measure_max_batches || '4' }}
+      CONSTRAINT_MEASURE_MAX_BATCHES_PER_LAYER: "1"
       CONSTRAINT_MEASURE_RUNTIME_MINUTES: ${{ inputs.constraint_measure_runtime_minutes || '10' }}
       CONSTRAINT_MEASURE_MIN_AREA_ACRES: "0"
+      CONSTRAINT_MEASURE_DEBUG_SITE_COUNT: ${{ inputs.constraint_measure_site_batch_size || '25' }}
+      CONSTRAINT_MEASURE_DEBUG_FEATURE_PROBE_LIMIT: "50"
       CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT: "1"
       CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"
       TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE: "10"
@@ -312,6 +316,12 @@ jobs:
             python -m src.source_estate_registry register-source-estate
             python -m src.source_policy_discovery register-supplemental-sources
             run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging measure-constraints
+            python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
+          elif [ "$SELECTED_COMMAND" = "measure-constraints-debug-all-layers" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_estate_registry register-source-estate
+            python -m src.source_policy_discovery register-supplemental-sources
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging measure-constraints-debug-all-layers
             python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
           elif [ "$SELECTED_COMMAND" = "audit-constraint-measurements" ]; then
             python -m src.source_phase_runner run-migrations

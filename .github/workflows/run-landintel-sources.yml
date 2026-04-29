@@ -239,6 +239,12 @@ jobs:
             python -m src.source_phase_runner run-migrations
             python -m src.main ingest-ros-cadastral
             python -m src.source_expansion_runner_wfs_paging audit-title-number-control
+          elif [ "$SELECTED_COMMAND" = "resolve-title-numbers" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_estate_registry register-source-estate
+            python -m src.source_policy_discovery register-supplemental-sources
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging resolve-title-numbers
+            python -m src.source_expansion_runner_wfs_paging audit-title-number-control
           elif [ "$SELECTED_COMMAND" = "source-estate-maintenance" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate

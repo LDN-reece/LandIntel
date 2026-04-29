@@ -272,6 +272,8 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn('TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE: "0"', WORKFLOW)
         self.assertIn("TITLE_RESOLUTION_SITE_BATCH_SIZE", WORKFLOW)
         self.assertIn('TITLE_RESOLUTION_SITE_BATCH_SIZE: "500"', WORKFLOW)
+        self.assertIn('elif [ "$SELECTED_COMMAND" = "resolve-title-numbers" ]; then', WORKFLOW)
+        self.assertIn("python -m src.source_expansion_runner_wfs_paging audit-title-number-control", WORKFLOW)
         self.assertIn("title_number,", LOADER)
         self.assertIn("normalized_title_number,", LOADER)
         self.assertIn("public.extract_ros_title_number_candidate(cast(:raw_attributes as jsonb), :ros_inspire_id)", LOADER)

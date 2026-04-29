@@ -61,10 +61,6 @@ class SourceCatalogSync:
             )
         )
         try:
-            self.database.execute("delete from landintel.source_endpoint_catalog")
-            self.database.execute("delete from landintel.entity_blueprint_catalog")
-            self.database.execute("delete from landintel.source_catalog")
-
             source_key_lookup: dict[str, str] = {}
             for source in sources:
                 metadata = {
@@ -108,6 +104,32 @@ class SourceCatalogSync:
                         :existing_drive_asset, :existing_asset_note, :schema_minimum_fields,
                         :critical_notes, :workflow_stage, :workflow_ready, cast(:metadata as jsonb)
                     )
+                    on conflict (source_key) do update set
+                        domain = excluded.domain,
+                        source_name = excluded.source_name,
+                        source_role = excluded.source_role,
+                        scope = excluded.scope,
+                        actionable_endpoint = excluded.actionable_endpoint,
+                        developer_page = excluded.developer_page,
+                        access_pattern = excluded.access_pattern,
+                        auth_type = excluded.auth_type,
+                        primary_landintel_use = excluded.primary_landintel_use,
+                        why_it_matters = excluded.why_it_matters,
+                        primary_output_object = excluded.primary_output_object,
+                        primary_join_method = excluded.primary_join_method,
+                        secondary_join_method = excluded.secondary_join_method,
+                        interacts_with = excluded.interacts_with,
+                        suggested_raw_table = excluded.suggested_raw_table,
+                        suggested_normalized_table = excluded.suggested_normalized_table,
+                        refresh_cadence = excluded.refresh_cadence,
+                        existing_drive_asset = excluded.existing_drive_asset,
+                        existing_asset_note = excluded.existing_asset_note,
+                        schema_minimum_fields = excluded.schema_minimum_fields,
+                        critical_notes = excluded.critical_notes,
+                        workflow_stage = excluded.workflow_stage,
+                        workflow_ready = excluded.workflow_ready,
+                        metadata = excluded.metadata,
+                        updated_at = now()
                     """,
                     {
                         "source_key": source["source_key"],
@@ -195,11 +217,22 @@ class SourceCatalogSync:
                         :endpoint_group,
                         cast(:metadata as jsonb)
                     )
+                    on conflict (endpoint_key) do update set
+                        source_key = excluded.source_key,
+                        endpoint_name = excluded.endpoint_name,
+                        endpoint_url = excluded.endpoint_url,
+                        endpoint_type = excluded.endpoint_type,
+                        auth_required = excluded.auth_required,
+                        purpose = excluded.purpose,
+                        notes = excluded.notes,
+                        endpoint_group = excluded.endpoint_group,
+                        metadata = excluded.metadata,
+                        updated_at = now()
                     """,
                     {
                         "endpoint_key": endpoint["endpoint_key"],
                         "source_key": source_key_lookup.get(_normalize_ref(endpoint.get("source_name"))),
-                        "endpoint_name": endpoint.get("source_name"),
+                        "endpoint_name": endpoint.get("source_name") or endpoint["endpoint_key"],
                         "endpoint_url": endpoint.get("endpoint_url"),
                         "endpoint_type": endpoint.get("endpoint_type"),
                         "auth_required": endpoint.get("auth_required"),
@@ -232,6 +265,15 @@ class SourceCatalogSync:
                         :feeds_decision,
                         cast(:metadata as jsonb)
                     )
+                    on conflict (entity_name) do update set
+                        purpose = excluded.purpose,
+                        minimum_required_fields = excluded.minimum_required_fields,
+                        primary_source = excluded.primary_source,
+                        primary_join_key = excluded.primary_join_key,
+                        secondary_join_key = excluded.secondary_join_key,
+                        feeds_decision = excluded.feeds_decision,
+                        metadata = excluded.metadata,
+                        updated_at = now()
                     """,
                     {
                         "entity_name": entity.get("entity_name"),

@@ -38,6 +38,21 @@ on:
           - measure-constraints
           - measure-constraints-debug-all-layers
           - audit-constraint-measurements
+          - discover-phase2-sources
+          - ingest-planning-appeals
+          - ingest-power-infrastructure
+          - ingest-amenities
+          - ingest-demographics
+          - ingest-market-context
+          - ingest-planning-documents
+          - ingest-intelligence-events
+          - refresh-title-readiness
+          - refresh-site-market-context
+          - refresh-site-amenity-context
+          - refresh-site-demographic-context
+          - refresh-site-power-context
+          - refresh-site-abnormal-risk
+          - audit-full-source-estate
           - discover-ldp-sources
           - discover-settlement-sources
           - ingest-ldp
@@ -93,6 +108,37 @@ on:
         description: Feature probe cap for measure-constraints-debug-all-layers
         required: false
         default: "50"
+      phase2_source_family:
+        description: Optional Phase 2 source family, module key or source key filter
+        required: false
+        default: ""
+      phase2_authority:
+        description: Optional Phase 2 authority/geography filter where relevant
+        required: false
+        default: ""
+      phase2_batch_size:
+        description: Phase 2 batch size for targeted refresh commands
+        required: false
+        default: "250"
+      phase2_runtime_minutes:
+        description: Phase 2 runtime budget for source commands
+        required: false
+        default: "10"
+      phase2_dry_run:
+        description: Run Phase 2 command without database mutations
+        required: false
+        type: boolean
+        default: false
+      phase2_force_refresh:
+        description: Force Phase 2 refresh where command supports it
+        required: false
+        type: boolean
+        default: false
+      phase2_audit_only:
+        description: Audit Phase 2 estate without registering or refreshing rows
+        required: false
+        type: boolean
+        default: false
 
 # Automated schedules are intentionally paused during incremental reconcile burn-in.
 # Push runs are validation-only. Source-estate maintenance is manual-only during
@@ -163,6 +209,13 @@ jobs:
       CONSTRAINT_MEASURE_DEBUG_FEATURE_PROBE_LIMIT: ${{ inputs.constraint_measure_debug_feature_probe_limit || '50' }}
       CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT: "1"
       CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"
+      PHASE2_SOURCE_FAMILY: ${{ inputs.phase2_source_family || '' }}
+      PHASE2_AUTHORITY: ${{ inputs.phase2_authority || '' }}
+      PHASE2_BATCH_SIZE: ${{ inputs.phase2_batch_size || '250' }}
+      PHASE2_RUNTIME_MINUTES: ${{ inputs.phase2_runtime_minutes || '10' }}
+      PHASE2_DRY_RUN: ${{ inputs.phase2_dry_run || false }}
+      PHASE2_FORCE_REFRESH: ${{ inputs.phase2_force_refresh || false }}
+      PHASE2_AUDIT_ONLY: ${{ inputs.phase2_audit_only || false }}
       TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE: "10"
       TITLE_RESOLUTION_MIN_OVERLAP_SQM: "1"
       TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE: "0"
@@ -213,7 +266,7 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
       - name: Compile critical runners
-        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py src/main.py
+        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py src/phase2_source_runner.py src/main.py
 
       - name: Resolve selected command
         run: |
@@ -260,6 +313,17 @@ jobs:
           is_source_expansion_ingest() {
             case "$1" in
               resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features)
+                return 0
+                ;;
+              *)
+                return 1
+                ;;
+            esac
+          }
+
+          is_phase2_command() {
+            case "$1" in
+              discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|refresh-title-readiness|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|audit-full-source-estate)
                 return 0
                 ;;
               *)
@@ -345,6 +409,12 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "audit-constraint-measurements" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
+          elif is_phase2_command "$SELECTED_COMMAND"; then
+            python -m src.source_phase_runner run-migrations
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.phase2_source_runner "$SELECTED_COMMAND"
+            if [ "$SELECTED_COMMAND" != "audit-full-source-estate" ]; then
+              python -m src.phase2_source_runner audit-full-source-estate
+            fi
           elif [ "$SELECTED_COMMAND" = "discover-ldp-sources" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate

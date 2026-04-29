@@ -1,0 +1,480 @@
+register_name: landintel_phase2_source_estate
+programme_phase: phase_two
+lifecycle_stages:
+  - source_registered
+  - access_confirmed
+  - raw_data_landed
+  - normalised
+  - linked_to_site
+  - measured
+  - evidence_generated
+  - signals_generated
+  - assessment_ready
+  - trusted_for_review
+sources:
+  - source_key: dpea_planning_appeals
+    module_key: planning_appeals
+    source_family: planning_appeals
+    source_name: Scottish Government DPEA planning appeals
+    source_group: planning_intelligence
+    geography: Scotland
+    endpoint_url: https://www.dpea.scotland.gov.uk/
+    access_status: access_required
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.planning_appeal_records
+    orchestration_mode: register_then_stable_feed_or_document_adapter
+    refresh_cadence: weekly
+    max_staleness_days: 7
+    limitation_notes: Stable machine-readable appeal feed has not yet been proven.
+    next_action: Confirm DPEA feed or controlled document adapter before ingest.
+
+  - source_key: local_review_body_decisions
+    module_key: planning_appeals
+    source_family: planning_appeals
+    source_name: Local Review Body decisions
+    source_group: planning_intelligence
+    geography: Scotland
+    access_status: gated
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.planning_appeal_records
+    orchestration_mode: council_portal_adapter_required
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: Council publication patterns vary; portal-specific adapters are required.
+    next_action: Prioritise target authorities and prove one stable adapter.
+
+  - source_key: title_readiness_internal
+    module_key: title_control
+    source_family: title_control
+    source_name: Scottish title readiness workflow
+    source_group: title_control
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.title_order_workflow
+    orchestration_mode: derived_from_ros_parcel_and_title_candidates
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: Pre-title outputs are readiness and control signals only; legal ownership is not confirmed.
+    next_action: Refresh title readiness from RoS parcel and title candidate evidence.
+
+  - source_key: title_review_manual
+    module_key: title_control
+    source_family: title_control
+    source_name: Manual title review outcomes
+    source_group: title_control
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.title_review_records
+    orchestration_mode: manual_review_record
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: Confirmed ownership fields are allowed only after reviewed title evidence is recorded.
+    next_action: Record ordered and reviewed title outcomes through controlled review rows.
+
+  - source_key: companies_house_control_context
+    module_key: title_control
+    source_family: corporate_control
+    source_name: Companies House corporate control context
+    source_group: title_control
+    geography: United Kingdom
+    endpoint_url: https://api.company-information.service.gov.uk/
+    access_status: access_required
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.corporate_owner_links
+    orchestration_mode: api_key_required
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: Corporate context is not legal ownership proof.
+    next_action: Add Companies House key and match only reviewed corporate proprietors or applicant/control signals.
+
+  - source_key: sp_energy_networks_assets
+    module_key: power_infrastructure
+    source_family: power_infrastructure
+    source_name: SP Energy Networks infrastructure
+    source_group: infrastructure
+    geography: Scotland
+    access_status: access_required
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.power_assets
+    orchestration_mode: source_discovery_required
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: Published asset and capacity coverage must be confirmed before use.
+    next_action: Confirm open asset endpoints and DNO geography.
+
+  - source_key: ssen_assets
+    module_key: power_infrastructure
+    source_family: power_infrastructure
+    source_name: SSEN infrastructure
+    source_group: infrastructure
+    geography: Scotland
+    access_status: access_required
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.power_assets
+    orchestration_mode: source_discovery_required
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: Published asset and capacity coverage must be confirmed before use.
+    next_action: Confirm open asset endpoints and DNO geography.
+
+  - source_key: national_grid_public_assets
+    module_key: power_infrastructure
+    source_family: power_infrastructure
+    source_name: National Grid public infrastructure context
+    source_group: infrastructure
+    geography: Great Britain
+    access_status: access_required
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.power_assets
+    orchestration_mode: source_discovery_required
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: Capacity must not be inferred unless source explicitly publishes it.
+    next_action: Register confirmed transmission and capacity datasets only.
+
+  - source_key: osm_power_context
+    module_key: power_infrastructure
+    source_family: power_infrastructure
+    source_name: OpenStreetMap power features
+    source_group: infrastructure
+    geography: Scotland
+    access_status: gated
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.power_assets
+    orchestration_mode: contextual_osm_extract
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: OSM can provide context only and must not evidence capacity.
+    next_action: Wire as contextual layer after licensing and attribution are confirmed.
+
+  - source_key: terrain_abnormal_context
+    module_key: terrain_abnormal
+    source_family: terrain_abnormal
+    source_name: Terrain and abnormal-risk derived context
+    source_group: ground_abnormals
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.site_ground_risk_context
+    orchestration_mode: derived_from_existing_constraints_bgs_and_flood
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: Desktop abnormal-risk context is not engineering certainty.
+    next_action: Refresh context from measured constraints, flood, coal and BGS proximity.
+
+  - source_key: os_terrain_context
+    module_key: terrain_abnormal
+    source_family: terrain_abnormal
+    source_name: OS Terrain context
+    source_group: ground_abnormals
+    geography: Scotland
+    access_status: access_required
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.site_terrain_metrics
+    orchestration_mode: terrain_asset_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Terrain source licensing and asset path must be confirmed before slope metrics.
+    next_action: Attach OS Terrain asset or confirmed open terrain source.
+
+  - source_key: ros_market_statistics
+    module_key: market_context
+    source_family: market_context
+    source_name: Registers of Scotland market statistics
+    source_group: market_evidence
+    geography: Scotland
+    access_status: access_required
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.market_area_metrics
+    orchestration_mode: source_discovery_required
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: Market outputs are evidence context only; no unsupported pricing claims.
+    next_action: Confirm machine-readable RoS statistics endpoint or controlled asset.
+
+  - source_key: uk_hpi_market_context
+    module_key: market_context
+    source_family: market_context
+    source_name: UK House Price Index local market context
+    source_group: market_evidence
+    geography: Scotland
+    endpoint_url: https://landregistry.data.gov.uk/app/ukhpi
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.market_area_metrics
+    orchestration_mode: public_dataset_adapter_required
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: HPI supports area context only and does not prove site value.
+    next_action: Add adapter for local authority HPI series.
+
+  - source_key: naptan_public_transport
+    module_key: amenities
+    source_family: amenities
+    source_name: NaPTAN public transport access
+    source_group: location_strength
+    geography: Scotland
+    endpoint_url: https://beta-naptan.dft.gov.uk/
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.amenity_assets
+    orchestration_mode: public_dataset_adapter_required
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: Transport proximity is location evidence, not demand certainty.
+    next_action: Add bounded Scotland extract and nearest-asset context.
+
+  - source_key: scottish_schools_amenities
+    module_key: amenities
+    source_family: amenities
+    source_name: Scottish schools and education amenities
+    source_group: location_strength
+    geography: Scotland
+    access_status: access_required
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.amenity_assets
+    orchestration_mode: source_discovery_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Education dataset access and update cadence must be confirmed.
+    next_action: Confirm national or authority school source.
+
+  - source_key: nhs_scotland_amenities
+    module_key: amenities
+    source_family: amenities
+    source_name: NHS Scotland health amenities
+    source_group: location_strength
+    geography: Scotland
+    access_status: access_required
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.amenity_assets
+    orchestration_mode: source_discovery_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Health facility source must be confirmed before proximity facts.
+    next_action: Confirm NHS or Public Health Scotland facility dataset.
+
+  - source_key: statistics_gov_scot_demographics
+    module_key: demographics
+    source_family: demographics
+    source_name: statistics.gov.scot demographic context
+    source_group: demand_context
+    geography: Scotland
+    endpoint_url: https://statistics.gov.scot/
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.demographic_area_metrics
+    orchestration_mode: public_dataset_adapter_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Demographics are contextual and must not be presented as buyer demand certainty.
+    next_action: Add datasets for population, households, tenure and geography matching.
+
+  - source_key: simd_demographic_context
+    module_key: demographics
+    source_family: demographics
+    source_name: SIMD local context
+    source_group: demand_context
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.demographic_area_metrics
+    orchestration_mode: public_dataset_adapter_required
+    refresh_cadence: annual
+    max_staleness_days: 365
+    limitation_notes: SIMD is context only and must not drive automatic site decisions.
+    next_action: Add datazone matching to canonical sites.
+
+  - source_key: council_planning_documents
+    module_key: planning_documents
+    source_family: planning_documents
+    source_name: Council planning document records
+    source_group: planning_documents
+    geography: Scotland
+    access_status: gated
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.planning_document_records
+    orchestration_mode: portal_document_adapter_required
+    refresh_cadence: weekly
+    max_staleness_days: 7
+    limitation_notes: Document scraping requires authority-specific adapters and source URLs.
+    next_action: Wire stable document-page adapters for priority authorities.
+
+  - source_key: section75_records
+    module_key: planning_documents
+    source_family: planning_documents
+    source_name: Section 75 obligation records
+    source_group: planning_documents
+    geography: Scotland
+    access_status: gated
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.section75_obligation_records
+    orchestration_mode: document_extraction_required
+    refresh_cadence: weekly
+    max_staleness_days: 7
+    limitation_notes: Obligations must be extracted from source documents with references preserved.
+    next_action: Parse only documents with stable source URL and application reference.
+
+  - source_key: council_agenda_intelligence
+    module_key: local_intelligence
+    source_family: local_intelligence
+    source_name: Council agendas and meeting papers
+    source_group: local_intelligence
+    geography: Scotland
+    access_status: gated
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.intelligence_event_records
+    orchestration_mode: authority_feed_or_document_adapter_required
+    refresh_cadence: weekly
+    max_staleness_days: 7
+    limitation_notes: Local intelligence must preserve source URL, date and event confidence.
+    next_action: Start with priority council committee feeds.
+
+  - source_key: local_press_intelligence
+    module_key: local_intelligence
+    source_family: local_intelligence
+    source_name: Local press and development announcements
+    source_group: local_intelligence
+    geography: Scotland
+    access_status: access_required
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.intelligence_event_records
+    orchestration_mode: source_discovery_required
+    refresh_cadence: weekly
+    max_staleness_days: 7
+    limitation_notes: News ingestion requires source rights, deduplication and attribution control.
+    next_action: Register approved sources before ingest.

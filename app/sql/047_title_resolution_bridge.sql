@@ -519,7 +519,7 @@ begin
                 when cadastral_unit_identifier is not null then 'needs_licensed_bridge'
                 else 'manual_review'
             end as resolution_status,
-            'site_geometry_to_ros_cadastral_fast_candidate'::text as match_method,
+            'site_geometry_to_ros_cadastral'::text as match_method,
             case
                 when candidate_title_number is not null and overlap_pct_of_site >= 80 then 0.9
                 when candidate_title_number is not null and overlap_pct_of_site >= 25 then 0.75

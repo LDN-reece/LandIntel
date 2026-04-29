@@ -211,7 +211,9 @@ class ConstraintsMeasurementContractTests(unittest.TestCase):
         for snippet in (
             "st_dimension(feature_geometry) = 2",
             "st_collectionextract(st_intersection(site_geometry, feature_geometry), 3)",
-            "OPERATOR(extensions.&&)",
+            "join lateral",
+            "feature.geometry OPERATOR(extensions.&&)",
+            "st_expand(anchor.geometry",
             "st_dwithin(anchor.geometry, feature.geometry, layer_row.buffer_distance_m)",
             "st_intersects(anchor.geometry, feature.geometry)",
         ):

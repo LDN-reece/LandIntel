@@ -362,23 +362,34 @@ begin
                 )
             )
         from public.constraint_layer_registry as layer_row
-        join public.constraint_source_features as feature
-          on feature.constraint_layer_id = layer_row.id
-        join public.constraints_site_anchor() as anchor
-          on anchor.site_location_id = any(p_site_location_ids)
-         and anchor.geometry is not null
-         and feature.geometry is not null
-         and anchor.geometry OPERATOR(extensions.&&) st_expand(feature.geometry, greatest(layer_row.buffer_distance_m, 0))
-         and (
-                (
-                    layer_row.buffer_distance_m > 0
-                    and st_dwithin(anchor.geometry, feature.geometry, layer_row.buffer_distance_m)
-                )
-                or (
-                    layer_row.buffer_distance_m = 0
-                    and st_intersects(anchor.geometry, feature.geometry)
-                )
-             )
+        join lateral (
+            select anchor.*
+            from public.constraints_site_anchor() as anchor
+            join (
+                select distinct input.site_location_id
+                from unnest(p_site_location_ids) as input(site_location_id)
+            ) as requested
+              on requested.site_location_id = anchor.site_location_id
+            where anchor.geometry is not null
+        ) as anchor on true
+        join lateral (
+            select feature.*
+            from public.constraint_source_features as feature
+            where feature.constraint_layer_id = layer_row.id
+              and feature.geometry is not null
+              and feature.geometry OPERATOR(extensions.&&)
+                    st_expand(anchor.geometry, greatest(layer_row.buffer_distance_m, 0)::double precision)
+              and (
+                    (
+                        layer_row.buffer_distance_m > 0
+                        and st_dwithin(anchor.geometry, feature.geometry, layer_row.buffer_distance_m)
+                    )
+                    or (
+                        layer_row.buffer_distance_m = 0
+                        and st_intersects(anchor.geometry, feature.geometry)
+                    )
+                  )
+        ) as feature on true
         cross join lateral public.measure_constraint_feature(
             anchor.geometry,
             feature.geometry,

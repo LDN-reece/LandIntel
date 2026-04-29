@@ -272,19 +272,97 @@ class SourceExpansionRunner:
 
         max_candidates = self._env_int("TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE", 10)
         min_overlap_sqm = self._env_float("TITLE_RESOLUTION_MIN_OVERLAP_SQM", 1.0)
-        proof = self.database.fetch_one(
+        site_batch_size = max(self._env_int("TITLE_RESOLUTION_SITE_BATCH_SIZE", 10), 1)
+        proof_counts = self.database.fetch_one(
             """
-            select *
-            from public.refresh_site_title_resolution_bridge(
-                cast(:max_candidates_per_site as integer),
-                cast(:min_overlap_sqm as numeric)
-            )
-            """,
-            {
-                "max_candidates_per_site": max_candidates,
-                "min_overlap_sqm": min_overlap_sqm,
-            },
+            select
+                (select count(*)::bigint from public.ros_cadastral_parcels) as ros_parcel_count,
+                (select count(*)::bigint from public.constraints_site_anchor()) as canonical_site_count
+            """
         ) or {}
+        anchor_rows = self.database.fetch_all(
+            """
+            select site_location_id
+            from public.constraints_site_anchor()
+            where geometry is not null
+              and authority_name is not null
+            order by site_location_id
+            """
+        )
+        proof: dict[str, Any] = {
+            "candidate_rows": 0,
+            "candidate_site_count": 0,
+            "promoted_title_rows": 0,
+            "probable_title_rows": 0,
+            "licensed_bridge_required_rows": 0,
+            "ros_parcel_count": int(proof_counts.get("ros_parcel_count") or 0),
+            "canonical_site_count": int(proof_counts.get("canonical_site_count") or 0),
+            "processed_site_count": 0,
+            "site_batch_size": site_batch_size,
+        }
+
+        if proof["ros_parcel_count"] and anchor_rows:
+            self.database.execute(
+                """
+                delete from public.site_title_validation
+                where validation_method = 'spatial_intersection'
+                  and title_source = 'ros_cadastral_spatial_intersection'
+                """
+            )
+            self.database.execute(
+                """
+                delete from public.site_title_resolution_candidates
+                where candidate_source = 'ros_cadastral_spatial_intersection'
+                """
+            )
+
+            batches = list(chunked(anchor_rows, site_batch_size))
+            for batch_index, batch in enumerate(batches, start=1):
+                site_location_ids = [
+                    str(row["site_location_id"])
+                    for row in batch
+                    if row.get("site_location_id") is not None
+                ]
+                if not site_location_ids:
+                    continue
+                batch_proof = self.database.fetch_one(
+                    """
+                    select *
+                    from public.refresh_site_title_resolution_bridge_for_sites(
+                        cast(:max_candidates_per_site as integer),
+                        cast(:min_overlap_sqm as numeric),
+                        cast(:site_location_ids as jsonb)
+                    )
+                    """,
+                    {
+                        "max_candidates_per_site": max_candidates,
+                        "min_overlap_sqm": min_overlap_sqm,
+                        "site_location_ids": json.dumps(site_location_ids),
+                    },
+                ) or {}
+                for key in (
+                    "candidate_rows",
+                    "candidate_site_count",
+                    "promoted_title_rows",
+                    "probable_title_rows",
+                    "licensed_bridge_required_rows",
+                ):
+                    proof[key] = int(proof.get(key) or 0) + int(batch_proof.get(key) or 0)
+                proof["processed_site_count"] = int(proof.get("processed_site_count") or 0) + len(site_location_ids)
+                proof["ros_parcel_count"] = int(batch_proof.get("ros_parcel_count") or proof["ros_parcel_count"] or 0)
+                proof["canonical_site_count"] = int(
+                    batch_proof.get("canonical_site_count") or proof["canonical_site_count"] or 0
+                )
+                self.logger.info(
+                    "title_resolution_batch_completed",
+                    extra={
+                        "batch_index": batch_index,
+                        "batch_count": len(batches),
+                        "site_count": len(site_location_ids),
+                        "candidate_rows": int(batch_proof.get("candidate_rows") or 0),
+                        "promoted_title_rows": int(batch_proof.get("promoted_title_rows") or 0),
+                    },
+                )
 
         candidate_rows = int(proof.get("candidate_rows") or 0)
         candidate_site_count = int(proof.get("candidate_site_count") or 0)

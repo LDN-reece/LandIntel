@@ -1509,47 +1509,106 @@ class SourceExpansionRunner:
         )
         top_measurements = self.database.fetch_all(
             """
-            select *
-            from analytics.v_constraints_tab_measurements
-            order by measured_at desc nulls last, overlap_pct_of_site desc nulls last, nearest_distance_m nulls last
+            select
+                measurement.site_id,
+                measurement.site_location_id,
+                site.site_name_primary as site_name,
+                site.authority_name,
+                site.area_acres as site_area_acres,
+                layer.layer_key,
+                layer.layer_name,
+                layer.constraint_group,
+                layer.constraint_type,
+                layer.measurement_mode,
+                feature.id as constraint_feature_id,
+                feature.source_feature_key,
+                feature.feature_name,
+                feature.source_reference,
+                feature.severity_label,
+                measurement.measurement_source,
+                measurement.intersects,
+                measurement.within_buffer,
+                measurement.site_inside_feature,
+                measurement.feature_inside_site,
+                measurement.overlap_area_sqm,
+                measurement.overlap_pct_of_site,
+                measurement.overlap_pct_of_feature,
+                measurement.nearest_distance_m,
+                measurement.measured_at,
+                measurement.overlap_character,
+                measurement.feature_geometry_dimension
+            from public.site_constraint_measurements as measurement
+            join public.constraint_layer_registry as layer
+              on layer.id = measurement.constraint_layer_id
+            left join public.constraint_source_features as feature
+              on feature.id = measurement.constraint_feature_id
+            left join landintel.canonical_sites as site
+              on site.id::text = measurement.site_location_id
+            order by measurement.measured_at desc nulls last,
+                     measurement.overlap_pct_of_site desc nulls last,
+                     measurement.nearest_distance_m nulls last
             limit 20
             """
         )
         multi_group_sites = self.database.fetch_all(
             """
             select
-                site_id,
-                site_location_id,
-                site_name,
-                count(distinct constraint_group)::integer as constraint_group_count,
-                array_agg(distinct constraint_group order by constraint_group) as constraint_groups,
-                max(measured_at) as latest_measured_at
-            from analytics.v_constraints_tab_group_summaries
-            group by site_id, site_location_id, site_name
-            having count(distinct constraint_group) > 1
+                summary.site_id,
+                summary.site_location_id,
+                site.site_name_primary as site_name,
+                count(distinct summary.constraint_group)::integer as constraint_group_count,
+                array_agg(distinct summary.constraint_group order by summary.constraint_group) as constraint_groups,
+                max(summary.measured_at) as latest_measured_at
+            from public.site_constraint_group_summaries as summary
+            left join landintel.canonical_sites as site
+              on site.id::text = summary.site_location_id
+            group by summary.site_id, summary.site_location_id, site.site_name_primary
+            having count(distinct summary.constraint_group) > 1
             order by constraint_group_count desc, latest_measured_at desc nulls last
             limit 10
             """
         )
         family_coverage = self.database.fetch_all(
             """
+            with measurement_family as (
+                select
+                    layer.source_family,
+                    layer.constraint_group,
+                    count(measurement.id)::integer as measurement_count,
+                    count(distinct measurement.site_location_id)::integer as measured_site_count,
+                    count(*) filter (where measurement.overlap_character is null)::integer as missing_overlap_character_count,
+                    array_agg(distinct measurement.overlap_character order by measurement.overlap_character)
+                        filter (where measurement.overlap_character is not null) as overlap_characters
+                from public.site_constraint_measurements as measurement
+                join public.constraint_layer_registry as layer
+                  on layer.id = measurement.constraint_layer_id
+                group by layer.source_family, layer.constraint_group
+            ),
+            fact_family as (
+                select
+                    layer.source_family,
+                    layer.constraint_group,
+                    count(fact.id)::integer as commercial_friction_fact_count
+                from public.site_commercial_friction_facts as fact
+                join public.constraint_layer_registry as layer
+                  on layer.id = fact.constraint_layer_id
+                group by layer.source_family, layer.constraint_group
+            )
             select
-                layer.source_family,
-                layer.constraint_group,
-                count(measurement.id)::integer as measurement_count,
-                count(distinct measurement.site_location_id)::integer as measured_site_count,
-                count(fact.id)::integer as commercial_friction_fact_count,
-                count(*) filter (where measurement.overlap_character is null)::integer as missing_overlap_character_count,
-                array_agg(distinct measurement.overlap_character order by measurement.overlap_character)
-                    filter (where measurement.overlap_character is not null) as overlap_characters
-            from public.site_constraint_measurements as measurement
-            join public.constraint_layer_registry as layer
-              on layer.id = measurement.constraint_layer_id
-            left join public.site_commercial_friction_facts as fact
-              on fact.constraint_layer_id = measurement.constraint_layer_id
-             and fact.site_location_id = measurement.site_location_id
-            group by layer.source_family, layer.constraint_group
-            order by measurement_count desc, layer.source_family, layer.constraint_group
+                measurement_family.source_family,
+                measurement_family.constraint_group,
+                measurement_family.measurement_count,
+                measurement_family.measured_site_count,
+                coalesce(fact_family.commercial_friction_fact_count, 0) as commercial_friction_fact_count,
+                measurement_family.missing_overlap_character_count,
+                measurement_family.overlap_characters
+            from measurement_family
+            left join fact_family
+              on fact_family.source_family = measurement_family.source_family
+             and fact_family.constraint_group = measurement_family.constraint_group
+            order by measurement_family.measurement_count desc,
+                     measurement_family.source_family,
+                     measurement_family.constraint_group
             """
         )
         flood_proof = self.database.fetch_one(

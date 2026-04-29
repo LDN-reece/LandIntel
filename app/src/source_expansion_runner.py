@@ -465,7 +465,7 @@ class SourceExpansionRunner:
                 )
                 select
                     (select count(*)::bigint from candidate_batch) as scanned_rows,
-                    (select max(id)::text from candidate_batch) as last_id,
+                    (select id::text from candidate_batch order by id desc limit 1) as last_id,
                     (select count(*)::bigint from updated) as updated_rows,
                     (select count(*) filter (where candidate_title_number is not null)::bigint from updated) as title_rows
                 """,

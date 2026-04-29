@@ -251,6 +251,8 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE", RUNNER)
         self.assertIn("TITLE_RESOLUTION_SITE_BATCH_SIZE", RUNNER)
         self.assertIn("ros_parcel_title_batch_completed", RUNNER)
+        self.assertIn("order by id desc limit 1", RUNNER)
+        self.assertNotIn("max(id)", RUNNER)
         self.assertIn("title_resolution_batch_completed", RUNNER)
         self.assertIn("json.dumps(site_location_ids)", RUNNER)
         self.assertIn("cast(:max_candidates_per_site as integer)", RUNNER)

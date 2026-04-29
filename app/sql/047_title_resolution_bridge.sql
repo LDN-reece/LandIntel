@@ -124,7 +124,7 @@ returns table (
     canonical_site_count bigint
 )
 language plpgsql
-set search_path = pg_catalog, public, landintel
+set search_path = pg_catalog, public, landintel, extensions
 as $$
 declare
     v_max_candidates_per_site integer := greatest(coalesce(max_candidates_per_site, 10), 1);
@@ -161,7 +161,7 @@ begin
           on anchor.geometry is not null
          and parcel.geometry is not null
          and parcel.authority_name = anchor.authority_name
-         and parcel.geometry && anchor.geometry
+         and parcel.geometry OPERATOR(extensions.&&) anchor.geometry
          and st_intersects(parcel.geometry, anchor.geometry)
         cross join lateral (
             with cleaned as (

@@ -957,9 +957,10 @@ class SourceExpansionRunner:
                         cast(:refresh_existing as boolean)
                         or not exists (
                             select 1
-                            from public.site_constraint_group_summaries as summary
-                            where summary.constraint_layer_id = layer_row.id
-                              and summary.site_location_id = anchor.site_location_id
+                            from public.site_constraint_measurement_scan_state as scan_state
+                            where scan_state.constraint_layer_id = layer_row.id
+                              and scan_state.site_location_id = anchor.site_location_id
+                              and scan_state.scan_scope = 'canonical_site_geometry'
                         )
                     )
                     order by anchor.site_location_id

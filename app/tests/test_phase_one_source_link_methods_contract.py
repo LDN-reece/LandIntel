@@ -21,6 +21,8 @@ class PhaseOneSourceLinkMethodContractTests(unittest.TestCase):
             "continuity",
             "direct_reference",
             "trusted_alias",
+            "spatial_dominance",
+            "balanced_auto_create",
             "dominant_spatial_overlap",
             "new_source_geometry",
         ):

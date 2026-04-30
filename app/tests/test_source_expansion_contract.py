@@ -197,6 +197,8 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("_has_required_secret", RUNNER)
         self.assertIn("https://api.os.uk/features/v1/wfs", RUNNER)
         self.assertIn("https://api.os.uk/search/links/v1", RUNNER)
+        priority_migration = (APP_DIR / "sql" / "046_phase_one_control_policy_priority.sql").read_text(encoding="utf-8")
+        self.assertIn("os_linked_identifiers", priority_migration)
         self.assertIn("OS_DOWNLOADS_API", WORKFLOW)
         self.assertIn("OS_FEATURES_API", WORKFLOW)
         self.assertIn("OS_LINKED_IDENTIFIERS_API", WORKFLOW)

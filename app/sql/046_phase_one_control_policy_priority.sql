@@ -25,6 +25,7 @@ alter table landintel.canonical_site_refresh_queue
             'topography',
             'os_places',
             'os_features',
+            'os_linked_identifiers',
             'local_landscape_areas',
             'local_nature',
             'forestry_woodland',
@@ -71,7 +72,8 @@ with expected_sources(priority_rank, source_family, command_name, target_table, 
         (28, 'greenbelt', 'ingest-greenbelt', 'public.constraint_source_features', 'constraint'),
         (30, 'topography', 'ingest-os-topography', 'public.constraint_source_features', 'constraint'),
         (31, 'os_places', 'ingest-os-places', 'public.constraint_source_features', 'location_context'),
-        (32, 'os_features', 'ingest-os-features', 'public.constraint_source_features', 'location_context')
+        (32, 'os_features', 'ingest-os-features', 'public.constraint_source_features', 'location_context'),
+        (33, 'os_linked_identifiers', 'ingest-os-linked-identifiers', 'landintel.source_estate_registry', 'location_context')
 ), raw_counts as (
     select 'title_number'::text as source_family, count(*)::bigint as raw_row_count from public.site_title_validation
     union all

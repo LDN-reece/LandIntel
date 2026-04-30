@@ -87,7 +87,8 @@ class IncrementalReconcileContractTests(unittest.TestCase):
     def test_catchup_runner_scans_full_source_tables(self) -> None:
         self.assertNotIn("latest_successful_ingest_run", CATCHUP_WORKER)
         self.assertNotIn("where planning.ingest_run_id = cast(:run_id as uuid)", CATCHUP_WORKER)
-        self.assertIn("current_source_signature is distinct from prepared.source_signature", CATCHUP_WORKER)
+        self.assertIn("current_source_signature is distinct from source_signature", CATCHUP_WORKER)
+        self.assertIn("with source_candidates as", CATCHUP_WORKER)
         self.assertIn("not exists (", CATCHUP_WORKER)
         self.assertIn("_authority_scope_for_family", CATCHUP_WORKER)
 

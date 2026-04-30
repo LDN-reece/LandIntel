@@ -76,7 +76,7 @@ Required now:
 - `BOUNDARY_AUTHKEY`
 - `IMPROVEMENT_SERVICE_AUTHKEY`
 - `OS_API_KEY`
-- `OS_PLACES_API_KEY` or `OS_PLACES_API` as fallback names for the OS Places API key
+- `OS_PLACES_API_KEY` or `OS_PLACES_API` as the preferred OS Places API key names; `OS_API_KEY` remains the fallback
 
 Used by later title/parcel source packs:
 

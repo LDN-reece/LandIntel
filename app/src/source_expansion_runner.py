@@ -130,7 +130,7 @@ OS_CATALOGUE_SOURCES: tuple[dict[str, Any], ...] = (
         "source_status": "live_api",
         "orchestration_mode": "os_places_api",
         "endpoint_url": "https://api.os.uk/search/places/v1/find",
-        "auth_env_vars": ["OS_API_KEY"],
+        "auth_env_vars": ["OS_PLACES_API_KEY"],
         "target_table": "landintel.source_estate_registry",
         "reconciliation_path": "on-demand address/postcode enrichment against canonical sites",
         "evidence_path": "source registry until per-site enrichment is activated",
@@ -3421,9 +3421,9 @@ class SourceExpansionRunner:
         if source["source_family"] == "topography":
             params = {"area": "GB"}
         elif source["source_family"] == "os_places":
-            params = {"query": "Glasgow", "maxresults": "1", **self._os_key_params()}
+            params = {"query": "Glasgow", "maxresults": "1", **self._os_key_params("os_places")}
         elif source["source_family"] == "os_features":
-            params = {"service": "WFS", "version": "2.0.0", "request": "GetCapabilities", **self._os_key_params()}
+            params = {"service": "WFS", "version": "2.0.0", "request": "GetCapabilities", **self._os_key_params("os_features")}
         try:
             response = self.client.get(endpoint, params=params)
             status = "reachable" if response.status_code < 400 else "failed"
@@ -3464,13 +3464,22 @@ class SourceExpansionRunner:
         if "BOUNDARY_AUTHKEY" in auth_vars:
             authkey = os.getenv("BOUNDARY_AUTHKEY")
             return {"authkey": authkey} if authkey else {}
-        if "OS_API_KEY" in auth_vars:
-            return self._os_key_params()
+        if "OS_API_KEY" in auth_vars or "OS_PLACES_API_KEY" in auth_vars:
+            return self._os_key_params(str(source.get("source_family") or ""))
         return {}
 
-    def _os_key_params(self) -> dict[str, str]:
-        key = os.getenv("OS_API_KEY")
-        return {"key": key} if key else {}
+    def _os_key_params(self, source_family: str = "") -> dict[str, str]:
+        if source_family == "os_places":
+            env_names = ("OS_PLACES_API_KEY", "OS_PLACES_API", "OS_API_KEY")
+        elif source_family == "os_features":
+            env_names = ("OS_FEATURES_API_KEY", "OS_FEATURES_API", "OS_API_KEY")
+        else:
+            env_names = ("OS_API_KEY",)
+        for env_name in env_names:
+            key = os.getenv(env_name)
+            if key:
+                return {"key": key}
+        return {}
 
     def _assert_required_secrets(self, sources: list[dict[str, Any]]) -> None:
         missing = sorted(
@@ -3478,11 +3487,18 @@ class SourceExpansionRunner:
                 str(secret)
                 for source in sources
                 for secret in source.get("auth_env_vars") or []
-                if not os.getenv(str(secret))
+                if not self._has_required_secret(str(secret))
             }
         )
         if missing:
             raise RuntimeError("Missing required GitHub Actions secret(s): " + ", ".join(missing))
+
+    def _has_required_secret(self, secret_name: str) -> bool:
+        if secret_name == "OS_PLACES_API_KEY":
+            return any(os.getenv(name) for name in ("OS_PLACES_API_KEY", "OS_PLACES_API", "OS_API_KEY"))
+        if secret_name == "OS_FEATURES_API_KEY":
+            return any(os.getenv(name) for name in ("OS_FEATURES_API_KEY", "OS_FEATURES_API", "OS_API_KEY"))
+        return bool(os.getenv(secret_name))
 
     def _sources_for_family(self, source_family: str) -> list[dict[str, Any]]:
         manifest_sources = [

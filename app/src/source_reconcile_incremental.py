@@ -1269,6 +1269,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
             cross join source_geometry
             where site.authority_name = :authority_name
               and site.geometry is not null
+              and site.geometry OPERATOR(extensions.&&) st_expand(source_geometry.geometry_value, 100)
               and (
                   st_intersects(site.geometry, source_geometry.geometry_value)
                   or st_dwithin(site.geometry, source_geometry.geometry_value, 100)
@@ -1327,6 +1328,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                   on parcel.authority_name = site.authority_name
                  and site.id = cast(:site_id as uuid)
                  and site.geometry is not null
+                 and parcel.geometry OPERATOR(extensions.&&) site.geometry
                  and st_intersects(parcel.geometry, site.geometry)
                 order by overlap_area_sqm desc nulls last, parcel.id asc
                 limit 1

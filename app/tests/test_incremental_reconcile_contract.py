@@ -76,6 +76,10 @@ class IncrementalReconcileContractTests(unittest.TestCase):
         self.assertIn("source_signature", WORKER)
         self.assertIn("current_source_signature", WORKER)
 
+    def test_worker_prefilters_live_spatial_matches(self) -> None:
+        self.assertIn("site.geometry OPERATOR(extensions.&&) st_expand(source_geometry.geometry_value, 100)", WORKER)
+        self.assertIn("parcel.geometry OPERATOR(extensions.&&) site.geometry", WORKER)
+
     def test_worker_locks_no_fuzzy_auto_match(self) -> None:
         for forbidden_snippet in ("SequenceMatcher", "difflib", "rapidfuzz", "fuzzywuzzy"):
             self.assertNotIn(forbidden_snippet, WORKER)
@@ -183,6 +187,13 @@ class IncrementalReconcileContractTests(unittest.TestCase):
             'python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py',
         ):
             self.assertIn(snippet, WORKFLOW)
+
+    def test_process_reconcile_command_does_not_force_refresh(self) -> None:
+        process_branch = WORKFLOW.split('elif [ "$SELECTED_COMMAND" = "process-reconcile-queue" ]; then', 1)[1]
+        process_branch = process_branch.split('elif [ "$SELECTED_COMMAND" = "reconcile-catchup-scan" ]; then', 1)[0]
+
+        self.assertIn("process-reconcile-queue --limit", process_branch)
+        self.assertNotIn("refresh-affected-sites", process_branch)
 
     def test_planning_history_command_does_not_run_full_wfs_ingest(self) -> None:
         planning_branch = WORKFLOW.split('elif [ "$SELECTED_COMMAND" = "ingest-planning-history" ]; then', 1)[1]

@@ -444,7 +444,6 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "process-reconcile-queue" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
-            python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
           elif [ "$SELECTED_COMMAND" = "reconcile-catchup-scan" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_reconcile_catchup reconcile-catchup-scan --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"

@@ -181,7 +181,7 @@ jobs:
       IMPROVEMENT_SERVICE_AUTHKEY: ${{ secrets.IMPROVEMENT_SERVICE_AUTHKEY }}
       BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
       OS_API_KEY: ${{ secrets.OS_API_KEY }}
-      OS_PLACES_API_KEY: ${{ secrets.OS_PLACES_API_KEY || secrets.OS_API_KEY || secrets.OS_PLACES_API }}
+      OS_PLACES_API_KEY: ${{ secrets.OS_PLACES_API_KEY || secrets.OS_PLACES_API || secrets.OS_API_KEY }}
       COMPANIES_HOUSE_API: ${{ secrets.COMPANIES_HOUSE_API }}
       COMPANIES_HOUSE_API_KEY: ${{ secrets.COMPANIES_HOUSE_API_KEY }}
       FCA_API: ${{ secrets.FCA_API }}

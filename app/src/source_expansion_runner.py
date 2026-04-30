@@ -104,16 +104,16 @@ OS_CATALOGUE_SOURCES: tuple[dict[str, Any], ...] = (
     {
         "source_key": "os_downloads_terrain50",
         "source_family": "topography",
-        "source_name": "OS Downloads API - Terrain products",
+        "source_name": "OS Downloads API - OS Terrain 50 OpenData",
         "source_group": "constraints",
         "phase_one_role": "target_live",
         "source_status": "live_target",
         "orchestration_mode": "os_downloads_api",
-        "endpoint_url": "https://api.os.uk/downloads/v1/products",
-        "auth_env_vars": ["OS_API_KEY"],
+        "endpoint_url": "https://api.os.uk/downloads/v1/products/Terrain50/downloads",
+        "auth_env_vars": [],
         "target_table": "public.constraint_source_features",
         "reconciliation_path": "OS Downloads product metadata -> terrain download adapter -> indicative_only slope overlay",
-        "evidence_path": "source registry until terrain tile adapter is activated",
+        "evidence_path": "OS Downloads API metadata until terrain tile adapter is activated",
         "signal_output": "topography_slope after terrain adapter promotion",
         "ranking_impact": "Geometry/constraints drag only; derived area remains indicative_only.",
         "resurfacing_trigger": "OS Terrain product refresh or derived slope-band change.",
@@ -3419,7 +3419,7 @@ class SourceExpansionRunner:
             return "not_probeable", "No endpoint URL is registered for this source."
         params: dict[str, str] = {}
         if source["source_family"] == "topography":
-            params = {"expanded": "true", **self._os_key_params()}
+            params = {"area": "GB"}
         elif source["source_family"] == "os_places":
             params = {"query": "Glasgow", "maxresults": "1", **self._os_key_params()}
         elif source["source_family"] == "os_features":
@@ -3427,6 +3427,31 @@ class SourceExpansionRunner:
         try:
             response = self.client.get(endpoint, params=params)
             status = "reachable" if response.status_code < 400 else "failed"
+            if status == "reachable" and source["source_family"] == "topography":
+                payload = response.json()
+                downloads = payload if isinstance(payload, list) else []
+                formats = sorted(
+                    {
+                        " ".join(
+                            part
+                            for part in (
+                                str(download.get("format") or "").strip(),
+                                str(download.get("subformat") or "").strip(),
+                            )
+                            if part
+                        )
+                        for download in downloads
+                        if isinstance(download, dict)
+                    }
+                )
+                return (
+                    status,
+                    (
+                        f"HTTP {response.status_code} from {source['source_name']}: "
+                        f"{len(downloads)} Terrain50 GB download option(s)"
+                        + (f" ({', '.join(formats)})" if formats else "")
+                    ),
+                )
             return status, f"HTTP {response.status_code} from {source['source_name']}"
         except Exception as exc:
             return "failed", str(exc)

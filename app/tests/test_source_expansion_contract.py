@@ -187,7 +187,8 @@ class SourceExpansionContractTests(unittest.TestCase):
     def test_os_sources_are_registered_without_local_storage(self) -> None:
         for source_key in ("os_downloads_terrain50", "os_places_api", "os_features_api"):
             self.assertIn(source_key, RUNNER)
-        self.assertIn("https://api.os.uk/downloads/v1/products", RUNNER)
+        self.assertIn("https://api.os.uk/downloads/v1/products/Terrain50/downloads", RUNNER)
+        self.assertIn('"auth_env_vars": []', RUNNER)
         self.assertIn("https://api.os.uk/search/places/v1/find", RUNNER)
         self.assertIn("https://api.os.uk/features/v1/wfs", RUNNER)
         self.assertNotIn("TEMP_STORAGE_PATH", RUNNER)

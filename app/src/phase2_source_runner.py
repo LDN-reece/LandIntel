@@ -314,7 +314,11 @@ class Phase2SourceRunner:
                         coalesce(planning.decision_date::text, ''),
                         coalesce(planning.proposal_text, '')
                   ))
-                order by planning.id
+                order by
+                    (coalesce(planning.canonical_site_id, state_row.current_canonical_site_id) is not null) desc,
+                    (existing.source_record_signature is null) desc,
+                    planning.decision_date desc nulls last,
+                    planning.id
                 limit :batch_size
             ),
             prepared as (

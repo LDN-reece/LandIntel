@@ -183,6 +183,19 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("PHASE2_DRY_RUN", RUNNER)
         self.assertIn("PHASE2_AUDIT_ONLY", RUNNER)
 
+    def test_planning_decision_refresh_prioritises_site_linked_records(self) -> None:
+        refresh_sql = RUNNER.split("def refresh_planning_decisions", 1)[1]
+        refresh_sql = refresh_sql.split("def audit_planning_decisions", 1)[0]
+
+        self.assertIn("coalesce(planning.canonical_site_id, state_row.current_canonical_site_id)", refresh_sql)
+        self.assertIn(
+            "(coalesce(planning.canonical_site_id, state_row.current_canonical_site_id) is not null) desc",
+            refresh_sql,
+        )
+        self.assertIn("(existing.source_record_signature is null) desc", refresh_sql)
+        self.assertIn("insert into landintel.evidence_references", refresh_sql)
+        self.assertIn("insert into landintel.site_signals", refresh_sql)
+
     def test_proof_tests_include_counts_by_lifecycle_stage(self) -> None:
         self.assertIn("v_landintel_source_lifecycle_stage_counts", MIGRATION)
         self.assertIn("lifecycle_counts", RUNNER)

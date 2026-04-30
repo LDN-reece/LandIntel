@@ -3418,14 +3418,16 @@ class SourceExpansionRunner:
         if not endpoint:
             return "not_probeable", "No endpoint URL is registered for this source."
         params: dict[str, str] = {}
+        headers: dict[str, str] = {}
         if source["source_family"] == "topography":
             params = {"area": "GB"}
         elif source["source_family"] == "os_places":
-            params = {"query": "Glasgow", "maxresults": "1", **self._os_key_params("os_places")}
+            params = {"query": "Glasgow", "maxresults": "1"}
+            headers = self._os_key_headers("os_places")
         elif source["source_family"] == "os_features":
             params = {"service": "WFS", "version": "2.0.0", "request": "GetCapabilities", **self._os_key_params("os_features")}
         try:
-            response = self.client.get(endpoint, params=params)
+            response = self.client.get(endpoint, params=params, headers=headers)
             status = "reachable" if response.status_code < 400 else "failed"
             if status == "reachable" and source["source_family"] == "topography":
                 payload = response.json()
@@ -3469,6 +3471,14 @@ class SourceExpansionRunner:
         return {}
 
     def _os_key_params(self, source_family: str = "") -> dict[str, str]:
+        key = self._os_key_value(source_family)
+        return {"key": key} if key else {}
+
+    def _os_key_headers(self, source_family: str = "") -> dict[str, str]:
+        key = self._os_key_value(source_family)
+        return {"key": key} if key else {}
+
+    def _os_key_value(self, source_family: str = "") -> str | None:
         if source_family == "os_places":
             env_names = ("OS_PLACES_API_KEY", "OS_PLACES_API", "OS_API_KEY")
         elif source_family == "os_features":
@@ -3478,8 +3488,8 @@ class SourceExpansionRunner:
         for env_name in env_names:
             key = os.getenv(env_name)
             if key:
-                return {"key": key}
-        return {}
+                return key
+        return None
 
     def _assert_required_secrets(self, sources: list[dict[str, Any]]) -> None:
         missing = sorted(

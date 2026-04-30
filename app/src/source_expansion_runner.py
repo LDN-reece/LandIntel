@@ -3733,7 +3733,11 @@ class SourceExpansionRunner:
             params = {"data": "[out:json][timeout:5];node(55.85,-4.26,55.86,-4.25);out 1;"}
             headers["Accept"] = "application/json,text/plain,*/*"
         elif source["source_family"] == "statistics_gov_scot":
-            params = {"query": "select * where { ?s ?p ?o } limit 1", "format": "json"}
+            endpoint = (
+                "https://statistics.gov.scot/sparql"
+                "?query=select%20%2A%20where%20%7B%20%3Fs%20%3Fp%20%3Fo%20%7D%20limit%201"
+                "&format=json"
+            )
             headers["Accept"] = "application/sparql-results+json, application/json"
         elif source["source_family"] == "opentopography_srtm":
             params = {
@@ -3848,14 +3852,15 @@ class SourceExpansionRunner:
         default_endpoint = str(source.get("endpoint_url") or "")
         if not product_id:
             return default_endpoint
-        base_url = os.getenv("OS_DOWNLOADS_API") or "https://api.os.uk/downloads/v1"
+        base_url = (os.getenv("OS_DOWNLOADS_API") or "https://api.os.uk/downloads/v1").strip()
         marker = "/products/"
         marker_index = base_url.find(marker)
         if marker_index >= 0:
             base_url = base_url[:marker_index]
-        if base_url.rstrip("/").endswith("/downloads"):
-            base_url = base_url.rstrip("/") + "/v1"
-        return urljoin(base_url.rstrip("/") + "/", f"products/{product_id}/downloads")
+        cleaned_base_url = base_url.rstrip("/")
+        if cleaned_base_url.endswith("/downloads"):
+            cleaned_base_url = cleaned_base_url + "/v1"
+        return urljoin(cleaned_base_url.rstrip("/") + "/", f"products/{product_id}/downloads")
 
     def _os_join_endpoint(self, base_url: str | None, suffix: str, default_endpoint: str) -> str:
         if not base_url:

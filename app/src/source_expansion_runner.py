@@ -3533,6 +3533,10 @@ class SourceExpansionRunner:
     def _os_join_endpoint(self, base_url: str | None, suffix: str, default_endpoint: str) -> str:
         if not base_url:
             return default_endpoint
+        cleaned_url = base_url.rstrip("/")
+        cleaned_suffix_path = "/" + suffix.strip("/")
+        if cleaned_url.endswith(cleaned_suffix_path):
+            return cleaned_url
         cleaned_base = base_url.rstrip("/") + "/"
         cleaned_suffix = suffix.lstrip("/")
         return urljoin(cleaned_base, cleaned_suffix)

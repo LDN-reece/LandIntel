@@ -207,6 +207,7 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("secrets.OS_PLACES_API_KEY", WORKFLOW)
         self.assertIn('os.getenv("OS_PLACES_API")', RUNNER)
         self.assertIn("_secret_value_is_api_key", RUNNER)
+        self.assertIn("cleaned_url.endswith(cleaned_suffix_path)", RUNNER)
         self.assertNotIn("TEMP_STORAGE_PATH", RUNNER)
 
     def test_control_policy_spine_prioritises_title_ldp_and_settlement(self) -> None:

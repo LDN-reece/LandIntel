@@ -100,6 +100,8 @@ create table if not exists landintel.corporate_charge_records (
 
 create unique index if not exists planning_decision_facts_source_uidx
     on landintel.planning_decision_facts (source_key, source_record_id);
+create index if not exists planning_decision_facts_application_idx
+    on landintel.planning_decision_facts (planning_application_record_id);
 create unique index if not exists corporate_entity_enrichments_source_uidx
     on landintel.corporate_entity_enrichments (source_key, source_record_id);
 create unique index if not exists corporate_charge_records_source_uidx

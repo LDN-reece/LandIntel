@@ -405,9 +405,9 @@ OS_CATALOGUE_SOURCES: tuple[dict[str, Any], ...] = (
         source_family="osm",
         source_key="osm_overpass_context",
         source_name="OpenStreetMap Overpass API",
-        endpoint_url="https://overpass-api.de/api/status",
+        endpoint_url="https://overpass-api.de/api/interpreter",
         source_group="open_context",
-        orchestration_mode="osm_overpass_status",
+        orchestration_mode="osm_overpass_interpreter",
         target_table="landintel.source_estate_registry",
         reconciliation_path="Overpass status probe -> controlled Overpass/bulk extract adapter -> road names, amenities, land use and indicative power context.",
         signal_output="osm_context after controlled OSM adapter promotion",
@@ -3718,7 +3718,7 @@ class SourceExpansionRunner:
             return "not_probeable", "No endpoint URL is registered for this source."
         endpoint = self._os_endpoint(source)
         params: dict[str, str] = {}
-        headers: dict[str, str] = {}
+        headers: dict[str, str] = {"User-Agent": "LandIntel/1.0 (+https://github.com/LDN-reece/LandIntel)"}
         orchestration_mode = str(source.get("orchestration_mode") or "")
         if source["source_family"] == "topography" or orchestration_mode == "os_downloads_opendata":
             return self._probe_os_download_product(source)
@@ -3729,9 +3729,12 @@ class SourceExpansionRunner:
         elif source["source_family"] == "os_linked_identifiers":
             endpoint = self._os_join_endpoint(endpoint, "/productVersionInfo/BLPU_UPRN_TopographicArea_TOID_5", endpoint)
             params = self._os_key_params("os_linked_identifiers")
+        elif source["source_family"] == "osm":
+            params = {"data": "[out:json][timeout:5];node(55.85,-4.26,55.86,-4.25);out 1;"}
+            headers["Accept"] = "application/json,text/plain,*/*"
         elif source["source_family"] == "statistics_gov_scot":
             params = {"query": "select * where { ?s ?p ?o } limit 1", "format": "json"}
-            headers = {"Accept": "application/sparql-results+json, application/json"}
+            headers["Accept"] = "application/sparql-results+json, application/json"
         elif source["source_family"] == "opentopography_srtm":
             params = {
                 "demtype": "SRTMGL1",
@@ -3755,7 +3758,11 @@ class SourceExpansionRunner:
         if source.get("download_area"):
             params["area"] = str(source["download_area"])
         try:
-            response = self.client.get(endpoint, params=params)
+            response = self.client.get(
+                endpoint,
+                params=params,
+                headers={"User-Agent": "LandIntel/1.0 (+https://github.com/LDN-reece/LandIntel)"},
+            )
             status = "reachable" if response.status_code < 400 else "failed"
             if status != "reachable":
                 return status, f"HTTP {response.status_code} from {source['source_name']}"
@@ -3846,6 +3853,8 @@ class SourceExpansionRunner:
         marker_index = base_url.find(marker)
         if marker_index >= 0:
             base_url = base_url[:marker_index]
+        if base_url.rstrip("/").endswith("/downloads"):
+            base_url = base_url.rstrip("/") + "/v1"
         return urljoin(base_url.rstrip("/") + "/", f"products/{product_id}/downloads")
 
     def _os_join_endpoint(self, base_url: str | None, suffix: str, default_endpoint: str) -> str:

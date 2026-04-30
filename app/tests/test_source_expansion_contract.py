@@ -250,7 +250,7 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn('os.getenv("OS_PLACES_API")', RUNNER)
         self.assertIn("OPEN_LOCATION_SPINE_FAMILIES", RUNNER)
         self.assertIn("probe-open-location-spine", RUNNER)
-        self.assertIn("https://overpass-api.de/api/status", RUNNER)
+        self.assertIn("https://overpass-api.de/api/interpreter", RUNNER)
         self.assertIn("https://naptan.api.dft.gov.uk/swagger/v1/swagger.json", RUNNER)
         self.assertIn("https://statistics.gov.scot/sparql", RUNNER)
         self.assertIn("https://portal.opentopography.org/API/globaldem", RUNNER)

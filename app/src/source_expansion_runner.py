@@ -3852,7 +3852,12 @@ class SourceExpansionRunner:
         default_endpoint = str(source.get("endpoint_url") or "")
         if not product_id:
             return default_endpoint
-        base_url = (os.getenv("OS_DOWNLOADS_API") or "https://api.os.uk/downloads/v1").strip()
+        configured_base_url = (os.getenv("OS_DOWNLOADS_API") or "").strip()
+        base_url = (
+            configured_base_url
+            if "/downloads/v1" in configured_base_url
+            else "https://api.os.uk/downloads/v1"
+        )
         marker = "/products/"
         marker_index = base_url.find(marker)
         if marker_index >= 0:

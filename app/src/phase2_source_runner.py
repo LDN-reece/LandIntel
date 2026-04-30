@@ -258,7 +258,15 @@ class Phase2SourceRunner:
                 """
                 select count(*)::bigint
                 from landintel.planning_application_records as planning
-                where planning.canonical_site_id is not null
+                left join lateral (
+                    select link.canonical_site_id
+                    from landintel.site_source_links as link
+                    where link.source_family = 'planning'
+                      and link.source_record_id = planning.source_record_id
+                    order by link.updated_at desc nulls last, link.created_at desc
+                    limit 1
+                ) as source_link on true
+                where coalesce(planning.canonical_site_id, source_link.canonical_site_id) is not null
                   and (:authority_name = '' or planning.authority_name ilike :authority_name_like)
                 """,
                 {
@@ -278,7 +286,7 @@ class Phase2SourceRunner:
             with selected_records as (
                 select
                     planning.id as planning_application_record_id,
-                    planning.canonical_site_id,
+                    coalesce(planning.canonical_site_id, source_link.canonical_site_id) as canonical_site_id,
                     planning.source_record_id as planning_source_record_id,
                     planning.authority_name,
                     planning.planning_reference,
@@ -298,9 +306,17 @@ class Phase2SourceRunner:
                         coalesce(planning.proposal_text, '')
                     )) as current_signature
                 from landintel.planning_application_records as planning
+                left join lateral (
+                    select link.canonical_site_id
+                    from landintel.site_source_links as link
+                    where link.source_family = 'planning'
+                      and link.source_record_id = planning.source_record_id
+                    order by link.updated_at desc nulls last, link.created_at desc
+                    limit 1
+                ) as source_link on true
                 left join landintel.planning_decision_facts as existing
                   on existing.planning_application_record_id = planning.id
-                where planning.canonical_site_id is not null
+                where coalesce(planning.canonical_site_id, source_link.canonical_site_id) is not null
                   and (:authority_name = '' or planning.authority_name ilike :authority_name_like)
                 order by existing.updated_at nulls first, planning.updated_at desc nulls last, planning.id
                 limit :batch_size
@@ -631,7 +647,19 @@ class Phase2SourceRunner:
             """
             select
                 (select count(*)::integer from landintel.planning_application_records) as planning_record_count,
-                (select count(*)::integer from landintel.planning_application_records where canonical_site_id is not null) as linked_planning_record_count,
+                (
+                    select count(*)::integer
+                    from landintel.planning_application_records as planning
+                    left join lateral (
+                        select link.canonical_site_id
+                        from landintel.site_source_links as link
+                        where link.source_family = 'planning'
+                          and link.source_record_id = planning.source_record_id
+                        order by link.updated_at desc nulls last, link.created_at desc
+                        limit 1
+                    ) as source_link on true
+                    where coalesce(planning.canonical_site_id, source_link.canonical_site_id) is not null
+                ) as linked_planning_record_count,
                 (select count(*)::integer from landintel.planning_decision_facts) as decision_fact_count,
                 (select count(distinct canonical_site_id)::integer from landintel.planning_decision_facts where canonical_site_id is not null) as decision_site_count,
                 (select count(*)::integer from landintel.site_planning_decision_context) as decision_context_count,
@@ -653,7 +681,15 @@ class Phase2SourceRunner:
                 """
                 select count(*)::bigint
                 from landintel.planning_application_records as planning
-                where planning.canonical_site_id is not null
+                left join lateral (
+                    select link.canonical_site_id
+                    from landintel.site_source_links as link
+                    where link.source_family = 'planning'
+                      and link.source_record_id = planning.source_record_id
+                    order by link.updated_at desc nulls last, link.created_at desc
+                    limit 1
+                ) as source_link on true
+                where coalesce(planning.canonical_site_id, source_link.canonical_site_id) is not null
                   and (
                         nullif(btrim(planning.appeal_status), '') is not null
                         or lower(coalesce(planning.raw_payload::text, '')) like '%%appeal%%'
@@ -677,7 +713,7 @@ class Phase2SourceRunner:
             with selected_records as (
                 select
                     planning.id as planning_application_record_id,
-                    planning.canonical_site_id,
+                    coalesce(planning.canonical_site_id, source_link.canonical_site_id) as canonical_site_id,
                     planning.source_record_id,
                     planning.authority_name,
                     planning.planning_reference,
@@ -695,7 +731,15 @@ class Phase2SourceRunner:
                         coalesce(planning.decision_date::text, '')
                     )) as current_signature
                 from landintel.planning_application_records as planning
-                where planning.canonical_site_id is not null
+                left join lateral (
+                    select link.canonical_site_id
+                    from landintel.site_source_links as link
+                    where link.source_family = 'planning'
+                      and link.source_record_id = planning.source_record_id
+                    order by link.updated_at desc nulls last, link.created_at desc
+                    limit 1
+                ) as source_link on true
+                where coalesce(planning.canonical_site_id, source_link.canonical_site_id) is not null
                   and (
                         nullif(btrim(planning.appeal_status), '') is not null
                         or lower(coalesce(planning.raw_payload::text, '')) like '%%appeal%%'
@@ -1145,12 +1189,20 @@ class Phase2SourceRunner:
             """
             select
                 planning.id,
-                planning.canonical_site_id,
+                coalesce(planning.canonical_site_id, source_link.canonical_site_id) as canonical_site_id,
                 planning.authority_name,
                 planning.planning_reference,
                 planning.raw_payload
             from landintel.planning_application_records as planning
-            where planning.canonical_site_id is not null
+            left join lateral (
+                select link.canonical_site_id
+                from landintel.site_source_links as link
+                where link.source_family = 'planning'
+                  and link.source_record_id = planning.source_record_id
+                order by link.updated_at desc nulls last, link.created_at desc
+                limit 1
+            ) as source_link on true
+            where coalesce(planning.canonical_site_id, source_link.canonical_site_id) is not null
               and (:authority_name = '' or planning.authority_name ilike :authority_name_like)
             order by planning.updated_at desc nulls last, planning.id
             limit :batch_size

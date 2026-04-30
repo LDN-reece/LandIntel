@@ -218,6 +218,12 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         ):
             self.assertIn(snippet, RUNNER)
 
+        amenities_sql = RUNNER.split("def ingest_amenities", 1)[1]
+        amenities_sql = amenities_sql.split("def ingest_planning_documents", 1)[0]
+        self.assertIn("'constraint_source_feature_key'", amenities_sql)
+        self.assertIn("'constraint_feature_metadata'", amenities_sql)
+        self.assertNotIn("feature.raw_payload", amenities_sql)
+
     def test_power_ingest_does_not_turn_metadata_into_asset_rows(self) -> None:
         power_sql = RUNNER.split("def ingest_power_infrastructure", 1)[1]
         power_sql = power_sql.split("def ingest_intelligence_events", 1)[0]

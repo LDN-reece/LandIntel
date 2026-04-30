@@ -61,6 +61,7 @@ create index if not exists landintel_source_freshness_registry_idx
 create index if not exists source_registry_freshness_idx
     on public.source_registry (freshness_status, last_checked_at desc);
 
+drop view if exists analytics.v_phase_one_source_estate_matrix;
 drop view if exists analytics.v_live_source_coverage_freshness;
 drop view if exists analytics.v_source_freshness_matrix;
 drop view if exists analytics.v_source_freshness_current;

@@ -1836,7 +1836,16 @@ class Phase2SourceRunner:
                     feature.feature_name,
                     feature.source_reference,
                     feature.geometry,
-                    feature.raw_payload,
+                    jsonb_build_object(
+                        'constraint_feature_id', feature.id,
+                        'constraint_source_feature_key', feature.source_feature_key,
+                        'feature_name', feature.feature_name,
+                        'source_reference', feature.source_reference,
+                        'source_url', feature.source_url,
+                        'authority_name', feature.authority_name,
+                        'severity_label', feature.severity_label,
+                        'constraint_feature_metadata', feature.metadata
+                    ) as raw_payload,
                     layer.source_family,
                     layer.layer_name,
                     md5(concat_ws('|', feature.id::text, coalesce(feature.feature_name, ''), coalesce(feature.source_reference, ''))) as current_signature

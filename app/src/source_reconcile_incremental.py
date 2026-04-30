@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import monotonic
 from typing import Any
+from uuid import UUID
 
 from shapely import wkb as shapely_wkb
 from shapely.geometry.base import BaseGeometry
@@ -1663,19 +1664,28 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
         return _polygonize_geometry(shapely_wkb.loads(bytes.fromhex(geometry_wkb)))
 
     def _pg_uuid_array(self, values: list[str] | None) -> str:
-        cleaned = [value for value in values or [] if value]
+        cleaned = [str(value) for value in values or [] if value]
         if not cleaned:
             return "{}"
         return "{" + ",".join(cleaned) + "}"
 
     def _json_dumps(self, payload: Any) -> str:
-        return json.dumps(payload, default=_json_default, ensure_ascii=False)
+        return json.dumps(payload, default=self._json_default, ensure_ascii=False)
+
+    def _json_default(self, value: Any) -> Any:
+        if isinstance(value, UUID):
+            return str(value)
+        converted = _json_default(value)
+        if converted is value and not isinstance(value, str | int | float | bool | list | dict | tuple | type(None)):
+            return str(value)
+        return converted
 
     def _dedupe_site_ids(self, site_ids: list[str]) -> list[str]:
         ordered: list[str] = []
         for site_id in site_ids:
-            if site_id and site_id not in ordered:
-                ordered.append(site_id)
+            site_id_text = str(site_id) if site_id else None
+            if site_id_text and site_id_text not in ordered:
+                ordered.append(site_id_text)
         return ordered
 
 

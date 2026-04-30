@@ -82,6 +82,11 @@ class IncrementalReconcileContractTests(unittest.TestCase):
         self.assertIn("currentised_from_processing_worker", WORKER)
         self.assertIn("self._refresh_reconcile_item_to_current_source(item, state, source_row)", WORKER)
 
+    def test_worker_serialises_database_uuid_values(self) -> None:
+        self.assertIn("from uuid import UUID", WORKER)
+        self.assertIn("if isinstance(value, UUID)", WORKER)
+        self.assertIn("str(value) for value in values or []", WORKER)
+
     def test_worker_prefilters_live_spatial_matches(self) -> None:
         self.assertIn("site.geometry OPERATOR(extensions.&&) st_expand(source_geometry.geometry_value, 100)", WORKER)
         self.assertIn("parcel.geometry OPERATOR(extensions.&&) site.geometry", WORKER)

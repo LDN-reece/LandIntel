@@ -99,6 +99,11 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                 remaining = max(effective_limit - stats["claimed"], 0)
                 if remaining == 0:
                     break
+                stats["superseded"] += self._supersede_stale_reconcile_items(
+                    max(min(remaining, self.settings.reconcile_queue_batch_limit) * 5, 1)
+                )
+                if self._runtime_limit_reached(started, effective_runtime_minutes):
+                    break
                 batch = self._claim_reconcile_items(min(remaining, self.settings.reconcile_queue_batch_limit))
                 if not batch:
                     break
@@ -1038,6 +1043,72 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                 "lease_seconds": self.settings.reconcile_lease_seconds,
             },
         )
+
+    def _supersede_stale_reconcile_items(self, batch_limit: int) -> int:
+        row = self.database.fetch_one(
+            """
+            with candidates as (
+                select queue_row.id
+                from landintel.source_reconcile_queue as queue_row
+                join landintel.source_reconcile_state as state_row
+                  on state_row.id = queue_row.state_id
+                where queue_row.status in ('pending', 'retryable_failed')
+                  and coalesce(queue_row.next_attempt_at, now()) <= now()
+                  and (
+                      (
+                          queue_row.work_type = 'upsert'
+                          and (
+                              queue_row.source_signature is distinct from state_row.current_source_signature
+                              or queue_row.geometry_hash is distinct from state_row.current_geometry_hash
+                              or state_row.lifecycle_status = 'retired'
+                          )
+                      )
+                      or (
+                          queue_row.work_type = 'retire'
+                          and (
+                              state_row.lifecycle_status <> 'retired'
+                              or exists (
+                                  select 1
+                                  from landintel.planning_application_records as planning
+                                  where queue_row.source_family = 'planning'
+                                    and planning.authority_name = queue_row.authority_name
+                                    and planning.source_record_id = queue_row.source_record_id
+                              )
+                              or exists (
+                                  select 1
+                                  from landintel.hla_site_records as hla
+                                  where queue_row.source_family = 'hla'
+                                    and hla.authority_name = queue_row.authority_name
+                                    and hla.source_record_id = queue_row.source_record_id
+                              )
+                          )
+                      )
+                  )
+                order by queue_row.priority desc, queue_row.updated_at asc, queue_row.created_at asc
+                limit :batch_limit
+                for update skip locked
+            ),
+            superseded as (
+                update landintel.source_reconcile_queue as queue_row
+                set status = 'superseded',
+                    processed_at = now(),
+                    claimed_by = null,
+                    claimed_at = null,
+                    lease_expires_at = null,
+                    next_attempt_at = null,
+                    error_code = coalesce(queue_row.error_code, 'stale_before_claim'),
+                    error_message = coalesce(queue_row.error_message, 'Queue row was stale before claim and was superseded in bulk.'),
+                    updated_at = now()
+                from candidates
+                where queue_row.id = candidates.id
+                returning queue_row.id
+            )
+            select count(*)::int as superseded_count
+            from superseded
+            """,
+            {"batch_limit": batch_limit},
+        )
+        return int((row or {}).get("superseded_count", 0) or 0)
 
     def _claim_refresh_items(self, batch_limit: int) -> list[dict[str, Any]]:
         return self.database.fetch_all(

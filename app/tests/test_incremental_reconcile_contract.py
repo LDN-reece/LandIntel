@@ -70,6 +70,8 @@ class IncrementalReconcileContractTests(unittest.TestCase):
 
     def test_worker_rechecks_stale_items_before_processing(self) -> None:
         self.assertIn("def _queue_item_is_outdated", WORKER)
+        self.assertIn("def _supersede_stale_reconcile_items", WORKER)
+        self.assertIn("stale_before_claim", WORKER)
         self.assertIn('"superseded"', WORKER)
         self.assertIn("source_signature", WORKER)
         self.assertIn("current_source_signature", WORKER)

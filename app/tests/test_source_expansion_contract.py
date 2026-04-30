@@ -191,6 +191,8 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn('"auth_env_vars": []', RUNNER)
         self.assertIn("https://api.os.uk/search/places/v1/find", RUNNER)
         self.assertIn("https://api.os.uk/features/v1/wfs", RUNNER)
+        self.assertIn("secrets.OS_PLACES_API_KEY", WORKFLOW)
+        self.assertIn("secrets.OS_PLACES_API", WORKFLOW)
         self.assertNotIn("TEMP_STORAGE_PATH", RUNNER)
 
     def test_control_policy_spine_prioritises_title_ldp_and_settlement(self) -> None:

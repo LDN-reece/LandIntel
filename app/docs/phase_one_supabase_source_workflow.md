@@ -29,6 +29,7 @@ The retired lean workflow is intentionally inert. It loads no Supabase secrets, 
 - `BOUNDARY_AUTHKEY`
 - `IMPROVEMENT_SERVICE_AUTHKEY`
 - `OS_API_KEY`
+- `OS_PLACES_API_KEY` or `OS_PLACES_API` can also supply the OS Places key; the workflow falls back to these if `OS_API_KEY` is not set.
 - `ROS_CLIENT_ID`
 - `ROS_CLIENT_SECRET`
 

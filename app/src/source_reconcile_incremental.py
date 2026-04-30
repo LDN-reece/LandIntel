@@ -1047,30 +1047,35 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
     def _supersede_stale_reconcile_items(self, batch_limit: int) -> int:
         row = self.database.fetch_one(
             """
-            with candidates as (
+            with pending_slice as (
                 select queue_row.id
                 from landintel.source_reconcile_queue as queue_row
-                join landintel.source_reconcile_state as state_row
-                  on state_row.id = queue_row.state_id
                 where queue_row.status in ('pending', 'retryable_failed')
                   and coalesce(queue_row.next_attempt_at, now()) <= now()
-                  and (
-                      (
-                          queue_row.work_type = 'upsert'
-                          and (
-                              queue_row.source_signature is distinct from state_row.current_source_signature
-                              or queue_row.geometry_hash is distinct from state_row.current_geometry_hash
-                              or state_row.lifecycle_status = 'retired'
-                          )
-                      )
-                      or (
-                          queue_row.work_type = 'retire'
-                          and state_row.lifecycle_status <> 'retired'
-                      )
-                  )
                 order by queue_row.priority desc, queue_row.updated_at asc, queue_row.created_at asc
                 limit :batch_limit
                 for update skip locked
+            ),
+            candidates as (
+                select queue_row.id
+                from pending_slice
+                join landintel.source_reconcile_queue as queue_row
+                  on queue_row.id = pending_slice.id
+                join landintel.source_reconcile_state as state_row
+                  on state_row.id = queue_row.state_id
+                where
+                  (
+                      queue_row.work_type = 'upsert'
+                      and (
+                          queue_row.source_signature is distinct from state_row.current_source_signature
+                          or queue_row.geometry_hash is distinct from state_row.current_geometry_hash
+                          or state_row.lifecycle_status = 'retired'
+                      )
+                  )
+                  or (
+                      queue_row.work_type = 'retire'
+                      and state_row.lifecycle_status <> 'retired'
+                  )
             ),
             superseded as (
                 update landintel.source_reconcile_queue as queue_row

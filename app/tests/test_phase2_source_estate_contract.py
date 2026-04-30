@@ -8,7 +8,10 @@ import unittest
 APP_DIR = Path(__file__).resolve().parents[1]
 WORKFLOW = (APP_DIR.parent / ".github" / "workflows" / "run-landintel-sources.yml").read_text(encoding="utf-8")
 RUNNER = (APP_DIR / "src" / "phase2_source_runner.py").read_text(encoding="utf-8")
-MIGRATION = (APP_DIR / "sql" / "051_phase2_source_estate_framework.sql").read_text(encoding="utf-8")
+MIGRATION = "\n".join(
+    (APP_DIR / "sql" / filename).read_text(encoding="utf-8")
+    for filename in ("051_phase2_source_estate_framework.sql", "052_live_proof_workflow_gates.sql")
+)
 MANIFEST = (APP_DIR / "config" / "phase2_source_estate.yaml").read_text(encoding="utf-8")
 CATALOG_SYNC = (APP_DIR / "src" / "source_catalog_sync.py").read_text(encoding="utf-8")
 
@@ -24,12 +27,18 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "ingest-market-context",
             "ingest-planning-documents",
             "ingest-intelligence-events",
+            "ingest-companies-house",
+            "ingest-fca-entities",
+            "refresh-title-reviews",
+            "refresh-planning-decisions",
+            "audit-planning-decisions",
             "refresh-title-readiness",
             "refresh-site-market-context",
             "refresh-site-amenity-context",
             "refresh-site-demographic-context",
             "refresh-site-power-context",
             "refresh-site-abnormal-risk",
+            "refresh-site-assessments",
             "audit-full-source-estate",
         ):
             self.assertIn(f"- {command}", WORKFLOW)
@@ -50,6 +59,7 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
     def test_manifest_registers_all_phase2_modules_with_lifecycle_statuses(self) -> None:
         for module_key in (
             "planning_appeals",
+            "planning_decisions",
             "title_control",
             "power_infrastructure",
             "terrain_abnormal",
@@ -58,6 +68,7 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "demographics",
             "planning_documents",
             "local_intelligence",
+            "site_assessment",
         ):
             self.assertIn(f"module_key: {module_key}", MANIFEST)
         for lifecycle_stage in (
@@ -81,10 +92,14 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "landintel.planning_appeal_documents",
             "landintel.site_planning_appeal_links",
             "landintel.appeal_issue_tags",
+            "landintel.planning_decision_facts",
+            "landintel.site_planning_decision_context",
             "landintel.title_order_workflow",
             "landintel.title_review_records",
             "landintel.ownership_control_signals",
             "landintel.corporate_owner_links",
+            "landintel.corporate_entity_enrichments",
+            "landintel.corporate_charge_records",
             "landintel.known_controlled_sites",
             "landintel.power_assets",
             "landintel.power_capacity_zones",
@@ -120,6 +135,8 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         for view_name in (
             "analytics.v_planning_appeal_coverage",
             "analytics.v_site_planning_appeal_context",
+            "analytics.v_planning_decision_coverage",
+            "analytics.v_site_planning_decision_context",
             "analytics.v_title_readiness",
             "analytics.v_site_control_signals",
             "analytics.v_site_power_context",
@@ -129,6 +146,7 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "analytics.v_site_demographic_context",
             "analytics.v_site_planning_document_context",
             "analytics.v_site_intelligence_events",
+            "analytics.v_site_assessment_context",
             "analytics.v_landintel_source_estate_matrix",
             "analytics.v_landintel_source_lifecycle_stage_counts",
         ):
@@ -141,6 +159,10 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("linked_site_count > 0", trust_gate)
         self.assertIn("evidence_count > 0", trust_gate)
         self.assertIn("signal_count > 0", trust_gate)
+        self.assertIn("assessment_ready_count > 0", trust_gate)
+        self.assertIn("freshness_record_count > 0", trust_gate)
+        self.assertIn("critical_limitation_blocking_review", trust_gate)
+        self.assertIn("trust_block_reason", trust_gate)
         self.assertIn("freshness_status not in ('failed', 'stale', 'access_required', 'gated')", trust_gate)
         self.assertIn("current_lifecycle_stage", trust_gate)
         self.assertIn("linked_rollup.source_key = registry.source_key", trust_gate)

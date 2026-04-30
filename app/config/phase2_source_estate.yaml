@@ -12,6 +12,48 @@ lifecycle_stages:
   - assessment_ready
   - trusted_for_review
 sources:
+  - source_key: planning_decision_engine
+    module_key: planning_decisions
+    source_family: planning_decisions
+    source_name: Planning decision and event engine
+    source_group: planning_intelligence
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.planning_decision_facts
+    orchestration_mode: derived_from_live_planning_application_records
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: Planning decisions are evidence context and do not predict future consent.
+    next_action: Refresh approved, refused, withdrawn and live decision facts from planning records.
+
+  - source_key: site_assessment_refresh
+    module_key: site_assessment
+    source_family: site_assessment
+    source_name: Site assessment refresh engine
+    source_group: review_outputs
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.site_assessments
+    orchestration_mode: derived_from_proven_site_evidence
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: Assessment outputs support human review and do not make acquisition decisions.
+    next_action: Refresh review tier, missing evidence and next action from live evidence.
+
   - source_key: dpea_planning_appeals
     module_key: planning_appeals
     source_family: planning_appeals
@@ -54,6 +96,27 @@ sources:
     max_staleness_days: 30
     limitation_notes: Council publication patterns vary; portal-specific adapters are required.
     next_action: Prioritise target authorities and prove one stable adapter.
+
+  - source_key: planning_application_appeal_signals
+    module_key: planning_appeals
+    source_family: planning_appeals
+    source_name: Planning application appeal status signals
+    source_group: planning_intelligence
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.planning_appeal_records
+    orchestration_mode: derived_from_live_planning_application_records
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: This is an appeal signal from planning records, not a full DPEA appeal document corpus.
+    next_action: Extract appeal-linked planning records and preserve source limitations.
 
   - source_key: title_readiness_internal
     module_key: title_control
@@ -104,7 +167,7 @@ sources:
     source_group: title_control
     geography: United Kingdom
     endpoint_url: https://api.company-information.service.gov.uk/
-    access_status: access_required
+    access_status: access_confirmed
     ingest_status: source_registered_no_rows
     normalisation_status: source_registered
     site_link_status: source_registered
@@ -117,7 +180,50 @@ sources:
     refresh_cadence: monthly
     max_staleness_days: 30
     limitation_notes: Corporate context is not legal ownership proof.
-    next_action: Add Companies House key and match only reviewed corporate proprietors or applicant/control signals.
+    next_action: Enrich reviewed corporate proprietors and developer/applicant control signals.
+
+  - source_key: fca_entity_enrichment
+    module_key: title_control
+    source_family: corporate_control
+    source_name: FCA entity enrichment
+    source_group: title_control
+    geography: United Kingdom
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.corporate_entity_enrichments
+    orchestration_mode: api_key_or_endpoint_required
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: FCA context is corporate/regulatory evidence and is not land ownership proof.
+    next_action: Enrich matched corporate entities where FCA access is configured.
+
+  - source_key: companies_house_charges
+    module_key: title_control
+    source_family: corporate_control
+    source_name: Companies House charge and lending context
+    source_group: title_control
+    geography: United Kingdom
+    endpoint_url: https://api.company-information.service.gov.uk/
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.corporate_charge_records
+    orchestration_mode: companies_house_api
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: Charge context is lending/control evidence and is not title ownership proof.
+    next_action: Refresh charge records for matched corporate entities.
 
   - source_key: sp_energy_networks_assets
     module_key: power_infrastructure
@@ -309,6 +415,27 @@ sources:
     max_staleness_days: 30
     limitation_notes: Transport proximity is location evidence, not demand certainty.
     next_action: Add bounded Scotland extract and nearest-asset context.
+
+  - source_key: os_places_amenity_context
+    module_key: amenities
+    source_family: amenities
+    source_name: OS Places and Features amenity context
+    source_group: location_strength
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.site_amenity_context
+    orchestration_mode: derived_from_ingested_os_places_features
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: OS-derived amenity context is proximity evidence only.
+    next_action: Refresh nearest-asset context when OS Places or OS Features rows exist.
 
   - source_key: scottish_schools_amenities
     module_key: amenities

@@ -46,12 +46,18 @@ on:
           - ingest-market-context
           - ingest-planning-documents
           - ingest-intelligence-events
+          - ingest-companies-house
+          - ingest-fca-entities
+          - refresh-title-reviews
+          - refresh-planning-decisions
+          - audit-planning-decisions
           - refresh-title-readiness
           - refresh-site-market-context
           - refresh-site-amenity-context
           - refresh-site-demographic-context
           - refresh-site-power-context
           - refresh-site-abnormal-risk
+          - refresh-site-assessments
           - audit-full-source-estate
           - discover-ldp-sources
           - discover-settlement-sources
@@ -175,6 +181,10 @@ jobs:
       IMPROVEMENT_SERVICE_AUTHKEY: ${{ secrets.IMPROVEMENT_SERVICE_AUTHKEY }}
       BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
       OS_API_KEY: ${{ secrets.OS_API_KEY }}
+      COMPANIES_HOUSE_API: ${{ secrets.COMPANIES_HOUSE_API }}
+      COMPANIES_HOUSE_API_KEY: ${{ secrets.COMPANIES_HOUSE_API_KEY }}
+      FCA_API: ${{ secrets.FCA_API }}
+      FCA_API_KEY: ${{ secrets.FCA_API_KEY }}
       ROS_CLIENT_ID: ${{ secrets.ROS_CLIENT_ID }}
       ROS_CLIENT_SECRET: ${{ secrets.ROS_CLIENT_SECRET }}
       AUDIT_ARTIFACT_BACKEND: none
@@ -323,7 +333,7 @@ jobs:
 
           is_phase2_command() {
             case "$1" in
-              discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|refresh-title-readiness|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|audit-full-source-estate)
+              discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|ingest-companies-house|ingest-fca-entities|refresh-title-reviews|refresh-planning-decisions|audit-planning-decisions|refresh-title-readiness|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|refresh-site-assessments|audit-full-source-estate)
                 return 0
                 ;;
               *)

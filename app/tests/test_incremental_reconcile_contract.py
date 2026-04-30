@@ -82,6 +82,14 @@ class IncrementalReconcileContractTests(unittest.TestCase):
         self.assertIn("currentised_from_processing_worker", WORKER)
         self.assertIn("self._refresh_reconcile_item_to_current_source(item, state, source_row)", WORKER)
 
+    def test_worker_releases_unprocessed_claims_after_runtime_limit(self) -> None:
+        self.assertIn("def _release_unprocessed_reconcile_items", WORKER)
+        self.assertIn("def _release_unprocessed_refresh_items", WORKER)
+        self.assertIn("released_after_runtime_limit", WORKER)
+        self.assertIn('stats["released_unprocessed"] += self._release_unprocessed_reconcile_items()', WORKER)
+        self.assertIn('stats["released_unprocessed"] += self._release_unprocessed_refresh_items()', WORKER)
+        self.assertIn("attempt_count = greatest(coalesce(queue_row.attempt_count, 1) - 1, 0)", WORKER)
+
     def test_worker_serialises_database_uuid_values(self) -> None:
         self.assertIn("from uuid import UUID", WORKER)
         self.assertIn("if isinstance(value, UUID)", WORKER)

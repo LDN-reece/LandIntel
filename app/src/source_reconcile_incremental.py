@@ -94,6 +94,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
             "retryable_failed": 0,
             "dead_letter": 0,
             "refresh_enqueued": 0,
+            "released_unprocessed": 0,
         }
         try:
             while not self._runtime_limit_reached(started, effective_runtime_minutes):
@@ -119,6 +120,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                         stats[outcome] += 1
                         continue
                     stats[processed] += 1
+            stats["released_unprocessed"] += self._release_unprocessed_reconcile_items()
             self.loader.update_ingest_run(
                 run_id,
                 IngestRunUpdate(
@@ -133,6 +135,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
             self.logger.info("incremental_reconcile_queue_processed", extra=stats)
             return stats
         except Exception as exc:
+            self._release_unprocessed_reconcile_items()
             self.loader.update_ingest_run(
                 run_id,
                 IngestRunUpdate(status="failed", error_message=str(exc), metadata={"traceback": traceback.format_exc()}, finished=True),
@@ -218,7 +221,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
             )
         )
         started = monotonic()
-        stats = {"claimed": 0, "completed": 0, "retryable_failed": 0, "dead_letter": 0, "superseded": 0}
+        stats = {"claimed": 0, "completed": 0, "retryable_failed": 0, "dead_letter": 0, "superseded": 0, "released_unprocessed": 0}
         try:
             while not self._runtime_limit_reached(started, effective_runtime_minutes):
                 remaining = max(effective_limit - stats["claimed"], 0)
@@ -236,6 +239,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                     except Exception as exc:  # pragma: no cover - defensive runtime protection
                         processed = self._handle_refresh_error(item, exc)
                     stats[processed] += 1
+            stats["released_unprocessed"] += self._release_unprocessed_refresh_items()
             self.loader.update_ingest_run(
                 run_id,
                 IngestRunUpdate(
@@ -250,6 +254,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
             self.logger.info("incremental_site_refresh_completed", extra=stats)
             return stats
         except Exception as exc:
+            self._release_unprocessed_refresh_items()
             self.loader.update_ingest_run(
                 run_id,
                 IngestRunUpdate(status="failed", error_message=str(exc), metadata={"traceback": traceback.format_exc()}, finished=True),
@@ -1047,6 +1052,34 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
             },
         )
 
+    def _release_unprocessed_reconcile_items(self) -> int:
+        row = self.database.fetch_one(
+            """
+            with released as (
+                update landintel.source_reconcile_queue as queue_row
+                set status = 'pending',
+                    claimed_by = null,
+                    claimed_at = null,
+                    lease_expires_at = null,
+                    attempt_count = greatest(coalesce(queue_row.attempt_count, 1) - 1, 0),
+                    metadata = coalesce(queue_row.metadata, '{}'::jsonb) || jsonb_build_object(
+                        'released_after_runtime_limit', true,
+                        'released_by', :worker_id,
+                        'released_at', now()
+                    ),
+                    updated_at = now()
+                where queue_row.status = 'processing'
+                  and queue_row.claimed_by = :worker_id
+                  and queue_row.processed_at is null
+                returning queue_row.id
+            )
+            select count(*)::int as released_count
+            from released
+            """,
+            {"worker_id": self.worker_id},
+        )
+        return int((row or {}).get("released_count", 0) or 0)
+
     def _supersede_stale_reconcile_items(self, batch_limit: int) -> int:
         row = self.database.fetch_one(
             """
@@ -1131,6 +1164,34 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                 "lease_seconds": self.settings.reconcile_refresh_lease_seconds,
             },
         )
+
+    def _release_unprocessed_refresh_items(self) -> int:
+        row = self.database.fetch_one(
+            """
+            with released as (
+                update landintel.canonical_site_refresh_queue as queue_row
+                set status = 'pending',
+                    claimed_by = null,
+                    claimed_at = null,
+                    lease_expires_at = null,
+                    attempt_count = greatest(coalesce(queue_row.attempt_count, 1) - 1, 0),
+                    metadata = coalesce(queue_row.metadata, '{}'::jsonb) || jsonb_build_object(
+                        'released_after_runtime_limit', true,
+                        'released_by', :worker_id,
+                        'released_at', now()
+                    ),
+                    updated_at = now()
+                where queue_row.status = 'processing'
+                  and queue_row.claimed_by = :worker_id
+                  and queue_row.processed_at is null
+                returning queue_row.id
+            )
+            select count(*)::int as released_count
+            from released
+            """,
+            {"worker_id": self.worker_id},
+        )
+        return int((row or {}).get("released_count", 0) or 0)
 
     def _fetch_state(self, state_id: str) -> dict[str, Any]:
         row = self.database.fetch_one(

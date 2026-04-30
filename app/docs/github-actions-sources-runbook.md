@@ -75,8 +75,13 @@ Required now:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `BOUNDARY_AUTHKEY`
 - `IMPROVEMENT_SERVICE_AUTHKEY`
-- `OS_API_KEY`
-- `OS_PLACES_API_KEY` or `OS_PLACES_API` as the preferred OS Places API key names; `OS_API_KEY` remains the fallback
+- `OS_PROJECT_API`
+- `OS_PROJECT_API_SECRET`
+- `OS_DOWNLOADS_API`
+- `OS_FEATURES_API`
+- `OS_LINKED_IDENTIFIERS_API`
+- `OS_API_KEY` remains supported as a legacy fallback for the OS project API key.
+- `OS_PLACES_API_KEY` remains supported as a legacy fallback, but OS Places usage remains probe-only until trial/commercial limits are approved.
 
 Used by later title/parcel source packs:
 
@@ -109,11 +114,12 @@ Use this order. Do not keep rerunning HLA or planning unless those feeds actuall
 20. `ingest-os-topography`
 21. `ingest-os-places`
 22. `ingest-os-features`
-23. `refresh-affected-sites`
-24. `audit-source-expansion`
-25. `audit-source-footprint`
-26. `audit-source-freshness`
-27. `audit-source-estate`
+23. `ingest-os-linked-identifiers`
+24. `refresh-affected-sites`
+25. `audit-source-expansion`
+26. `audit-source-footprint`
+27. `audit-source-freshness`
+28. `audit-source-estate`
 
 Run `publish-planning-links` only when Supabase planning records have changed and need publishing into canonical sites. Run `ingest-hla` only when HLA/HLS needs refreshing. HLA is a supporting source, not the default next step.
 

@@ -41,6 +41,7 @@ class SourceExpansionContractTests(unittest.TestCase):
             "ingest-os-topography",
             "ingest-os-places",
             "ingest-os-features",
+            "ingest-os-linked-identifiers",
             "ingest-settlement-boundaries",
         ):
             self.assertIn(f"- {command}", WORKFLOW)
@@ -185,18 +186,22 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertNotIn("reconcile-catchup-scan --source-family vdl", WORKFLOW)
 
     def test_os_sources_are_registered_without_local_storage(self) -> None:
-        for source_key in ("os_downloads_terrain50", "os_places_api", "os_features_api"):
+        for source_key in ("os_downloads_terrain50", "os_places_api", "os_features_api", "os_linked_identifiers_api"):
             self.assertIn(source_key, RUNNER)
         self.assertIn("https://api.os.uk/downloads/v1/products/Terrain50/downloads", RUNNER)
         self.assertIn('"auth_env_vars": []', RUNNER)
         self.assertIn("https://api.os.uk/search/places/v1/find", RUNNER)
-        self.assertIn('"auth_env_vars": ["OS_PLACES_API_KEY"]', RUNNER)
-        self.assertIn('self._os_key_headers("os_places")', RUNNER)
+        self.assertIn('"auth_env_vars": ["OS_PROJECT_API"]', RUNNER)
+        self.assertIn('self._os_key_params("os_places")', RUNNER)
         self.assertIn("_os_key_value", RUNNER)
         self.assertIn("_has_required_secret", RUNNER)
         self.assertIn("https://api.os.uk/features/v1/wfs", RUNNER)
+        self.assertIn("https://api.os.uk/search/links/v1", RUNNER)
+        self.assertIn("OS_DOWNLOADS_API", WORKFLOW)
+        self.assertIn("OS_FEATURES_API", WORKFLOW)
+        self.assertIn("OS_LINKED_IDENTIFIERS_API", WORKFLOW)
+        self.assertIn("OS_PROJECT_API", WORKFLOW)
         self.assertIn("secrets.OS_PLACES_API_KEY", WORKFLOW)
-        self.assertIn("secrets.OS_PLACES_API", WORKFLOW)
         self.assertNotIn("TEMP_STORAGE_PATH", RUNNER)
 
     def test_control_policy_spine_prioritises_title_ldp_and_settlement(self) -> None:

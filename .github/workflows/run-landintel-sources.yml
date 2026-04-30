@@ -81,6 +81,7 @@ on:
           - ingest-os-topography
           - ingest-os-places
           - ingest-os-features
+          - ingest-os-linked-identifiers
           - process-reconcile-queue
           - reconcile-catchup-scan
           - refresh-affected-sites
@@ -180,8 +181,13 @@ jobs:
       BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}
       IMPROVEMENT_SERVICE_AUTHKEY: ${{ secrets.IMPROVEMENT_SERVICE_AUTHKEY }}
       BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
-      OS_API_KEY: ${{ secrets.OS_API_KEY }}
-      OS_PLACES_API_KEY: ${{ secrets.OS_PLACES_API_KEY || secrets.OS_PLACES_API || secrets.OS_API_KEY }}
+      OS_PROJECT_API: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
+      OS_PROJECT_API_SECRET: ${{ secrets.OS_PROJECT_API_SECRET }}
+      OS_API_KEY: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
+      OS_PLACES_API_KEY: ${{ secrets.OS_PROJECT_API || secrets.OS_PLACES_API_KEY || secrets.OS_API_KEY }}
+      OS_DOWNLOADS_API: ${{ secrets.OS_DOWNLOADS_API }}
+      OS_FEATURES_API: ${{ secrets.OS_FEATURES_API }}
+      OS_LINKED_IDENTIFIERS_API: ${{ secrets.OS_LINKED_IDENTIFIERS_API }}
       COMPANIES_HOUSE_API: ${{ secrets.COMPANIES_HOUSE_API }}
       COMPANIES_HOUSE_API_KEY: ${{ secrets.COMPANIES_HOUSE_API_KEY }}
       FCA_API: ${{ secrets.FCA_API }}
@@ -334,7 +340,7 @@ jobs:
 
           is_source_expansion_ingest() {
             case "$1" in
-              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features)
+              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features|ingest-os-linked-identifiers)
                 return 0
                 ;;
               *)

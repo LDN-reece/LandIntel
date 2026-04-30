@@ -17,7 +17,7 @@ import re
 import tempfile
 import traceback
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 import xml.etree.ElementTree as ET
 
 import geopandas as gpd
@@ -57,7 +57,7 @@ CONSTRAINT_FAMILIES = {
     "conservation_areas",
     "greenbelt",
 }
-PROBE_ONLY_FAMILIES = {"topography", "os_places", "os_features"}
+PROBE_ONLY_FAMILIES = {"topography", "os_places", "os_features", "os_linked_identifiers"}
 
 COMMAND_TO_FAMILIES: dict[str, tuple[str, ...]] = {
     "ingest-ldp": ("ldp",),
@@ -76,6 +76,7 @@ COMMAND_TO_FAMILIES: dict[str, tuple[str, ...]] = {
     "ingest-os-topography": ("topography",),
     "ingest-os-places": ("os_places",),
     "ingest-os-features": ("os_features",),
+    "ingest-os-linked-identifiers": ("os_linked_identifiers",),
 }
 
 CONSTRAINT_GROUPS = {
@@ -130,7 +131,7 @@ OS_CATALOGUE_SOURCES: tuple[dict[str, Any], ...] = (
         "source_status": "live_api",
         "orchestration_mode": "os_places_api",
         "endpoint_url": "https://api.os.uk/search/places/v1/find",
-        "auth_env_vars": ["OS_PLACES_API_KEY"],
+        "auth_env_vars": ["OS_PROJECT_API"],
         "target_table": "landintel.source_estate_registry",
         "reconciliation_path": "on-demand address/postcode enrichment against canonical sites",
         "evidence_path": "source registry until per-site enrichment is activated",
@@ -150,7 +151,7 @@ OS_CATALOGUE_SOURCES: tuple[dict[str, Any], ...] = (
         "source_status": "live_target",
         "orchestration_mode": "os_features_wfs",
         "endpoint_url": "https://api.os.uk/features/v1/wfs",
-        "auth_env_vars": ["OS_API_KEY"],
+        "auth_env_vars": ["OS_PROJECT_API"],
         "target_table": "public.constraint_source_features",
         "reconciliation_path": "WFS feature request clipped to canonical site AOI, then evidence overlay",
         "evidence_path": "source registry until layer-specific OS feature adapters are activated",
@@ -158,6 +159,26 @@ OS_CATALOGUE_SOURCES: tuple[dict[str, Any], ...] = (
         "ranking_impact": "Access/location context only; no appraisal or pricing logic.",
         "resurfacing_trigger": "OS Features metadata refresh or layer adapter promotion.",
         "data_age_basis": "OS Features WFS capabilities response.",
+        "ranking_eligible": False,
+        "review_output_eligible": True,
+    },
+    {
+        "source_key": "os_linked_identifiers_api",
+        "source_family": "os_linked_identifiers",
+        "source_name": "OS Linked Identifiers API",
+        "source_group": "location",
+        "phase_one_role": "context",
+        "source_status": "live_api",
+        "orchestration_mode": "os_linked_identifiers_api",
+        "endpoint_url": "https://api.os.uk/search/links/v1",
+        "auth_env_vars": ["OS_PROJECT_API"],
+        "target_table": "landintel.source_estate_registry",
+        "reconciliation_path": "UPRN/USRN/TOID cross-reference lookup after site-address linkage is activated",
+        "evidence_path": "source registry until site-to-address and TOID enrichment adapters are activated",
+        "signal_output": "address_toid_context after enrichment adapter promotion",
+        "ranking_impact": "Review context only; no ownership or developability claim.",
+        "resurfacing_trigger": "OS Linked Identifiers API data refresh or UPRN/TOID relationship change.",
+        "data_age_basis": "OS Linked Identifiers API live response.",
         "ranking_eligible": False,
         "review_output_eligible": True,
     },
@@ -3417,15 +3438,18 @@ class SourceExpansionRunner:
         endpoint = str(source.get("endpoint_url") or "")
         if not endpoint:
             return "not_probeable", "No endpoint URL is registered for this source."
+        endpoint = self._os_endpoint(source)
         params: dict[str, str] = {}
         headers: dict[str, str] = {}
         if source["source_family"] == "topography":
             params = {"area": "GB"}
         elif source["source_family"] == "os_places":
-            params = {"query": "Glasgow", "maxresults": "1"}
-            headers = self._os_key_headers("os_places")
+            params = {"query": "Glasgow", "maxresults": "1", **self._os_key_params("os_places")}
         elif source["source_family"] == "os_features":
             params = {"service": "WFS", "version": "2.0.0", "request": "GetCapabilities", **self._os_key_params("os_features")}
+        elif source["source_family"] == "os_linked_identifiers":
+            endpoint = self._os_join_endpoint(endpoint, "/productVersionInfo/BLPU_UPRN_TopographicArea_TOID_5", endpoint)
+            params = self._os_key_params("os_linked_identifiers")
         try:
             response = self.client.get(endpoint, params=params, headers=headers)
             status = "reachable" if response.status_code < 400 else "failed"
@@ -3466,7 +3490,7 @@ class SourceExpansionRunner:
         if "BOUNDARY_AUTHKEY" in auth_vars:
             authkey = os.getenv("BOUNDARY_AUTHKEY")
             return {"authkey": authkey} if authkey else {}
-        if "OS_API_KEY" in auth_vars or "OS_PLACES_API_KEY" in auth_vars:
+        if "OS_API_KEY" in auth_vars or "OS_PLACES_API_KEY" in auth_vars or "OS_PROJECT_API" in auth_vars:
             return self._os_key_params(str(source.get("source_family") or ""))
         return {}
 
@@ -3480,16 +3504,38 @@ class SourceExpansionRunner:
 
     def _os_key_value(self, source_family: str = "") -> str | None:
         if source_family == "os_places":
-            env_names = ("OS_PLACES_API_KEY", "OS_PLACES_API", "OS_API_KEY")
+            env_names = ("OS_PROJECT_API", "OS_PLACES_API_KEY", "OS_API_KEY")
         elif source_family == "os_features":
-            env_names = ("OS_FEATURES_API_KEY", "OS_FEATURES_API", "OS_API_KEY")
+            env_names = ("OS_PROJECT_API", "OS_FEATURES_API_KEY", "OS_API_KEY")
+        elif source_family == "os_linked_identifiers":
+            env_names = ("OS_PROJECT_API", "OS_API_KEY")
         else:
-            env_names = ("OS_API_KEY",)
+            env_names = ("OS_PROJECT_API", "OS_API_KEY")
         for env_name in env_names:
             key = os.getenv(env_name)
             if key:
                 return key
         return None
+
+    def _os_endpoint(self, source: dict[str, Any]) -> str:
+        source_family = str(source.get("source_family") or "")
+        default_endpoint = str(source.get("endpoint_url") or "")
+        if source_family == "topography":
+            return self._os_join_endpoint(os.getenv("OS_DOWNLOADS_API"), "/products/Terrain50/downloads", default_endpoint)
+        if source_family == "os_places":
+            return self._os_join_endpoint(os.getenv("OS_PLACES_API_ENDPOINT"), "/find", default_endpoint)
+        if source_family == "os_features":
+            return os.getenv("OS_FEATURES_API") or default_endpoint
+        if source_family == "os_linked_identifiers":
+            return os.getenv("OS_LINKED_IDENTIFIERS_API") or default_endpoint
+        return default_endpoint
+
+    def _os_join_endpoint(self, base_url: str | None, suffix: str, default_endpoint: str) -> str:
+        if not base_url:
+            return default_endpoint
+        cleaned_base = base_url.rstrip("/") + "/"
+        cleaned_suffix = suffix.lstrip("/")
+        return urljoin(cleaned_base, cleaned_suffix)
 
     def _assert_required_secrets(self, sources: list[dict[str, Any]]) -> None:
         missing = sorted(
@@ -3504,10 +3550,12 @@ class SourceExpansionRunner:
             raise RuntimeError("Missing required GitHub Actions secret(s): " + ", ".join(missing))
 
     def _has_required_secret(self, secret_name: str) -> bool:
+        if secret_name == "OS_PROJECT_API":
+            return any(os.getenv(name) for name in ("OS_PROJECT_API", "OS_API_KEY"))
         if secret_name == "OS_PLACES_API_KEY":
-            return any(os.getenv(name) for name in ("OS_PLACES_API_KEY", "OS_PLACES_API", "OS_API_KEY"))
+            return any(os.getenv(name) for name in ("OS_PROJECT_API", "OS_PLACES_API_KEY", "OS_API_KEY"))
         if secret_name == "OS_FEATURES_API_KEY":
-            return any(os.getenv(name) for name in ("OS_FEATURES_API_KEY", "OS_FEATURES_API", "OS_API_KEY"))
+            return any(os.getenv(name) for name in ("OS_PROJECT_API", "OS_FEATURES_API_KEY", "OS_API_KEY"))
         return bool(os.getenv(secret_name))
 
     def _sources_for_family(self, source_family: str) -> list[dict[str, Any]]:
@@ -3972,6 +4020,7 @@ def build_parser() -> argparse.ArgumentParser:
             "ingest-os-topography",
             "ingest-os-places",
             "ingest-os-features",
+            "ingest-os-linked-identifiers",
             "promote-ldp-authority-source",
         ),
     )

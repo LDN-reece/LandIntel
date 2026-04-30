@@ -89,6 +89,7 @@ class IncrementalReconcileContractTests(unittest.TestCase):
         self.assertIn('stats["released_unprocessed"] += self._release_unprocessed_reconcile_items()', WORKER)
         self.assertIn('stats["released_unprocessed"] += self._release_unprocessed_refresh_items()', WORKER)
         self.assertIn("attempt_count = greatest(coalesce(queue_row.attempt_count, 1) - 1, 0)", WORKER)
+        self.assertIn("processed_at = null", WORKER)
 
     def test_worker_serialises_database_uuid_values(self) -> None:
         self.assertIn("from uuid import UUID", WORKER)

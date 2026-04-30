@@ -1039,6 +1039,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                 claimed_by = :worker_id,
                 claimed_at = now(),
                 lease_expires_at = now() + make_interval(secs => :lease_seconds),
+                processed_at = null,
                 attempt_count = coalesce(queue_row.attempt_count, 0) + 1,
                 updated_at = now()
             from candidates
@@ -1070,7 +1071,6 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                     updated_at = now()
                 where queue_row.status = 'processing'
                   and queue_row.claimed_by = :worker_id
-                  and queue_row.processed_at is null
                 returning queue_row.id
             )
             select count(*)::int as released_count
@@ -1152,6 +1152,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                 claimed_by = :worker_id,
                 claimed_at = now(),
                 lease_expires_at = now() + make_interval(secs => :lease_seconds),
+                processed_at = null,
                 attempt_count = coalesce(queue_row.attempt_count, 0) + 1,
                 updated_at = now()
             from candidates
@@ -1183,7 +1184,6 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                     updated_at = now()
                 where queue_row.status = 'processing'
                   and queue_row.claimed_by = :worker_id
-                  and queue_row.processed_at is null
                 returning queue_row.id
             )
             select count(*)::int as released_count

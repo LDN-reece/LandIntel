@@ -189,6 +189,26 @@ class IncrementalReconcileContractTests(unittest.TestCase):
         ):
             self.assertIn(env_name, WORKFLOW)
 
+    def test_workflow_skips_heavy_system_packages_for_lightweight_proof_commands(self) -> None:
+        resolve_branch = WORKFLOW.split("selected_command=\"${{ inputs.command }}\"", 1)[1]
+        install_branch = WORKFLOW.split("- name: Install system packages", 1)[1]
+        install_branch = install_branch.split("- name: Install Python dependencies", 1)[0]
+
+        for command_name in (
+            "audit-source-footprint",
+            "process-reconcile-queue",
+            "refresh-affected-sites",
+            "weekly-reconcile-maintenance",
+            "audit-full-source-estate",
+        ):
+            self.assertIn(command_name, resolve_branch)
+
+        self.assertIn("system_package_profile=\"minimal\"", resolve_branch)
+        self.assertIn("system_package_profile=\"geospatial\"", resolve_branch)
+        self.assertIn("SYSTEM_PACKAGE_PROFILE=${system_package_profile}", resolve_branch)
+        self.assertIn("if: env.SYSTEM_PACKAGE_PROFILE == 'geospatial'", install_branch)
+        self.assertIn("gdal-bin", install_branch)
+
     def test_workflow_pauses_burn_in_schedules(self) -> None:
         self.assertIn("Automated schedules are intentionally paused during incremental reconcile burn-in.", WORKFLOW)
         self.assertNotIn("schedule:", WORKFLOW)

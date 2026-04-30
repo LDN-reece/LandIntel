@@ -262,7 +262,26 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve selected command
+        run: |
+          set -euo pipefail
+          selected_command="${{ inputs.command }}"
+          if [ -z "$selected_command" ]; then
+            selected_command="validate-only"
+          fi
+          echo "SELECTED_COMMAND=${selected_command}" >> "$GITHUB_ENV"
+          case "$selected_command" in
+            validate-only|run-migrations|sync-source-catalog|audit-source-footprint|audit-source-freshness|register-source-estate|probe-source-estate|audit-source-estate|process-reconcile-queue|reconcile-catchup-scan|refresh-affected-sites|weekly-reconcile-maintenance|discover-phase2-sources|audit-full-source-estate|refresh-planning-decisions|audit-planning-decisions|refresh-title-readiness|refresh-title-reviews|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|refresh-site-assessments|ingest-companies-house|ingest-fca-entities)
+              system_package_profile="minimal"
+              ;;
+            *)
+              system_package_profile="geospatial"
+              ;;
+          esac
+          echo "SYSTEM_PACKAGE_PROFILE=${system_package_profile}" >> "$GITHUB_ENV"
+
       - name: Install system packages
+        if: env.SYSTEM_PACKAGE_PROFILE == 'geospatial'
         run: |
           sudo apt-get update
           sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev proj-bin postgresql-client
@@ -278,18 +297,10 @@ jobs:
       - name: Compile critical runners
         run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py src/phase2_source_runner.py src/main.py
 
-      - name: Resolve selected command
-        run: |
-          set -euo pipefail
-          selected_command="${{ inputs.command }}"
-          if [ -z "$selected_command" ]; then
-            selected_command="validate-only"
-          fi
-          echo "SELECTED_COMMAND=${selected_command}" >> "$GITHUB_ENV"
-
       - name: Show selected command
         run: |
           echo "Command: ${SELECTED_COMMAND}"
+          echo "System package profile: ${SYSTEM_PACKAGE_PROFILE}"
 
       - name: Run source phase command
         run: |

@@ -1065,23 +1065,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                       )
                       or (
                           queue_row.work_type = 'retire'
-                          and (
-                              state_row.lifecycle_status <> 'retired'
-                              or exists (
-                                  select 1
-                                  from landintel.planning_application_records as planning
-                                  where queue_row.source_family = 'planning'
-                                    and planning.authority_name = queue_row.authority_name
-                                    and planning.source_record_id = queue_row.source_record_id
-                              )
-                              or exists (
-                                  select 1
-                                  from landintel.hla_site_records as hla
-                                  where queue_row.source_family = 'hla'
-                                    and hla.authority_name = queue_row.authority_name
-                                    and hla.source_record_id = queue_row.source_record_id
-                              )
-                          )
+                          and state_row.lifecycle_status <> 'retired'
                       )
                   )
                 order by queue_row.priority desc, queue_row.updated_at asc, queue_row.created_at asc

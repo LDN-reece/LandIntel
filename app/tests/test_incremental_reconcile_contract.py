@@ -199,6 +199,13 @@ class IncrementalReconcileContractTests(unittest.TestCase):
             "process-reconcile-queue",
             "refresh-affected-sites",
             "weekly-reconcile-maintenance",
+            "ingest-planning-appeals",
+            "ingest-power-infrastructure",
+            "ingest-amenities",
+            "ingest-demographics",
+            "ingest-market-context",
+            "ingest-planning-documents",
+            "ingest-intelligence-events",
             "audit-full-source-estate",
         ):
             self.assertIn(command_name, resolve_branch)

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 import os
 import re
@@ -20,6 +22,19 @@ from src.logging_config import configure_logging
 
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "phase2_source_estate.yaml"
+DEFAULT_UK_HPI_AVERAGE_PRICE_URL = (
+    "https://publicdata.landregistry.gov.uk/market-trend-data/house-price-index-data/"
+    "Average-prices-2026-01.csv"
+)
+DEFAULT_SIMD_URL = (
+    "https://www.opendata.nhs.scot/dataset/78d41fa9-1a62-4f7b-9edb-3e8522a93378/"
+    "resource/acade396-8430-4b34-895a-b3e757fa346e/download/simd2020v2_22062020.csv"
+)
+DEFAULT_NAPTAN_URL = "https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv"
+DEFAULT_SPEN_METADATA_URL = (
+    "https://spenergynetworks.opendatasoft.com/api/explore/v2.1/catalog/datasets/"
+    "metadata-catalogue/records?limit=100"
+)
 
 PHASE2_COMMANDS = (
     "discover-phase2-sources",
@@ -97,6 +112,48 @@ def _env_int(name: str, default: int) -> int:
     return int(raw)
 
 
+def _to_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    text_value = str(value).replace(",", "").strip()
+    if not text_value:
+        return None
+    try:
+        return float(text_value)
+    except ValueError:
+        return None
+
+
+def _to_int(value: Any) -> int | None:
+    number_value = _to_float(value)
+    if number_value is None:
+        return None
+    return int(number_value)
+
+
+def _normalise_area_name(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "").strip()).lower()
+
+
+def _is_scotland_lat_lon(latitude: float | None, longitude: float | None) -> bool:
+    if latitude is None or longitude is None:
+        return False
+    return 54.3 <= latitude <= 61.5 and -8.8 <= longitude <= -0.5
+
+
+def _naptan_amenity_type(stop_type: str | None) -> str:
+    stop_type = (stop_type or "").strip().upper()
+    if stop_type in {"RLY", "RSE", "MET", "TMU"}:
+        return "rail_station"
+    if stop_type in {"AIR"}:
+        return "airport"
+    if stop_type in {"FER", "FBT"}:
+        return "ferry_terminal"
+    if stop_type in {"BCT", "BCS", "BST", "BCQ"}:
+        return "bus_stop"
+    return "public_transport_stop"
+
+
 class Phase2SourceRunner:
     """Repo-controlled Phase 2 source estate runner."""
 
@@ -123,10 +180,18 @@ class Phase2SourceRunner:
         elif command in INGEST_COMMAND_MODULES:
             if command == "ingest-planning-appeals":
                 result = self.ingest_planning_appeals()
+            elif command == "ingest-power-infrastructure":
+                result = self.ingest_power_infrastructure()
             elif command == "ingest-planning-documents":
                 result = self.ingest_planning_documents()
             elif command == "ingest-amenities":
                 result = self.ingest_amenities()
+            elif command == "ingest-demographics":
+                result = self.ingest_demographics()
+            elif command == "ingest-market-context":
+                result = self.ingest_market_context()
+            elif command == "ingest-intelligence-events":
+                result = self.ingest_intelligence_events()
             else:
                 result = self.ingest_registered_module(command, INGEST_COMMAND_MODULES[command])
         elif command == "ingest-companies-house":
@@ -145,6 +210,14 @@ class Phase2SourceRunner:
             result = self.refresh_site_abnormal_risk()
         elif command == "refresh-site-assessments":
             result = self.refresh_site_assessments()
+        elif command == "refresh-site-market-context":
+            result = self.ingest_market_context()
+        elif command == "refresh-site-amenity-context":
+            result = self.ingest_amenities()
+        elif command == "refresh-site-demographic-context":
+            result = self.ingest_demographics()
+        elif command == "refresh-site-power-context":
+            result = self.ingest_power_infrastructure()
         elif command in REFRESH_COMMAND_FAMILIES:
             result = self.refresh_registered_context(command, REFRESH_COMMAND_FAMILIES[command])
         elif command == "audit-full-source-estate":
@@ -948,6 +1021,794 @@ class Phase2SourceRunner:
         )
         return {"source_family": "planning_appeals", **proof}
 
+    def _fetch_uk_hpi_latest_scottish_authorities(self) -> dict[str, dict[str, Any]]:
+        source_url = os.getenv("UK_HPI_AVERAGE_PRICE_URL") or DEFAULT_UK_HPI_AVERAGE_PRICE_URL
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
+            response = client.get(source_url)
+            response.raise_for_status()
+        reader = csv.DictReader(io.StringIO(response.text))
+        latest: dict[str, dict[str, Any]] = {}
+        for row in reader:
+            area_code = str(row.get("Area_Code") or "").strip()
+            area_name = str(row.get("Region_Name") or "").strip()
+            period = str(row.get("Date") or "").strip()
+            if not area_code.startswith("S12") or not area_name or not period:
+                continue
+            key = _normalise_area_name(area_name)
+            if key not in latest or period > str(latest[key].get("Date") or ""):
+                latest[key] = {**row, "source_url": source_url}
+        return latest
+
+    def ingest_market_context(self) -> dict[str, Any]:
+        selected_sources = self._selected_sources(module_key="market_context")
+        if not self.dry_run and not self.audit_only:
+            for source in selected_sources:
+                self._upsert_source(source)
+
+        hpi_rows = self._fetch_uk_hpi_latest_scottish_authorities()
+        metric_rows: list[dict[str, Any]] = []
+        for row in hpi_rows.values():
+            period = str(row.get("Date") or "").strip()
+            base = {
+                "source_key": "uk_hpi_market_context",
+                "source_family": "market_context",
+                "area_code": row.get("Area_Code"),
+                "area_name": row.get("Region_Name"),
+                "authority_name": row.get("Region_Name"),
+                "period_start": period,
+                "period_end": period,
+                "confidence": "official_statistic_area_context",
+                "source_url": row.get("source_url"),
+                "raw_payload": _json_dumps(row),
+            }
+            for metric_name, column_name, unit in (
+                ("average_price", "Average_Price", "gbp"),
+                ("monthly_change_pct", "Monthly_Change", "pct"),
+                ("annual_change_pct", "Annual_Change", "pct"),
+            ):
+                metric_value = _to_float(row.get(column_name))
+                if metric_value is None:
+                    continue
+                metric_rows.append(
+                    {
+                        **base,
+                        "metric_name": metric_name,
+                        "metric_value": metric_value,
+                        "metric_unit": unit,
+                        "source_record_signature": _stable_key(
+                            f"{base['source_key']}|{base['area_code']}|{metric_name}|{period}|{metric_value}"
+                        ),
+                    }
+                )
+
+        if self.dry_run or self.audit_only:
+            return {
+                "source_family": "market_context",
+                "candidate_area_count": len(hpi_rows),
+                "candidate_metric_count": len(metric_rows),
+                "dry_run": self.dry_run,
+                "audit_only": self.audit_only,
+            }
+
+        self.database.execute_many(
+            """
+            insert into landintel.market_area_metrics (
+                source_key,
+                source_family,
+                area_code,
+                area_name,
+                authority_name,
+                metric_name,
+                metric_value,
+                metric_unit,
+                period_start,
+                period_end,
+                confidence,
+                source_url,
+                source_record_signature,
+                raw_payload,
+                updated_at
+            ) values (
+                :source_key,
+                :source_family,
+                :area_code,
+                :area_name,
+                :authority_name,
+                :metric_name,
+                :metric_value,
+                :metric_unit,
+                cast(:period_start as date),
+                cast(:period_end as date),
+                :confidence,
+                :source_url,
+                :source_record_signature,
+                cast(:raw_payload as jsonb),
+                now()
+            )
+            on conflict (source_key, area_code, metric_name, period_end) do update set
+                area_name = excluded.area_name,
+                authority_name = excluded.authority_name,
+                metric_value = excluded.metric_value,
+                metric_unit = excluded.metric_unit,
+                confidence = excluded.confidence,
+                source_url = excluded.source_url,
+                source_record_signature = excluded.source_record_signature,
+                raw_payload = excluded.raw_payload,
+                updated_at = now()
+            """,
+            metric_rows,
+        )
+
+        proof = self.database.fetch_one(
+            """
+            with selected_sites as (
+                select site.id, site.authority_name, existing.source_record_signature as previous_signature
+                from landintel.canonical_sites as site
+                left join landintel.site_market_context as existing
+                  on existing.canonical_site_id = site.id
+                where site.authority_name is not null
+                  and (:authority_name = '' or site.authority_name ilike :authority_name_like)
+                order by existing.updated_at nulls first, site.updated_at desc nulls last, site.id
+                limit :batch_size
+            ),
+            latest_market as (
+                select distinct on (lower(metric.authority_name))
+                    lower(metric.authority_name) as authority_key,
+                    metric.authority_name,
+                    metric.area_code,
+                    metric.area_name,
+                    metric.metric_value as average_price,
+                    metric.period_end,
+                    metric.source_url
+                from landintel.market_area_metrics as metric
+                where metric.source_key = 'uk_hpi_market_context'
+                  and metric.metric_name = 'average_price'
+                order by lower(metric.authority_name), metric.period_end desc nulls last
+            ),
+            prepared as (
+                select
+                    selected_sites.id as canonical_site_id,
+                    selected_sites.authority_name,
+                    latest_market.area_code,
+                    latest_market.area_name,
+                    latest_market.average_price,
+                    latest_market.period_end,
+                    selected_sites.previous_signature,
+                    md5(concat_ws(
+                        '|',
+                        selected_sites.id::text,
+                        latest_market.area_code,
+                        latest_market.period_end::text,
+                        round(latest_market.average_price, 2)::text
+                    )) as current_signature
+                from selected_sites
+                join latest_market
+                  on latest_market.authority_key = lower(selected_sites.authority_name)
+            ),
+            upserted as (
+                insert into landintel.site_market_context (
+                    canonical_site_id,
+                    source_key,
+                    source_family,
+                    authority_name,
+                    market_confidence_tier,
+                    evidence_summary,
+                    latest_metric_period,
+                    source_record_signature,
+                    metadata,
+                    updated_at
+                )
+                select
+                    prepared.canonical_site_id,
+                    'uk_hpi_market_context',
+                    'market_context',
+                    prepared.authority_name,
+                    'area_context_only',
+                    'UK HPI local authority average price context present',
+                    prepared.period_end,
+                    prepared.current_signature,
+                    jsonb_build_object(
+                        'source_key', 'uk_hpi_market_context',
+                        'area_code', prepared.area_code,
+                        'area_name', prepared.area_name,
+                        'average_price', prepared.average_price,
+                        'source_limitation', 'area_level_market_context_not_site_value'
+                    ),
+                    now()
+                from prepared
+                on conflict (canonical_site_id) do update set
+                    source_key = excluded.source_key,
+                    source_family = excluded.source_family,
+                    authority_name = excluded.authority_name,
+                    market_confidence_tier = excluded.market_confidence_tier,
+                    evidence_summary = excluded.evidence_summary,
+                    latest_metric_period = excluded.latest_metric_period,
+                    source_record_signature = excluded.source_record_signature,
+                    metadata = excluded.metadata,
+                    updated_at = now()
+                returning *
+            ),
+            changed as (
+                select upserted.*
+                from upserted
+                join prepared on prepared.canonical_site_id = upserted.canonical_site_id
+                where prepared.previous_signature is distinct from prepared.current_signature
+            ),
+            deleted_evidence as (
+                delete from landintel.evidence_references as evidence
+                using changed
+                where evidence.canonical_site_id = changed.canonical_site_id
+                  and evidence.source_family = 'market_context'
+                  and evidence.metadata ->> 'source_key' = 'uk_hpi_market_context'
+                returning evidence.id
+            ),
+            inserted_evidence as (
+                insert into landintel.evidence_references (
+                    canonical_site_id,
+                    source_family,
+                    source_dataset,
+                    source_record_id,
+                    source_reference,
+                    confidence,
+                    metadata
+                )
+                select
+                    changed.canonical_site_id,
+                    'market_context',
+                    'UK House Price Index local market context',
+                    changed.id::text,
+                    changed.authority_name,
+                    'medium',
+                    jsonb_build_object('source_key', 'uk_hpi_market_context', 'latest_metric_period', changed.latest_metric_period)
+                from changed
+                returning id
+            ),
+            deleted_signals as (
+                delete from landintel.site_signals as signal
+                using changed
+                where signal.canonical_site_id = changed.canonical_site_id
+                  and signal.source_family = 'market_context'
+                  and signal.metadata ->> 'source_key' = 'uk_hpi_market_context'
+                returning signal.id
+            ),
+            inserted_signals as (
+                insert into landintel.site_signals (
+                    canonical_site_id,
+                    signal_family,
+                    signal_name,
+                    signal_value_text,
+                    signal_value_numeric,
+                    confidence,
+                    source_family,
+                    source_record_id,
+                    fact_label,
+                    evidence_metadata,
+                    metadata,
+                    current_flag
+                )
+                select
+                    changed.canonical_site_id,
+                    'market_context',
+                    'area_market_context',
+                    changed.market_confidence_tier,
+                    1,
+                    0.55,
+                    'market_context',
+                    changed.id::text,
+                    'uk_hpi_area_context',
+                    jsonb_build_object('source', 'uk_hpi_market_context'),
+                    jsonb_build_object('source_key', 'uk_hpi_market_context'),
+                    true
+                from changed
+                returning id
+            )
+            select
+                (select count(*)::integer from landintel.market_area_metrics where source_key = 'uk_hpi_market_context') as metric_row_count,
+                (select count(*)::integer from upserted) as context_row_count,
+                (select count(*)::integer from changed) as changed_context_count,
+                (select count(*)::integer from inserted_evidence) as evidence_row_count,
+                (select count(*)::integer from inserted_signals) as signal_row_count
+            """,
+            {
+                "batch_size": self.batch_size,
+                "authority_name": self.authority_filter,
+                "authority_name_like": f"%{self.authority_filter}%",
+            },
+        ) or {}
+        self._update_family_lifecycle(
+            source_family="market_context",
+            source_key="uk_hpi_market_context",
+            row_count=int(proof.get("metric_row_count") or 0),
+            linked_count=int(proof.get("context_row_count") or 0),
+            measured_count=0,
+            evidence_count=int(proof.get("evidence_row_count") or 0),
+            signal_count=int(proof.get("signal_row_count") or 0),
+        )
+        self._record_expansion_event(
+            command_name="ingest-market-context",
+            source_key="uk_hpi_market_context",
+            source_family="market_context",
+            status="success",
+            raw_rows=int(proof.get("metric_row_count") or 0),
+            linked_rows=int(proof.get("context_row_count") or 0),
+            evidence_rows=int(proof.get("evidence_row_count") or 0),
+            signal_rows=int(proof.get("signal_row_count") or 0),
+            summary="UK HPI local authority market context refreshed as evidence context only.",
+        )
+        self._record_family_freshness("market_context", "UK House Price Index local market context", int(proof.get("metric_row_count") or 0))
+        return {"source_family": "market_context", **proof}
+
+    def ingest_demographics(self) -> dict[str, Any]:
+        selected_sources = self._selected_sources(module_key="demographics")
+        if not self.dry_run and not self.audit_only:
+            for source in selected_sources:
+                self._upsert_source(source)
+
+        authority_lookup = {
+            str(row.get("Area_Code")): str(row.get("Region_Name"))
+            for row in self._fetch_uk_hpi_latest_scottish_authorities().values()
+            if row.get("Area_Code") and row.get("Region_Name")
+        }
+        simd_url = os.getenv("SIMD_2020_URL") or DEFAULT_SIMD_URL
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
+            response = client.get(simd_url)
+            response.raise_for_status()
+        aggregates: dict[str, dict[str, Any]] = {}
+        for row in csv.DictReader(io.StringIO(response.text.lstrip("\ufeff"))):
+            area_code = str(row.get("CA") or "").strip()
+            if not area_code.startswith("S12"):
+                continue
+            aggregate = aggregates.setdefault(
+                area_code,
+                {
+                    "area_code": area_code,
+                    "area_name": authority_lookup.get(area_code, area_code),
+                    "datazone_count": 0,
+                    "rank_total": 0,
+                    "most15_count": 0,
+                    "least15_count": 0,
+                    "decile_total": 0,
+                },
+            )
+            aggregate["datazone_count"] += 1
+            aggregate["rank_total"] += _to_int(row.get("SIMD2020V2Rank")) or 0
+            aggregate["most15_count"] += _to_int(row.get("SIMD2020V2Most15pc")) or 0
+            aggregate["least15_count"] += _to_int(row.get("SIMD2020V2Least15pc")) or 0
+            aggregate["decile_total"] += _to_int(row.get("SIMD2020V2CountryDecile")) or 0
+
+        metric_rows: list[dict[str, Any]] = []
+        for aggregate in aggregates.values():
+            count = max(int(aggregate["datazone_count"]), 1)
+            base = {
+                "source_key": "simd_demographic_context",
+                "source_family": "demographics",
+                "area_code": aggregate["area_code"],
+                "area_name": aggregate["area_name"],
+                "area_type": "council_area",
+                "authority_name": aggregate["area_name"],
+                "period_start": "2020-01-28",
+                "period_end": "2020-06-22",
+                "confidence": "official_area_context",
+                "source_url": simd_url,
+            }
+            values = {
+                "simd_datazone_count": (count, "count"),
+                "simd_average_rank": (round(float(aggregate["rank_total"]) / count, 2), "rank"),
+                "simd_average_country_decile": (round(float(aggregate["decile_total"]) / count, 2), "decile"),
+                "simd_most15_pct": (round((float(aggregate["most15_count"]) / count) * 100, 2), "pct"),
+                "simd_least15_pct": (round((float(aggregate["least15_count"]) / count) * 100, 2), "pct"),
+            }
+            for metric_name, (metric_value, unit) in values.items():
+                metric_rows.append(
+                    {
+                        **base,
+                        "metric_name": metric_name,
+                        "metric_value": metric_value,
+                        "metric_unit": unit,
+                        "source_record_signature": _stable_key(
+                            f"{base['source_key']}|{base['area_code']}|{metric_name}|{metric_value}"
+                        ),
+                        "raw_payload": _json_dumps(aggregate),
+                    }
+                )
+
+        if self.dry_run or self.audit_only:
+            return {
+                "source_family": "demographics",
+                "candidate_area_count": len(aggregates),
+                "candidate_metric_count": len(metric_rows),
+                "dry_run": self.dry_run,
+                "audit_only": self.audit_only,
+            }
+
+        self.database.execute_many(
+            """
+            insert into landintel.demographic_area_metrics (
+                source_key,
+                source_family,
+                area_code,
+                area_name,
+                area_type,
+                authority_name,
+                metric_name,
+                metric_value,
+                metric_unit,
+                period_start,
+                period_end,
+                confidence,
+                source_url,
+                source_record_signature,
+                raw_payload,
+                updated_at
+            ) values (
+                :source_key,
+                :source_family,
+                :area_code,
+                :area_name,
+                :area_type,
+                :authority_name,
+                :metric_name,
+                :metric_value,
+                :metric_unit,
+                cast(:period_start as date),
+                cast(:period_end as date),
+                :confidence,
+                :source_url,
+                :source_record_signature,
+                cast(:raw_payload as jsonb),
+                now()
+            )
+            on conflict (source_key, area_code, metric_name, period_end) do update set
+                area_name = excluded.area_name,
+                area_type = excluded.area_type,
+                authority_name = excluded.authority_name,
+                metric_value = excluded.metric_value,
+                metric_unit = excluded.metric_unit,
+                confidence = excluded.confidence,
+                source_url = excluded.source_url,
+                source_record_signature = excluded.source_record_signature,
+                raw_payload = excluded.raw_payload,
+                updated_at = now()
+            """,
+            metric_rows,
+        )
+        proof = self.database.fetch_one(
+            """
+            with selected_sites as (
+                select site.id, site.authority_name, existing.source_record_signature as previous_signature
+                from landintel.canonical_sites as site
+                left join landintel.site_demographic_context as existing
+                  on existing.canonical_site_id = site.id
+                where site.authority_name is not null
+                  and (:authority_name = '' or site.authority_name ilike :authority_name_like)
+                order by existing.updated_at nulls first, site.updated_at desc nulls last, site.id
+                limit :batch_size
+            ),
+            simd_context as (
+                select
+                    average_rank.authority_name,
+                    average_rank.area_code,
+                    average_rank.area_name,
+                    average_rank.metric_value as average_rank,
+                    most15.metric_value as most15_pct,
+                    average_rank.period_end
+                from landintel.demographic_area_metrics as average_rank
+                left join landintel.demographic_area_metrics as most15
+                  on most15.source_key = average_rank.source_key
+                 and most15.area_code = average_rank.area_code
+                 and most15.metric_name = 'simd_most15_pct'
+                 and most15.period_end = average_rank.period_end
+                where average_rank.source_key = 'simd_demographic_context'
+                  and average_rank.metric_name = 'simd_average_rank'
+            ),
+            prepared as (
+                select
+                    selected_sites.id as canonical_site_id,
+                    simd_context.area_code,
+                    simd_context.area_name,
+                    'council_area'::text as area_type,
+                    'SIMD authority context present'::text as context_summary,
+                    'area_context_only'::text as evidence_confidence,
+                    selected_sites.previous_signature,
+                    md5(concat_ws(
+                        '|',
+                        selected_sites.id::text,
+                        simd_context.area_code,
+                        round(simd_context.average_rank, 2)::text,
+                        round(coalesce(simd_context.most15_pct, 0), 2)::text
+                    )) as current_signature
+                from selected_sites
+                join simd_context
+                  on lower(simd_context.authority_name) = lower(selected_sites.authority_name)
+            ),
+            upserted as (
+                insert into landintel.site_demographic_context (
+                    canonical_site_id,
+                    source_key,
+                    source_family,
+                    area_code,
+                    area_name,
+                    area_type,
+                    context_summary,
+                    evidence_confidence,
+                    source_record_signature,
+                    metadata,
+                    updated_at
+                )
+                select
+                    prepared.canonical_site_id,
+                    'simd_demographic_context',
+                    'demographics',
+                    prepared.area_code,
+                    prepared.area_name,
+                    prepared.area_type,
+                    prepared.context_summary,
+                    prepared.evidence_confidence,
+                    prepared.current_signature,
+                    jsonb_build_object(
+                        'source_key', 'simd_demographic_context',
+                        'source_limitation', 'area_level_context_not_buyer_demand_certainty'
+                    ),
+                    now()
+                from prepared
+                on conflict (canonical_site_id) do update set
+                    source_key = excluded.source_key,
+                    source_family = excluded.source_family,
+                    area_code = excluded.area_code,
+                    area_name = excluded.area_name,
+                    area_type = excluded.area_type,
+                    context_summary = excluded.context_summary,
+                    evidence_confidence = excluded.evidence_confidence,
+                    source_record_signature = excluded.source_record_signature,
+                    metadata = excluded.metadata,
+                    updated_at = now()
+                returning *
+            ),
+            changed as (
+                select upserted.*
+                from upserted
+                join prepared on prepared.canonical_site_id = upserted.canonical_site_id
+                where prepared.previous_signature is distinct from prepared.current_signature
+            ),
+            deleted_evidence as (
+                delete from landintel.evidence_references as evidence
+                using changed
+                where evidence.canonical_site_id = changed.canonical_site_id
+                  and evidence.source_family = 'demographics'
+                  and evidence.metadata ->> 'source_key' = 'simd_demographic_context'
+                returning evidence.id
+            ),
+            inserted_evidence as (
+                insert into landintel.evidence_references (
+                    canonical_site_id,
+                    source_family,
+                    source_dataset,
+                    source_record_id,
+                    source_reference,
+                    confidence,
+                    metadata
+                )
+                select
+                    changed.canonical_site_id,
+                    'demographics',
+                    'SIMD local authority context',
+                    changed.id::text,
+                    changed.area_name,
+                    'medium',
+                    jsonb_build_object('source_key', 'simd_demographic_context', 'area_code', changed.area_code)
+                from changed
+                returning id
+            ),
+            deleted_signals as (
+                delete from landintel.site_signals as signal
+                using changed
+                where signal.canonical_site_id = changed.canonical_site_id
+                  and signal.source_family = 'demographics'
+                  and signal.metadata ->> 'source_key' = 'simd_demographic_context'
+                returning signal.id
+            ),
+            inserted_signals as (
+                insert into landintel.site_signals (
+                    canonical_site_id,
+                    signal_family,
+                    signal_name,
+                    signal_value_text,
+                    signal_value_numeric,
+                    confidence,
+                    source_family,
+                    source_record_id,
+                    fact_label,
+                    evidence_metadata,
+                    metadata,
+                    current_flag
+                )
+                select
+                    changed.canonical_site_id,
+                    'demographics',
+                    'area_demographic_context',
+                    changed.evidence_confidence,
+                    1,
+                    0.55,
+                    'demographics',
+                    changed.id::text,
+                    'simd_area_context',
+                    jsonb_build_object('source', 'simd_demographic_context'),
+                    jsonb_build_object('source_key', 'simd_demographic_context'),
+                    true
+                from changed
+                returning id
+            )
+            select
+                (select count(*)::integer from landintel.demographic_area_metrics where source_key = 'simd_demographic_context') as metric_row_count,
+                (select count(*)::integer from upserted) as context_row_count,
+                (select count(*)::integer from changed) as changed_context_count,
+                (select count(*)::integer from inserted_evidence) as evidence_row_count,
+                (select count(*)::integer from inserted_signals) as signal_row_count
+            """,
+            {
+                "batch_size": self.batch_size,
+                "authority_name": self.authority_filter,
+                "authority_name_like": f"%{self.authority_filter}%",
+            },
+        ) or {}
+        self._update_family_lifecycle(
+            source_family="demographics",
+            source_key="simd_demographic_context",
+            row_count=int(proof.get("metric_row_count") or 0),
+            linked_count=int(proof.get("context_row_count") or 0),
+            measured_count=0,
+            evidence_count=int(proof.get("evidence_row_count") or 0),
+            signal_count=int(proof.get("signal_row_count") or 0),
+        )
+        self._record_expansion_event(
+            command_name="ingest-demographics",
+            source_key="simd_demographic_context",
+            source_family="demographics",
+            status="success",
+            raw_rows=int(proof.get("metric_row_count") or 0),
+            linked_rows=int(proof.get("context_row_count") or 0),
+            evidence_rows=int(proof.get("evidence_row_count") or 0),
+            signal_rows=int(proof.get("signal_row_count") or 0),
+            summary="SIMD local authority context refreshed as area evidence only.",
+        )
+        self._record_family_freshness("demographics", "SIMD local context", int(proof.get("metric_row_count") or 0))
+        return {"source_family": "demographics", **proof}
+
+    def ingest_power_infrastructure(self) -> dict[str, Any]:
+        selected_sources = self._selected_sources(module_key="power_infrastructure")
+        if not self.dry_run and not self.audit_only:
+            for source in selected_sources:
+                self._upsert_source(source)
+        metadata_url = os.getenv("SPEN_METADATA_CATALOG_URL") or DEFAULT_SPEN_METADATA_URL
+        metadata_count = 0
+        try:
+            with httpx.Client(timeout=20, follow_redirects=True) as client:
+                response = client.get(metadata_url)
+                response.raise_for_status()
+                metadata_count = len((response.json() or {}).get("results") or [])
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("power_metadata_probe_error", extra={"url": metadata_url, "error": str(exc)})
+
+        if not self.dry_run and not self.audit_only:
+            self._record_expansion_event(
+                command_name="ingest-power-infrastructure",
+                source_key="sp_energy_networks_assets",
+                source_family="power_infrastructure",
+                status="gated",
+                raw_rows=0,
+                summary="Power metadata catalog probed, but asset geometry endpoint is not proven for review use.",
+                metadata={"metadata_catalog_record_count": metadata_count, "metadata_url": metadata_url},
+            )
+            self._record_family_freshness("power_infrastructure", "SP Energy Networks infrastructure", 0)
+        return {
+            "source_family": "power_infrastructure",
+            "metadata_catalog_record_count": metadata_count,
+            "asset_row_count": 0,
+            "linked_site_count": 0,
+            "evidence_count": 0,
+            "signal_count": 0,
+            "status": "gated_until_asset_geometry_access_is_proven",
+        }
+
+    def ingest_intelligence_events(self) -> dict[str, Any]:
+        selected_sources = self._selected_sources(module_key="local_intelligence")
+        if not self.dry_run and not self.audit_only:
+            for source in selected_sources:
+                self._upsert_source(source)
+                self._record_expansion_event(
+                    command_name="ingest-intelligence-events",
+                    source_key=source["source_key"],
+                    source_family=source["source_family"],
+                    status=source.get("access_status") or "gated",
+                    summary=source.get("limitation_notes") or "Local intelligence source requires approved adapter before ingest.",
+                    metadata={"next_action": source.get("next_action")},
+                )
+                self._record_freshness(source, records_observed=0)
+        return {
+            "source_family": "local_intelligence",
+            "registered_source_count": len(selected_sources),
+            "event_row_count": 0,
+            "linked_site_count": 0,
+            "status": "gated_or_access_required",
+            "dry_run": self.dry_run,
+            "audit_only": self.audit_only,
+        }
+
+    def _ingest_naptan_amenity_assets(self) -> int:
+        source_url = os.getenv("NAPTAN_CSV_URL") or DEFAULT_NAPTAN_URL
+        candidates: list[dict[str, Any]] = []
+        with httpx.Client(timeout=60, follow_redirects=True) as client:
+            with client.stream("GET", source_url) as response:
+                response.raise_for_status()
+                reader = csv.DictReader(response.iter_lines())
+                for row in reader:
+                    latitude = _to_float(row.get("Latitude"))
+                    longitude = _to_float(row.get("Longitude"))
+                    if not _is_scotland_lat_lon(latitude, longitude):
+                        continue
+                    atco_code = str(row.get("ATCOCode") or "").strip()
+                    if not atco_code:
+                        continue
+                    candidates.append(
+                        {
+                            "source_key": "naptan_public_transport",
+                            "source_family": "amenities",
+                            "source_record_id": atco_code,
+                            "authority_name": None,
+                            "amenity_type": _naptan_amenity_type(row.get("StopType")),
+                            "amenity_name": row.get("CommonName") or row.get("ShortCommonName") or atco_code,
+                            "source_url": source_url,
+                            "longitude": longitude,
+                            "latitude": latitude,
+                            "source_record_signature": _stable_key(
+                                f"{atco_code}|{row.get('CommonName')}|{row.get('Status')}|{latitude}|{longitude}"
+                            ),
+                            "raw_payload": _json_dumps(row),
+                        }
+                    )
+                    if len(candidates) >= self.batch_size:
+                        break
+        self.database.execute_many(
+            """
+            insert into landintel.amenity_assets (
+                source_key,
+                source_family,
+                source_record_id,
+                authority_name,
+                amenity_type,
+                amenity_name,
+                source_url,
+                geometry,
+                source_record_signature,
+                raw_payload,
+                updated_at
+            ) values (
+                :source_key,
+                :source_family,
+                :source_record_id,
+                :authority_name,
+                :amenity_type,
+                :amenity_name,
+                :source_url,
+                st_transform(st_setsrid(st_makepoint(:longitude, :latitude), 4326), 27700),
+                :source_record_signature,
+                cast(:raw_payload as jsonb),
+                now()
+            )
+            on conflict (source_key, source_record_id) do update set
+                authority_name = excluded.authority_name,
+                amenity_type = excluded.amenity_type,
+                amenity_name = excluded.amenity_name,
+                source_url = excluded.source_url,
+                geometry = excluded.geometry,
+                source_record_signature = excluded.source_record_signature,
+                raw_payload = excluded.raw_payload,
+                updated_at = now()
+            """,
+            candidates,
+        )
+        return len(candidates)
+
     def ingest_amenities(self) -> dict[str, Any]:
         selected_sources = self._selected_sources(module_key="amenities")
         if not self.dry_run and not self.audit_only:
@@ -965,6 +1826,7 @@ class Phase2SourceRunner:
             )
             return {"source_family": "amenities", "candidate_feature_count": int(candidate_count or 0)}
 
+        naptan_asset_count = self._ingest_naptan_amenity_assets()
         proof = self.database.fetch_one(
             """
             with source_features as (
@@ -1032,6 +1894,7 @@ class Phase2SourceRunner:
             nearest_assets as (
                 select distinct on (site.id, asset.amenity_type)
                     site.id as canonical_site_id,
+                    asset.source_key as nearest_source_key,
                     asset.amenity_type,
                     asset.id as nearest_asset_id,
                     asset.amenity_name,
@@ -1064,7 +1927,7 @@ class Phase2SourceRunner:
                 )
                 select
                     nearest_assets.canonical_site_id,
-                    'os_places_amenity_context',
+                    nearest_assets.nearest_source_key,
                     'amenities',
                     nearest_assets.amenity_type,
                     nearest_assets.nearest_asset_id,
@@ -1073,8 +1936,8 @@ class Phase2SourceRunner:
                     nearest_assets.count_within_400m::integer,
                     nearest_assets.count_within_800m::integer,
                     nearest_assets.count_within_1600m::integer,
-                    md5(concat_ws('|', nearest_assets.canonical_site_id::text, nearest_assets.amenity_type, nearest_assets.nearest_asset_id::text, round(nearest_assets.nearest_distance_m::numeric, 2)::text)),
-                    jsonb_build_object('source_key', 'os_places_amenity_context'),
+                    md5(concat_ws('|', nearest_assets.canonical_site_id::text, nearest_assets.nearest_source_key, nearest_assets.amenity_type, nearest_assets.nearest_asset_id::text, round(nearest_assets.nearest_distance_m::numeric, 2)::text)),
+                    jsonb_build_object('source_key', nearest_assets.nearest_source_key),
                     now(),
                     now()
                 from nearest_assets
@@ -1109,7 +1972,7 @@ class Phase2SourceRunner:
                     upserted_context.nearest_amenity_name,
                     'medium',
                     jsonb_build_object(
-                        'source_key', 'os_places_amenity_context',
+                        'source_key', upserted_context.source_key,
                         'amenity_type', upserted_context.amenity_type,
                         'nearest_distance_m', upserted_context.nearest_distance_m
                     )
@@ -1141,8 +2004,8 @@ class Phase2SourceRunner:
                     'amenities',
                     upserted_context.id::text,
                     'amenity_proximity_evidence',
-                    jsonb_build_object('source', 'os_places_amenity_context'),
-                    jsonb_build_object('source_key', 'os_places_amenity_context'),
+                    jsonb_build_object('source', upserted_context.source_key),
+                    jsonb_build_object('source_key', upserted_context.source_key),
                     true
                 from upserted_context
                 returning id
@@ -1160,10 +2023,21 @@ class Phase2SourceRunner:
                 "authority_name_like": f"%{self.authority_filter}%",
             },
         ) or {}
+        proof["asset_count"] = int(proof.get("asset_count") or 0) + naptan_asset_count
+        proof["naptan_asset_count"] = naptan_asset_count
         self._update_family_lifecycle(
             source_family="amenities",
             source_key="os_places_amenity_context",
             row_count=int(proof.get("asset_count") or 0),
+            linked_count=int(proof.get("context_row_count") or 0),
+            measured_count=int(proof.get("context_row_count") or 0),
+            evidence_count=int(proof.get("evidence_row_count") or 0),
+            signal_count=int(proof.get("signal_row_count") or 0),
+        )
+        self._update_family_lifecycle(
+            source_family="amenities",
+            source_key="naptan_public_transport",
+            row_count=naptan_asset_count,
             linked_count=int(proof.get("context_row_count") or 0),
             measured_count=int(proof.get("context_row_count") or 0),
             evidence_count=int(proof.get("evidence_row_count") or 0),
@@ -1180,8 +2054,10 @@ class Phase2SourceRunner:
             evidence_rows=int(proof.get("evidence_row_count") or 0),
             signal_rows=int(proof.get("signal_row_count") or 0),
             summary="Amenity context refreshed from OS place/features constraint assets where present.",
+            metadata={"naptan_asset_count": naptan_asset_count},
         )
         self._record_family_freshness("amenities", "OS Places and Features amenity context", int(proof.get("asset_count") or 0))
+        self._record_family_freshness("amenities", "NaPTAN public transport access", naptan_asset_count)
         return {"source_family": "amenities", **proof}
 
     def ingest_planning_documents(self) -> dict[str, Any]:

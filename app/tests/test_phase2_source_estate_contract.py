@@ -199,6 +199,34 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("insert into landintel.evidence_references", refresh_sql)
         self.assertIn("insert into landintel.site_signals", refresh_sql)
 
+    def test_public_phase2_adapters_land_rows_before_context(self) -> None:
+        for snippet in (
+            "DEFAULT_UK_HPI_AVERAGE_PRICE_URL",
+            "DEFAULT_SIMD_URL",
+            "DEFAULT_NAPTAN_URL",
+            "def ingest_market_context",
+            "def ingest_demographics",
+            "def _ingest_naptan_amenity_assets",
+            "landintel.market_area_metrics",
+            "landintel.site_market_context",
+            "landintel.demographic_area_metrics",
+            "landintel.site_demographic_context",
+            "landintel.amenity_assets",
+            "st_transform(st_setsrid(st_makepoint(:longitude, :latitude), 4326), 27700)",
+            "source_limitation', 'area_level_market_context_not_site_value'",
+            "source_limitation', 'area_level_context_not_buyer_demand_certainty'",
+        ):
+            self.assertIn(snippet, RUNNER)
+
+    def test_power_ingest_does_not_turn_metadata_into_asset_rows(self) -> None:
+        power_sql = RUNNER.split("def ingest_power_infrastructure", 1)[1]
+        power_sql = power_sql.split("def ingest_intelligence_events", 1)[0]
+        self.assertIn("DEFAULT_SPEN_METADATA_URL", RUNNER)
+        self.assertIn("metadata_catalog_record_count", power_sql)
+        self.assertIn("asset_row_count", power_sql)
+        self.assertIn("gated_until_asset_geometry_access_is_proven", power_sql)
+        self.assertNotIn("insert into landintel.power_assets", power_sql)
+
     def test_proof_tests_include_counts_by_lifecycle_stage(self) -> None:
         self.assertIn("v_landintel_source_lifecycle_stage_counts", MIGRATION)
         self.assertIn("lifecycle_counts", RUNNER)

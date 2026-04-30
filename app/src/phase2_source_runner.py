@@ -404,12 +404,7 @@ class Phase2SourceRunner:
                   on prepared.planning_application_record_id = upserted_facts.planning_application_record_id
                 where prepared.previous_signature is distinct from prepared.current_signature
             ),
-            selected_sites as (
-                select distinct canonical_site_id
-                from upserted_facts
-                where canonical_site_id is not null
-            ),
-            context_source as (
+            context_source_all as (
                 select
                     facts.canonical_site_id,
                     (array_agg(facts.planning_reference order by facts.decision_date desc nulls last, facts.updated_at desc))[1] as latest_planning_reference,
@@ -432,10 +427,17 @@ class Phase2SourceRunner:
                         coalesce(max(facts.decision_date)::text, '')
                     )) as current_signature
                 from landintel.planning_decision_facts as facts
-                join selected_sites on selected_sites.canonical_site_id = facts.canonical_site_id
                 left join landintel.site_planning_decision_context as existing
                   on existing.canonical_site_id = facts.canonical_site_id
+                where facts.canonical_site_id is not null
                 group by facts.canonical_site_id, existing.source_record_signature
+            ),
+            context_source as (
+                select *
+                from context_source_all
+                where previous_signature is distinct from current_signature
+                order by latest_decision_date desc nulls last, canonical_site_id
+                limit :batch_size
             ),
             upserted_context as (
                 insert into landintel.site_planning_decision_context (

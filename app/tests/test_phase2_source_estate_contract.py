@@ -193,6 +193,9 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             refresh_sql,
         )
         self.assertIn("(existing.source_record_signature is null) desc", refresh_sql)
+        self.assertIn("context_source_all", refresh_sql)
+        self.assertIn("where facts.canonical_site_id is not null", refresh_sql)
+        self.assertIn("where previous_signature is distinct from current_signature", refresh_sql)
         self.assertIn("insert into landintel.evidence_references", refresh_sql)
         self.assertIn("insert into landintel.site_signals", refresh_sql)
 

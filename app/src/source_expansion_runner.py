@@ -3854,7 +3854,7 @@ class SourceExpansionRunner:
             return default_endpoint
         configured_base_url = (os.getenv("OS_DOWNLOADS_API") or "").strip()
         base_url = (
-            configured_base_url
+            configured_base_url.split("/downloads/v1", 1)[0] + "/downloads/v1"
             if "/downloads/v1" in configured_base_url
             else "https://api.os.uk/downloads/v1"
         )

@@ -443,14 +443,14 @@ jobs:
             python -m src.source_expansion_runner_wfs_paging audit-source-expansion
           elif [ "$SELECTED_COMMAND" = "process-reconcile-queue" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000
-            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
+            python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
+            python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
           elif [ "$SELECTED_COMMAND" = "reconcile-catchup-scan" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_reconcile_catchup reconcile-catchup-scan
+            python -m src.source_reconcile_catchup reconcile-catchup-scan --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
           elif [ "$SELECTED_COMMAND" = "refresh-affected-sites" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
+            python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
           elif [ "$SELECTED_COMMAND" = "weekly-reconcile-maintenance" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_reconcile_incremental weekly-reconcile-maintenance
@@ -459,16 +459,16 @@ jobs:
             exit 1
           elif [ "$SELECTED_COMMAND" = "publish-planning-links" ]; then
             python -m src.source_phase_runner run-migrations
-            echo "Publishing existing planning records into the canonical-site reconcile queue. No full SpatialHub planning pull is being run."
-            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning
-            python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000
-            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
+            echo "Publishing existing planning records into the canonical-site reconcile queue with bounded runtime and batch controls. No full SpatialHub planning pull is being run."
+            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
+            python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
+            python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
           elif [ "$SELECTED_COMMAND" = "ingest-planning-history" ]; then
             python -m src.source_phase_runner run-migrations
             echo "Planning applications are already populated. Skipping full SpatialHub planning ingest and publishing existing records instead."
-            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning
-            python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000
-            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
+            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
+            python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
+            python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
           elif [ "$SELECTED_COMMAND" = "full-ingest-planning-history" ]; then
             python -m src.source_phase_runner run-migrations
             echo "Full SpatialHub planning ingest explicitly requested. This is the only planning command allowed to run the long WFS pull."

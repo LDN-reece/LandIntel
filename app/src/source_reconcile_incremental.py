@@ -351,6 +351,8 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
     def _process_reconcile_item(self, item: dict[str, Any], ingest_run_id: str) -> str:
         state = self._fetch_state(item["state_id"])
         source_row = self._fetch_source_row(item["source_family"], item["authority_name"], item["source_record_id"])
+        if item["work_type"] == "upsert" and source_row is not None and self._source_signature_drifted(item, state, source_row):
+            self._refresh_reconcile_item_to_current_source(item, state, source_row)
         if self._queue_item_is_outdated(item, state, source_row):
             self._mark_reconcile_queue_status(item, "superseded")
             return "superseded"
@@ -1391,6 +1393,88 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
         if state.get("current_geometry_hash") != source_row.get("geometry_hash"):
             return True
         return False
+
+    def _source_signature_drifted(
+        self,
+        item: dict[str, Any],
+        state: dict[str, Any],
+        source_row: dict[str, Any],
+    ) -> bool:
+        return (
+            item.get("source_signature") != source_row.get("source_signature")
+            or item.get("geometry_hash") != source_row.get("geometry_hash")
+            or state.get("current_source_signature") != source_row.get("source_signature")
+            or state.get("current_geometry_hash") != source_row.get("geometry_hash")
+        )
+
+    def _refresh_reconcile_item_to_current_source(
+        self,
+        item: dict[str, Any],
+        state: dict[str, Any],
+        source_row: dict[str, Any],
+    ) -> None:
+        with self.database.engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    update landintel.source_reconcile_state
+                    set active_flag = true,
+                        lifecycle_status = case
+                            when lifecycle_status = 'retired' then 'active'
+                            else lifecycle_status
+                        end,
+                        current_source_signature = :source_signature,
+                        current_geometry_hash = :geometry_hash,
+                        last_seen_ingest_run_id = cast(:ingest_run_id as uuid),
+                        last_seen_at = now(),
+                        metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
+                            'currentised_from_processing_worker', true,
+                            'currentised_at', now()
+                        ),
+                        updated_at = now()
+                    where id = cast(:state_id as uuid)
+                    """
+                ),
+                {
+                    "state_id": state["id"],
+                    "source_signature": source_row.get("source_signature"),
+                    "geometry_hash": source_row.get("geometry_hash"),
+                    "ingest_run_id": source_row.get("ingest_run_id"),
+                },
+            )
+            connection.execute(
+                text(
+                    """
+                    update landintel.source_reconcile_queue
+                    set source_signature = :source_signature,
+                        geometry_hash = :geometry_hash,
+                        ingest_run_id = cast(:ingest_run_id as uuid),
+                        error_code = null,
+                        error_message = null,
+                        review_reason_code = null,
+                        metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
+                            'currentised_from_processing_worker', true,
+                            'currentised_at', now()
+                        ),
+                        updated_at = now()
+                    where id = cast(:queue_id as uuid)
+                    """
+                ),
+                {
+                    "queue_id": item["id"],
+                    "source_signature": source_row.get("source_signature"),
+                    "geometry_hash": source_row.get("geometry_hash"),
+                    "ingest_run_id": source_row.get("ingest_run_id"),
+                },
+            )
+        item["source_signature"] = source_row.get("source_signature")
+        item["geometry_hash"] = source_row.get("geometry_hash")
+        item["ingest_run_id"] = source_row.get("ingest_run_id")
+        state["active_flag"] = True
+        state["lifecycle_status"] = "active" if state.get("lifecycle_status") == "retired" else state.get("lifecycle_status")
+        state["current_source_signature"] = source_row.get("source_signature")
+        state["current_geometry_hash"] = source_row.get("geometry_hash")
+        state["last_seen_ingest_run_id"] = source_row.get("ingest_run_id")
 
     def _mark_reconcile_queue_retryable(self, item: dict[str, Any], error_message: str) -> None:
         next_attempt_minutes = 5 if int(item.get("attempt_count") or 0) <= 1 else 15 if int(item.get("attempt_count") or 0) == 2 else 60

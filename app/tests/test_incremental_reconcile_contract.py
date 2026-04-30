@@ -76,6 +76,12 @@ class IncrementalReconcileContractTests(unittest.TestCase):
         self.assertIn("source_signature", WORKER)
         self.assertIn("current_source_signature", WORKER)
 
+    def test_worker_currentises_live_source_drift_before_processing(self) -> None:
+        self.assertIn("def _source_signature_drifted", WORKER)
+        self.assertIn("def _refresh_reconcile_item_to_current_source", WORKER)
+        self.assertIn("currentised_from_processing_worker", WORKER)
+        self.assertIn("self._refresh_reconcile_item_to_current_source(item, state, source_row)", WORKER)
+
     def test_worker_prefilters_live_spatial_matches(self) -> None:
         self.assertIn("site.geometry OPERATOR(extensions.&&) st_expand(source_geometry.geometry_value, 100)", WORKER)
         self.assertIn("parcel.geometry OPERATOR(extensions.&&) site.geometry", WORKER)

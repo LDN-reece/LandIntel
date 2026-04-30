@@ -82,6 +82,19 @@ on:
           - ingest-os-places
           - ingest-os-features
           - ingest-os-linked-identifiers
+          - ingest-os-openmap-local
+          - ingest-os-open-roads
+          - ingest-os-open-rivers
+          - ingest-os-boundary-line
+          - ingest-os-open-names
+          - ingest-os-open-greenspace
+          - ingest-os-open-uprn
+          - ingest-os-open-usrn
+          - ingest-osm-overpass
+          - ingest-naptan
+          - ingest-statistics-gov-scot
+          - ingest-opentopography-srtm
+          - probe-open-location-spine
           - process-reconcile-queue
           - reconcile-catchup-scan
           - refresh-affected-sites
@@ -189,6 +202,7 @@ jobs:
       OS_DOWNLOADS_API: ${{ secrets.OS_DOWNLOADS_API }}
       OS_FEATURES_API: ${{ secrets.OS_FEATURES_API }}
       OS_LINKED_IDENTIFIERS_API: ${{ secrets.OS_LINKED_IDENTIFIERS_API }}
+      OPENTOPOGRAPHY_API_KEY: ${{ secrets.OPENTOPOGRAPHY_API_KEY }}
       COMPANIES_HOUSE_API: ${{ secrets.COMPANIES_HOUSE_API }}
       COMPANIES_HOUSE_API_KEY: ${{ secrets.COMPANIES_HOUSE_API_KEY }}
       FCA_API: ${{ secrets.FCA_API }}
@@ -341,7 +355,7 @@ jobs:
 
           is_source_expansion_ingest() {
             case "$1" in
-              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features|ingest-os-linked-identifiers)
+              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features|ingest-os-linked-identifiers|ingest-os-openmap-local|ingest-os-open-roads|ingest-os-open-rivers|ingest-os-boundary-line|ingest-os-open-names|ingest-os-open-greenspace|ingest-os-open-uprn|ingest-os-open-usrn|ingest-osm-overpass|ingest-naptan|ingest-statistics-gov-scot|ingest-opentopography-srtm|probe-open-location-spine)
                 return 0
                 ;;
               *)

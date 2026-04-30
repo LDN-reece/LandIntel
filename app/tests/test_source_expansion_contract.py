@@ -42,6 +42,19 @@ class SourceExpansionContractTests(unittest.TestCase):
             "ingest-os-places",
             "ingest-os-features",
             "ingest-os-linked-identifiers",
+            "ingest-os-openmap-local",
+            "ingest-os-open-roads",
+            "ingest-os-open-rivers",
+            "ingest-os-boundary-line",
+            "ingest-os-open-names",
+            "ingest-os-open-greenspace",
+            "ingest-os-open-uprn",
+            "ingest-os-open-usrn",
+            "ingest-osm-overpass",
+            "ingest-naptan",
+            "ingest-statistics-gov-scot",
+            "ingest-opentopography-srtm",
+            "probe-open-location-spine",
             "ingest-settlement-boundaries",
         ):
             self.assertIn(f"- {command}", WORKFLOW)
@@ -186,10 +199,38 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertNotIn("reconcile-catchup-scan --source-family vdl", WORKFLOW)
 
     def test_os_sources_are_registered_without_local_storage(self) -> None:
-        for source_key in ("os_downloads_terrain50", "os_places_api", "os_features_api", "os_linked_identifiers_api"):
+        for source_key in (
+            "os_downloads_terrain50",
+            "os_places_api",
+            "os_features_api",
+            "os_linked_identifiers_api",
+            "os_downloads_openmap_local",
+            "os_downloads_open_roads",
+            "os_downloads_open_rivers",
+            "os_downloads_boundary_line",
+            "os_downloads_open_names",
+            "os_downloads_open_greenspace",
+            "os_downloads_open_uprn",
+            "os_downloads_open_usrn",
+            "osm_overpass_context",
+            "naptan_api_context",
+            "statistics_gov_scot_sparql",
+            "opentopography_srtm_global",
+        ):
             self.assertIn(source_key, RUNNER)
         self.assertIn("https://api.os.uk/downloads/v1/products/Terrain50/downloads", RUNNER)
         self.assertIn('"auth_env_vars": []', RUNNER)
+        for product_id in (
+            "OpenMapLocal",
+            "OpenRoads",
+            "OpenRivers",
+            "BoundaryLine",
+            "OpenNames",
+            "OpenGreenspace",
+            "OpenUPRN",
+            "OpenUSRN",
+        ):
+            self.assertIn(product_id, RUNNER)
         self.assertIn("https://api.os.uk/search/places/v1/find", RUNNER)
         self.assertIn('"auth_env_vars": ["OS_PROJECT_API"]', RUNNER)
         self.assertIn('self._os_key_params("os_places")', RUNNER)
@@ -204,9 +245,18 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("OS_FEATURES_API", WORKFLOW)
         self.assertIn("OS_LINKED_IDENTIFIERS_API", WORKFLOW)
         self.assertIn("OS_PROJECT_API", WORKFLOW)
+        self.assertIn("OPENTOPOGRAPHY_API_KEY", WORKFLOW)
         self.assertIn("secrets.OS_PLACES_API_KEY", WORKFLOW)
         self.assertIn('os.getenv("OS_PLACES_API")', RUNNER)
+        self.assertIn("OPEN_LOCATION_SPINE_FAMILIES", RUNNER)
+        self.assertIn("probe-open-location-spine", RUNNER)
+        self.assertIn("https://overpass-api.de/api/status", RUNNER)
+        self.assertIn("https://naptan.api.dft.gov.uk/swagger/v1/swagger.json", RUNNER)
+        self.assertIn("https://statistics.gov.scot/sparql", RUNNER)
+        self.assertIn("https://portal.opentopography.org/API/globaldem", RUNNER)
+        self.assertIn("SRTMGL1", RUNNER)
         self.assertIn("_secret_value_is_api_key", RUNNER)
+        self.assertIn("_os_downloads_product_endpoint", RUNNER)
         self.assertIn("cleaned_url.endswith(cleaned_suffix_path)", RUNNER)
         self.assertNotIn("TEMP_STORAGE_PATH", RUNNER)
 

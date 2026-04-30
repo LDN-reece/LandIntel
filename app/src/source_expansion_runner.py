@@ -57,7 +57,21 @@ CONSTRAINT_FAMILIES = {
     "conservation_areas",
     "greenbelt",
 }
-PROBE_ONLY_FAMILIES = {"topography", "os_places", "os_features", "os_linked_identifiers"}
+OPEN_LOCATION_SPINE_FAMILIES = {
+    "os_openmap_local",
+    "os_open_roads",
+    "os_open_rivers",
+    "os_boundary_line",
+    "os_open_names",
+    "os_open_greenspace",
+    "os_open_uprn",
+    "os_open_usrn",
+    "osm",
+    "naptan",
+    "statistics_gov_scot",
+    "opentopography_srtm",
+}
+PROBE_ONLY_FAMILIES = {"topography", "os_places", "os_features", "os_linked_identifiers"} | OPEN_LOCATION_SPINE_FAMILIES
 
 COMMAND_TO_FAMILIES: dict[str, tuple[str, ...]] = {
     "ingest-ldp": ("ldp",),
@@ -77,6 +91,34 @@ COMMAND_TO_FAMILIES: dict[str, tuple[str, ...]] = {
     "ingest-os-places": ("os_places",),
     "ingest-os-features": ("os_features",),
     "ingest-os-linked-identifiers": ("os_linked_identifiers",),
+    "ingest-os-openmap-local": ("os_openmap_local",),
+    "ingest-os-open-roads": ("os_open_roads",),
+    "ingest-os-open-rivers": ("os_open_rivers",),
+    "ingest-os-boundary-line": ("os_boundary_line",),
+    "ingest-os-open-names": ("os_open_names",),
+    "ingest-os-open-greenspace": ("os_open_greenspace",),
+    "ingest-os-open-uprn": ("os_open_uprn",),
+    "ingest-os-open-usrn": ("os_open_usrn",),
+    "ingest-osm-overpass": ("osm",),
+    "ingest-naptan": ("naptan",),
+    "ingest-statistics-gov-scot": ("statistics_gov_scot",),
+    "ingest-opentopography-srtm": ("opentopography_srtm",),
+    "probe-open-location-spine": (
+        "topography",
+        "os_openmap_local",
+        "os_open_roads",
+        "os_open_rivers",
+        "os_boundary_line",
+        "os_open_names",
+        "os_open_greenspace",
+        "os_open_uprn",
+        "os_open_usrn",
+        "os_linked_identifiers",
+        "osm",
+        "naptan",
+        "statistics_gov_scot",
+        "opentopography_srtm",
+    ),
 }
 
 CONSTRAINT_GROUPS = {
@@ -101,6 +143,84 @@ DEFAULT_LAYER_HINTS = {
     "greenbelt": ("pub_grnblt",),
 }
 
+def _os_download_source(
+    *,
+    source_family: str,
+    source_key: str,
+    source_name: str,
+    product_id: str,
+    source_group: str,
+    target_table: str,
+    reconciliation_path: str,
+    signal_output: str,
+    ranking_impact: str,
+    data_age_basis: str,
+    download_area: str | None = "GB",
+) -> dict[str, Any]:
+    return {
+        "source_key": source_key,
+        "source_family": source_family,
+        "source_name": source_name,
+        "source_group": source_group,
+        "phase_one_role": "context",
+        "source_status": "live_opendata_metadata",
+        "orchestration_mode": "os_downloads_opendata",
+        "endpoint_url": f"https://api.os.uk/downloads/v1/products/{product_id}/downloads",
+        "auth_env_vars": [],
+        "target_table": target_table,
+        "reconciliation_path": reconciliation_path,
+        "evidence_path": "OS Downloads API metadata until the controlled bulk download adapter lands rows.",
+        "signal_output": signal_output,
+        "ranking_impact": ranking_impact,
+        "resurfacing_trigger": f"{source_name} product refresh or downstream site-context adapter promotion.",
+        "data_age_basis": data_age_basis,
+        "ranking_eligible": False,
+        "review_output_eligible": True,
+        "product_id": product_id,
+        "download_area": download_area,
+        "licence_basis": "OS OpenData",
+    }
+
+
+def _open_probe_source(
+    *,
+    source_family: str,
+    source_key: str,
+    source_name: str,
+    endpoint_url: str,
+    source_group: str,
+    orchestration_mode: str,
+    target_table: str,
+    reconciliation_path: str,
+    signal_output: str,
+    ranking_impact: str,
+    data_age_basis: str,
+    auth_env_vars: list[str] | None = None,
+    limitation_notes: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "source_key": source_key,
+        "source_family": source_family,
+        "source_name": source_name,
+        "source_group": source_group,
+        "phase_one_role": "context",
+        "source_status": "live_probe_target",
+        "orchestration_mode": orchestration_mode,
+        "endpoint_url": endpoint_url,
+        "auth_env_vars": auth_env_vars or [],
+        "target_table": target_table,
+        "reconciliation_path": reconciliation_path,
+        "evidence_path": "Source registry and freshness state until adapter lands site-level rows.",
+        "signal_output": signal_output,
+        "ranking_impact": ranking_impact,
+        "resurfacing_trigger": f"{source_name} freshness change or downstream adapter promotion.",
+        "data_age_basis": data_age_basis,
+        "ranking_eligible": False,
+        "review_output_eligible": True,
+        "limitation_notes": limitation_notes,
+    }
+
+
 OS_CATALOGUE_SOURCES: tuple[dict[str, Any], ...] = (
     {
         "source_key": "os_downloads_terrain50",
@@ -121,6 +241,9 @@ OS_CATALOGUE_SOURCES: tuple[dict[str, Any], ...] = (
         "data_age_basis": "OS Downloads API product metadata.",
         "ranking_eligible": False,
         "review_output_eligible": True,
+        "product_id": "Terrain50",
+        "download_area": "GB",
+        "licence_basis": "OS OpenData",
     },
     {
         "source_key": "os_places_api",
@@ -182,6 +305,157 @@ OS_CATALOGUE_SOURCES: tuple[dict[str, Any], ...] = (
         "ranking_eligible": False,
         "review_output_eligible": True,
     },
+    _os_download_source(
+        source_family="os_openmap_local",
+        source_key="os_downloads_openmap_local",
+        source_name="OS Downloads API - OS OpenMap Local OpenData",
+        product_id="OpenMapLocal",
+        source_group="base_geometry",
+        target_table="landintel.source_estate_registry",
+        reconciliation_path="OS OpenMap Local download metadata -> controlled bulk vector adapter -> generalised base map context.",
+        signal_output="base_map_context after OpenMap Local adapter promotion",
+        ranking_impact="Base geometry and visual/context layer only; no ownership or precise access claim.",
+        data_age_basis="OS Downloads API OpenMap Local product metadata.",
+    ),
+    _os_download_source(
+        source_family="os_open_roads",
+        source_key="os_downloads_open_roads",
+        source_name="OS Downloads API - OS Open Roads OpenData",
+        product_id="OpenRoads",
+        source_group="access_context",
+        target_table="landintel.source_estate_registry",
+        reconciliation_path="OS Open Roads download metadata -> controlled bulk road-link adapter -> physical access proximity context.",
+        signal_output="road_access_context after Open Roads adapter promotion",
+        ranking_impact="Physical proximity evidence only; no legal access claim.",
+        data_age_basis="OS Downloads API Open Roads product metadata.",
+    ),
+    _os_download_source(
+        source_family="os_open_rivers",
+        source_key="os_downloads_open_rivers",
+        source_name="OS Downloads API - OS Open Rivers OpenData",
+        product_id="OpenRivers",
+        source_group="hydrography",
+        target_table="landintel.source_estate_registry",
+        reconciliation_path="OS Open Rivers download metadata -> controlled bulk watercourse adapter -> hydrography and flood-context linkage.",
+        signal_output="watercourse_context after Open Rivers adapter promotion",
+        ranking_impact="Hydrography context only; no drainage design conclusion.",
+        data_age_basis="OS Downloads API Open Rivers product metadata.",
+    ),
+    _os_download_source(
+        source_family="os_boundary_line",
+        source_key="os_downloads_boundary_line",
+        source_name="OS Downloads API - Boundary-Line OpenData",
+        product_id="BoundaryLine",
+        source_group="administrative_geography",
+        target_table="landintel.source_estate_registry",
+        reconciliation_path="Boundary-Line download metadata -> controlled bulk boundary adapter -> authority and reporting geography.",
+        signal_output="administrative_geography_context after Boundary-Line adapter promotion",
+        ranking_impact="Reporting and authority context only.",
+        data_age_basis="OS Downloads API Boundary-Line product metadata.",
+    ),
+    _os_download_source(
+        source_family="os_open_names",
+        source_key="os_downloads_open_names",
+        source_name="OS Downloads API - OS Open Names OpenData",
+        product_id="OpenNames",
+        source_group="location_naming",
+        target_table="landintel.source_estate_registry",
+        reconciliation_path="OS Open Names download metadata -> controlled bulk gazetteer adapter -> settlement and location labels.",
+        signal_output="location_label_context after Open Names adapter promotion",
+        ranking_impact="Human-readable location context only.",
+        data_age_basis="OS Downloads API Open Names product metadata.",
+    ),
+    _os_download_source(
+        source_family="os_open_greenspace",
+        source_key="os_downloads_open_greenspace",
+        source_name="OS Downloads API - OS Open Greenspace OpenData",
+        product_id="OpenGreenspace",
+        source_group="amenities",
+        target_table="landintel.source_estate_registry",
+        reconciliation_path="OS Open Greenspace download metadata -> controlled bulk greenspace adapter -> amenity/open-space proximity context.",
+        signal_output="greenspace_context after Open Greenspace adapter promotion",
+        ranking_impact="Amenity/open-space context only.",
+        data_age_basis="OS Downloads API Open Greenspace product metadata.",
+    ),
+    _os_download_source(
+        source_family="os_open_uprn",
+        source_key="os_downloads_open_uprn",
+        source_name="OS Downloads API - OS Open UPRN OpenData",
+        product_id="OpenUPRN",
+        source_group="address_context",
+        target_table="landintel.source_estate_registry",
+        reconciliation_path="OS Open UPRN download metadata -> controlled bulk UPRN adapter -> site-address linkage support.",
+        signal_output="uprn_context after Open UPRN adapter promotion",
+        ranking_impact="Address linkage support only; no ownership claim.",
+        data_age_basis="OS Downloads API Open UPRN product metadata.",
+    ),
+    _os_download_source(
+        source_family="os_open_usrn",
+        source_key="os_downloads_open_usrn",
+        source_name="OS Downloads API - OS Open USRN OpenData",
+        product_id="OpenUSRN",
+        source_group="access_context",
+        target_table="landintel.source_estate_registry",
+        reconciliation_path="OS Open USRN download metadata -> controlled bulk street identifier adapter -> road naming/linkage support.",
+        signal_output="usrn_context after Open USRN adapter promotion",
+        ranking_impact="Street identifier context only; no legal access claim.",
+        data_age_basis="OS Downloads API Open USRN product metadata.",
+    ),
+    _open_probe_source(
+        source_family="osm",
+        source_key="osm_overpass_context",
+        source_name="OpenStreetMap Overpass API",
+        endpoint_url="https://overpass-api.de/api/status",
+        source_group="open_context",
+        orchestration_mode="osm_overpass_status",
+        target_table="landintel.source_estate_registry",
+        reconciliation_path="Overpass status probe -> controlled Overpass/bulk extract adapter -> road names, amenities, land use and indicative power context.",
+        signal_output="osm_context after controlled OSM adapter promotion",
+        ranking_impact="Context enrichment only; OS/official geometry remains preferred where available.",
+        data_age_basis="Overpass API status response.",
+        limitation_notes="OSM is community-maintained and must not override official geometry or evidence legal access.",
+    ),
+    _open_probe_source(
+        source_family="naptan",
+        source_key="naptan_api_context",
+        source_name="NaPTAN API",
+        endpoint_url="https://naptan.api.dft.gov.uk/swagger/v1/swagger.json",
+        source_group="amenities",
+        orchestration_mode="naptan_api_metadata",
+        target_table="landintel.source_estate_registry",
+        reconciliation_path="NaPTAN API metadata -> controlled transport stop adapter -> public transport amenity proximity.",
+        signal_output="public_transport_context after NaPTAN adapter promotion",
+        ranking_impact="Transport proximity context only.",
+        data_age_basis="NaPTAN API OpenAPI metadata.",
+    ),
+    _open_probe_source(
+        source_family="statistics_gov_scot",
+        source_key="statistics_gov_scot_sparql",
+        source_name="statistics.gov.scot SPARQL",
+        endpoint_url="https://statistics.gov.scot/sparql",
+        source_group="demographics",
+        orchestration_mode="statistics_gov_scot_sparql",
+        target_table="landintel.source_estate_registry",
+        reconciliation_path="SPARQL metadata probe -> controlled datazone/intermediate-zone metric adapter -> demographic context.",
+        signal_output="demographic_context after statistics.gov.scot adapter promotion",
+        ranking_impact="Area-level demographic context only; no demand certainty.",
+        data_age_basis="statistics.gov.scot SPARQL response.",
+    ),
+    _open_probe_source(
+        source_family="opentopography_srtm",
+        source_key="opentopography_srtm_global",
+        source_name="OpenTopography SRTM Global fallback DEM",
+        endpoint_url="https://portal.opentopography.org/API/globaldem",
+        source_group="terrain",
+        orchestration_mode="opentopography_globaldem",
+        target_table="landintel.source_estate_registry",
+        reconciliation_path="OpenTopography SRTM API probe -> fallback DEM adapter only where OS Terrain 50 is unavailable or used for QA.",
+        signal_output="fallback_terrain_context after SRTM adapter promotion",
+        ranking_impact="Fallback terrain context only; no engineering certainty.",
+        data_age_basis="OpenTopography SRTM API response and DOI metadata.",
+        auth_env_vars=["OPENTOPOGRAPHY_API_KEY"],
+        limitation_notes="SRTM is fallback terrain. Licence metadata is not sufficient to mark trusted for review without commercial-use confirmation.",
+    ),
 )
 
 REFERENCE_FIELDS = (
@@ -2059,7 +2333,11 @@ class SourceExpansionRunner:
         results: list[dict[str, Any]] = []
         for source in sources:
             self._upsert_source_estate(source)
-            missing = [secret for secret in source.get("auth_env_vars") or [] if not os.getenv(str(secret))]
+            missing = [
+                str(secret)
+                for secret in source.get("auth_env_vars") or []
+                if not self._has_required_secret(str(secret))
+            ]
             if missing:
                 blocked += 1
                 status = "blocked_missing_secret"
@@ -3441,8 +3719,9 @@ class SourceExpansionRunner:
         endpoint = self._os_endpoint(source)
         params: dict[str, str] = {}
         headers: dict[str, str] = {}
-        if source["source_family"] == "topography":
-            params = {"area": "GB"}
+        orchestration_mode = str(source.get("orchestration_mode") or "")
+        if source["source_family"] == "topography" or orchestration_mode == "os_downloads_opendata":
+            return self._probe_os_download_product(source)
         elif source["source_family"] == "os_places":
             params = {"query": "Glasgow", "maxresults": "1", **self._os_key_params("os_places")}
         elif source["source_family"] == "os_features":
@@ -3450,35 +3729,60 @@ class SourceExpansionRunner:
         elif source["source_family"] == "os_linked_identifiers":
             endpoint = self._os_join_endpoint(endpoint, "/productVersionInfo/BLPU_UPRN_TopographicArea_TOID_5", endpoint)
             params = self._os_key_params("os_linked_identifiers")
+        elif source["source_family"] == "statistics_gov_scot":
+            params = {"query": "select * where { ?s ?p ?o } limit 1", "format": "json"}
+            headers = {"Accept": "application/sparql-results+json, application/json"}
+        elif source["source_family"] == "opentopography_srtm":
+            params = {
+                "demtype": "SRTMGL1",
+                "south": "55.85",
+                "north": "55.86",
+                "west": "-4.26",
+                "east": "-4.25",
+                "outputFormat": "GTiff",
+                "API_Key": os.getenv("OPENTOPOGRAPHY_API_KEY", ""),
+            }
         try:
             response = self.client.get(endpoint, params=params, headers=headers)
             status = "reachable" if response.status_code < 400 else "failed"
-            if status == "reachable" and source["source_family"] == "topography":
-                payload = response.json()
-                downloads = payload if isinstance(payload, list) else []
-                formats = sorted(
-                    {
-                        " ".join(
-                            part
-                            for part in (
-                                str(download.get("format") or "").strip(),
-                                str(download.get("subformat") or "").strip(),
-                            )
-                            if part
-                        )
-                        for download in downloads
-                        if isinstance(download, dict)
-                    }
-                )
-                return (
-                    status,
-                    (
-                        f"HTTP {response.status_code} from {source['source_name']}: "
-                        f"{len(downloads)} Terrain50 GB download option(s)"
-                        + (f" ({', '.join(formats)})" if formats else "")
-                    ),
-                )
             return status, f"HTTP {response.status_code} from {source['source_name']}"
+        except Exception as exc:
+            return "failed", str(exc)
+
+    def _probe_os_download_product(self, source: dict[str, Any]) -> tuple[str, str]:
+        endpoint = self._os_downloads_product_endpoint(source)
+        params: dict[str, str] = {}
+        if source.get("download_area"):
+            params["area"] = str(source["download_area"])
+        try:
+            response = self.client.get(endpoint, params=params)
+            status = "reachable" if response.status_code < 400 else "failed"
+            if status != "reachable":
+                return status, f"HTTP {response.status_code} from {source['source_name']}"
+            payload = response.json()
+            downloads = payload if isinstance(payload, list) else []
+            formats = sorted(
+                {
+                    " ".join(
+                        part
+                        for part in (
+                            str(download.get("format") or "").strip(),
+                            str(download.get("subformat") or "").strip(),
+                        )
+                        if part
+                    )
+                    for download in downloads
+                    if isinstance(download, dict)
+                }
+            )
+            return (
+                status,
+                (
+                    f"HTTP {response.status_code} from {source['source_name']}: "
+                    f"{len(downloads)} download option(s)"
+                    + (f" ({', '.join(formats)})" if formats else "")
+                ),
+            )
         except Exception as exc:
             return "failed", str(exc)
 
@@ -3521,7 +3825,9 @@ class SourceExpansionRunner:
         source_family = str(source.get("source_family") or "")
         default_endpoint = str(source.get("endpoint_url") or "")
         if source_family == "topography":
-            return self._os_join_endpoint(os.getenv("OS_DOWNLOADS_API"), "/products/Terrain50/downloads", default_endpoint)
+            return self._os_downloads_product_endpoint(source)
+        if str(source.get("orchestration_mode") or "") == "os_downloads_opendata":
+            return self._os_downloads_product_endpoint(source)
         if source_family == "os_places":
             return self._os_join_endpoint(os.getenv("OS_PLACES_API"), "/find", default_endpoint)
         if source_family == "os_features":
@@ -3529,6 +3835,18 @@ class SourceExpansionRunner:
         if source_family == "os_linked_identifiers":
             return os.getenv("OS_LINKED_IDENTIFIERS_API") or default_endpoint
         return default_endpoint
+
+    def _os_downloads_product_endpoint(self, source: dict[str, Any]) -> str:
+        product_id = str(source.get("product_id") or "")
+        default_endpoint = str(source.get("endpoint_url") or "")
+        if not product_id:
+            return default_endpoint
+        base_url = os.getenv("OS_DOWNLOADS_API") or "https://api.os.uk/downloads/v1"
+        marker = "/products/"
+        marker_index = base_url.find(marker)
+        if marker_index >= 0:
+            base_url = base_url[:marker_index]
+        return urljoin(base_url.rstrip("/") + "/", f"products/{product_id}/downloads")
 
     def _os_join_endpoint(self, base_url: str | None, suffix: str, default_endpoint: str) -> str:
         if not base_url:
@@ -4029,6 +4347,19 @@ def build_parser() -> argparse.ArgumentParser:
             "ingest-os-places",
             "ingest-os-features",
             "ingest-os-linked-identifiers",
+            "ingest-os-openmap-local",
+            "ingest-os-open-roads",
+            "ingest-os-open-rivers",
+            "ingest-os-boundary-line",
+            "ingest-os-open-names",
+            "ingest-os-open-greenspace",
+            "ingest-os-open-uprn",
+            "ingest-os-open-usrn",
+            "ingest-osm-overpass",
+            "ingest-naptan",
+            "ingest-statistics-gov-scot",
+            "ingest-opentopography-srtm",
+            "probe-open-location-spine",
             "promote-ldp-authority-source",
         ),
     )

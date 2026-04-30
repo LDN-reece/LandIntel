@@ -1900,22 +1900,48 @@ class Phase2SourceRunner:
                 order by site.updated_at desc nulls last, site.id
                 limit :batch_size
             ),
+            amenity_types as (
+                select distinct amenity_type
+                from landintel.amenity_assets
+                where geometry is not null
+                  and amenity_type is not null
+            ),
             nearest_assets as (
-                select distinct on (site.id, asset.amenity_type)
+                select
                     site.id as canonical_site_id,
-                    asset.source_key as nearest_source_key,
-                    asset.amenity_type,
-                    asset.id as nearest_asset_id,
-                    asset.amenity_name,
-                    st_distance(site.geometry, asset.geometry) as nearest_distance_m,
-                    count(asset.id) filter (where st_dwithin(site.geometry, asset.geometry, 400)) over (partition by site.id, asset.amenity_type) as count_within_400m,
-                    count(asset.id) filter (where st_dwithin(site.geometry, asset.geometry, 800)) over (partition by site.id, asset.amenity_type) as count_within_800m,
-                    count(asset.id) filter (where st_dwithin(site.geometry, asset.geometry, 1600)) over (partition by site.id, asset.amenity_type) as count_within_1600m
+                    nearest.source_key as nearest_source_key,
+                    nearest.amenity_type,
+                    nearest.id as nearest_asset_id,
+                    nearest.amenity_name,
+                    nearest.nearest_distance_m,
+                    nearby.count_within_400m,
+                    nearby.count_within_800m,
+                    nearby.count_within_1600m
                 from selected_sites as site
-                join landintel.amenity_assets as asset
-                  on asset.geometry is not null
-                 and st_dwithin(site.geometry, asset.geometry, 1600)
-                order by site.id, asset.amenity_type, st_distance(site.geometry, asset.geometry), asset.id
+                join amenity_types as amenity_type on true
+                join lateral (
+                    select
+                        asset.id,
+                        asset.source_key,
+                        asset.amenity_type,
+                        asset.amenity_name,
+                        asset.geometry,
+                        st_distance(site.geometry, asset.geometry) as nearest_distance_m
+                    from landintel.amenity_assets as asset
+                    where asset.geometry is not null
+                      and asset.amenity_type = amenity_type.amenity_type
+                    order by site.geometry OPERATOR(extensions.<->) asset.geometry, asset.id
+                    limit 1
+                ) as nearest on true
+                cross join lateral (
+                    select
+                        count(*) filter (where st_dwithin(site.geometry, asset.geometry, 400))::integer as count_within_400m,
+                        count(*) filter (where st_dwithin(site.geometry, asset.geometry, 800))::integer as count_within_800m,
+                        count(*) filter (where st_dwithin(site.geometry, asset.geometry, 1600))::integer as count_within_1600m
+                    from landintel.amenity_assets as asset
+                    where asset.geometry is not null
+                      and asset.amenity_type = amenity_type.amenity_type
+                ) as nearby
             ),
             upserted_context as (
                 insert into landintel.site_amenity_context (
@@ -1962,6 +1988,26 @@ class Phase2SourceRunner:
                     measured_at = now(),
                     updated_at = now()
                 returning *
+            ),
+            deleted_evidence as (
+                delete from landintel.evidence_references as evidence
+                using upserted_context
+                where evidence.canonical_site_id = upserted_context.canonical_site_id
+                  and evidence.source_family = 'amenities'
+                  and evidence.metadata ->> 'source_key' = upserted_context.source_key
+                  and evidence.metadata ->> 'amenity_type' = upserted_context.amenity_type
+                returning evidence.id
+            ),
+            deleted_signals as (
+                delete from landintel.site_signals as signal
+                using upserted_context
+                where signal.canonical_site_id = upserted_context.canonical_site_id
+                  and signal.source_family = 'amenities'
+                  and signal.signal_family = 'location_strength'
+                  and signal.signal_name = 'amenity_proximity'
+                  and signal.metadata ->> 'source_key' = upserted_context.source_key
+                  and signal.metadata ->> 'amenity_type' = upserted_context.amenity_type
+                returning signal.id
             ),
             inserted_evidence as (
                 insert into landintel.evidence_references (
@@ -2014,7 +2060,10 @@ class Phase2SourceRunner:
                     upserted_context.id::text,
                     'amenity_proximity_evidence',
                     jsonb_build_object('source', upserted_context.source_key),
-                    jsonb_build_object('source_key', upserted_context.source_key),
+                    jsonb_build_object(
+                        'source_key', upserted_context.source_key,
+                        'amenity_type', upserted_context.amenity_type
+                    ),
                     true
                 from upserted_context
                 returning id

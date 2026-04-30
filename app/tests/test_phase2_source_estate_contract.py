@@ -222,6 +222,9 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         amenities_sql = amenities_sql.split("def ingest_planning_documents", 1)[0]
         self.assertIn("'constraint_source_feature_key'", amenities_sql)
         self.assertIn("'constraint_feature_metadata'", amenities_sql)
+        self.assertIn("site.geometry OPERATOR(extensions.<->) asset.geometry", amenities_sql)
+        self.assertIn("deleted_evidence as", amenities_sql)
+        self.assertIn("deleted_signals as", amenities_sql)
         self.assertNotIn("feature.raw_payload", amenities_sql)
 
     def test_power_ingest_does_not_turn_metadata_into_asset_rows(self) -> None:

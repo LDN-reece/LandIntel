@@ -184,7 +184,8 @@ jobs:
       OS_PROJECT_API: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
       OS_PROJECT_API_SECRET: ${{ secrets.OS_PROJECT_API_SECRET }}
       OS_API_KEY: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
-      OS_PLACES_API_KEY: ${{ secrets.OS_PROJECT_API || secrets.OS_PLACES_API_KEY || secrets.OS_API_KEY }}
+      OS_PLACES_API: ${{ secrets.OS_PLACES_API }}
+      OS_PLACES_API_KEY: ${{ secrets.OS_PLACES_API_KEY }}
       OS_DOWNLOADS_API: ${{ secrets.OS_DOWNLOADS_API }}
       OS_FEATURES_API: ${{ secrets.OS_FEATURES_API }}
       OS_LINKED_IDENTIFIERS_API: ${{ secrets.OS_LINKED_IDENTIFIERS_API }}

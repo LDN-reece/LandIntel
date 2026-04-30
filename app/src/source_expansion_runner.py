@@ -3513,7 +3513,7 @@ class SourceExpansionRunner:
             env_names = ("OS_PROJECT_API", "OS_API_KEY")
         for env_name in env_names:
             key = os.getenv(env_name)
-            if key:
+            if key and not key.lower().startswith(("http://", "https://")):
                 return key
         return None
 
@@ -3523,7 +3523,7 @@ class SourceExpansionRunner:
         if source_family == "topography":
             return self._os_join_endpoint(os.getenv("OS_DOWNLOADS_API"), "/products/Terrain50/downloads", default_endpoint)
         if source_family == "os_places":
-            return self._os_join_endpoint(os.getenv("OS_PLACES_API_ENDPOINT"), "/find", default_endpoint)
+            return self._os_join_endpoint(os.getenv("OS_PLACES_API"), "/find", default_endpoint)
         if source_family == "os_features":
             return os.getenv("OS_FEATURES_API") or default_endpoint
         if source_family == "os_linked_identifiers":
@@ -3551,12 +3551,16 @@ class SourceExpansionRunner:
 
     def _has_required_secret(self, secret_name: str) -> bool:
         if secret_name == "OS_PROJECT_API":
-            return any(os.getenv(name) for name in ("OS_PROJECT_API", "OS_API_KEY"))
+            return any(self._secret_value_is_api_key(name) for name in ("OS_PROJECT_API", "OS_API_KEY"))
         if secret_name == "OS_PLACES_API_KEY":
-            return any(os.getenv(name) for name in ("OS_PROJECT_API", "OS_PLACES_API_KEY", "OS_API_KEY"))
+            return any(self._secret_value_is_api_key(name) for name in ("OS_PROJECT_API", "OS_PLACES_API_KEY", "OS_API_KEY"))
         if secret_name == "OS_FEATURES_API_KEY":
-            return any(os.getenv(name) for name in ("OS_PROJECT_API", "OS_FEATURES_API_KEY", "OS_API_KEY"))
+            return any(self._secret_value_is_api_key(name) for name in ("OS_PROJECT_API", "OS_FEATURES_API_KEY", "OS_API_KEY"))
         return bool(os.getenv(secret_name))
+
+    def _secret_value_is_api_key(self, env_name: str) -> bool:
+        value = os.getenv(env_name)
+        return bool(value and not value.lower().startswith(("http://", "https://")))
 
     def _sources_for_family(self, source_family: str) -> list[dict[str, Any]]:
         manifest_sources = [

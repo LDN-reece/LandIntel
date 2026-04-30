@@ -200,10 +200,13 @@ class SourceExpansionContractTests(unittest.TestCase):
         priority_migration = (APP_DIR / "sql" / "046_phase_one_control_policy_priority.sql").read_text(encoding="utf-8")
         self.assertIn("os_linked_identifiers", priority_migration)
         self.assertIn("OS_DOWNLOADS_API", WORKFLOW)
+        self.assertIn("OS_PLACES_API", WORKFLOW)
         self.assertIn("OS_FEATURES_API", WORKFLOW)
         self.assertIn("OS_LINKED_IDENTIFIERS_API", WORKFLOW)
         self.assertIn("OS_PROJECT_API", WORKFLOW)
         self.assertIn("secrets.OS_PLACES_API_KEY", WORKFLOW)
+        self.assertIn('os.getenv("OS_PLACES_API")', RUNNER)
+        self.assertIn("_secret_value_is_api_key", RUNNER)
         self.assertNotIn("TEMP_STORAGE_PATH", RUNNER)
 
     def test_control_policy_spine_prioritises_title_ldp_and_settlement(self) -> None:

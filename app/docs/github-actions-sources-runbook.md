@@ -78,10 +78,11 @@ Required now:
 - `OS_PROJECT_API`
 - `OS_PROJECT_API_SECRET`
 - `OS_DOWNLOADS_API`
+- `OS_PLACES_API`
 - `OS_FEATURES_API`
 - `OS_LINKED_IDENTIFIERS_API`
 - `OS_API_KEY` remains supported as a legacy fallback for the OS project API key.
-- `OS_PLACES_API_KEY` remains supported as a legacy fallback, but OS Places usage remains probe-only until trial/commercial limits are approved.
+- `OS_PLACES_API_KEY` remains supported as a legacy fallback key name. `OS_PLACES_API` is the endpoint URL, not a key. OS Places usage remains probe-only until trial/commercial limits are approved.
 
 Used by later title/parcel source packs:
 

@@ -5166,7 +5166,6 @@ class Phase2SourceRunner:
         return result
 
     def _fetch_os_places_for_urgent_sites(self) -> dict[str, Any]:
-        endpoint = self._os_places_endpoint("/radius")
         api_key = self._os_places_key_value()
         selected = self.database.fetch_all(
             """
@@ -5220,27 +5219,17 @@ class Phase2SourceRunner:
             }
 
         inserted: list[dict[str, Any]] = []
+        failure_reasons: list[str] = []
         failed_count = 0
         with httpx.Client(timeout=20, follow_redirects=True) as client:
             for site in selected:
                 point = f"{site['x_coordinate']},{site['y_coordinate']}"
                 try:
-                    response = client.get(
-                        endpoint,
-                        params={
-                            "key": api_key,
-                            "point": point,
-                            "radius": "1000",
-                            "maxresults": "10",
-                            "dataset": "DPA,LPI",
-                            "output_srs": "EPSG:27700",
-                        },
-                        headers={"User-Agent": "LandIntel/1.0 (+https://github.com/LDN-reece/LandIntel)"},
-                    )
-                    response.raise_for_status()
-                    payload = response.json()
-                except Exception:
+                    payload = self._fetch_os_places_payload(client, point, api_key)
+                except Exception as exc:
                     failed_count += 1
+                    if len(failure_reasons) < 5:
+                        failure_reasons.append(str(exc)[:240])
                     continue
 
                 for rank, result in enumerate(payload.get("results") or [], start=1):
@@ -5344,8 +5333,46 @@ class Phase2SourceRunner:
             "selected_site_count": len(selected),
             "inserted_address_count": len(inserted),
             "failed_site_count": failed_count,
+            "failure_reasons": failure_reasons,
             "status": "success",
         }
+
+    def _fetch_os_places_payload(self, client: httpx.Client, point: str, api_key: str) -> dict[str, Any]:
+        attempts = (
+            (
+                "/radius",
+                {
+                    "key": api_key,
+                    "point": point,
+                    "radius": "1000",
+                    "maxresults": "10",
+                    "dataset": "DPA",
+                    "output_srs": "EPSG:27700",
+                },
+            ),
+            (
+                "/nearest",
+                {
+                    "key": api_key,
+                    "point": point,
+                    "radius": "1000",
+                    "dataset": "DPA",
+                    "output_srs": "EPSG:27700",
+                },
+            ),
+        )
+        errors: list[str] = []
+        for path, params in attempts:
+            endpoint = self._os_places_endpoint(path)
+            response = client.get(
+                endpoint,
+                params=params,
+                headers={"User-Agent": "LandIntel/1.0 (+https://github.com/LDN-reece/LandIntel)"},
+            )
+            if response.status_code < 400:
+                return response.json()
+            errors.append(f"{path} HTTP {response.status_code}: {response.text[:160]}")
+        raise RuntimeError("; ".join(errors))
 
     def _os_places_endpoint(self, path: str) -> str:
         base = (os.getenv("OS_PLACES_API") or "https://api.os.uk/search/places/v1").strip().rstrip("/")

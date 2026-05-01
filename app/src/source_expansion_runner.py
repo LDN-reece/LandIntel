@@ -3203,7 +3203,7 @@ class SourceExpansionRunner:
             rows = self._open_location_rows_from_paths(source, selected_download, extracted_paths, max_features)
 
         inserted_rows = self._upsert_open_location_spine_rows(rows)
-        context = self._refresh_open_location_spine_context(
+        context = self._safe_refresh_open_location_spine_context(
             [str(source["source_key"])],
             max(self._env_int("OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE", 250), 1),
         )
@@ -3276,7 +3276,7 @@ class SourceExpansionRunner:
             max(self._env_int("OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE", 250), 1),
             max(self._env_int("OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE", 25), 1),
         )
-        context = self._refresh_open_location_spine_context(
+        context = self._safe_refresh_open_location_spine_context(
             [str(source["source_key"])],
             context_site_batch_size,
         )
@@ -3729,6 +3729,62 @@ class SourceExpansionRunner:
             valid_rows,
         )
         return len(valid_rows)
+
+    def _safe_refresh_open_location_spine_context(
+        self,
+        source_keys: list[str],
+        site_batch_size: int,
+    ) -> dict[str, Any]:
+        try:
+            result = self._refresh_open_location_spine_context(source_keys, site_batch_size)
+            return {**result, "context_status": "refreshed"}
+        except Exception as exc:  # noqa: BLE001 - source landing must survive heavy context refreshes.
+            fallback_batch_size = min(
+                site_batch_size,
+                max(self._env_int("OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE", 25), 1),
+            )
+            if fallback_batch_size < site_batch_size:
+                try:
+                    result = self._refresh_open_location_spine_context(source_keys, fallback_batch_size)
+                    return {
+                        **result,
+                        "context_status": "refreshed_with_fallback_batch",
+                        "primary_context_error": str(exc)[:500],
+                        "fallback_site_batch_size": fallback_batch_size,
+                    }
+                except Exception as fallback_exc:  # noqa: BLE001
+                    self.logger.warning(
+                        "open_location_spine_context_refresh_deferred",
+                        extra={
+                            "source_keys": source_keys,
+                            "site_batch_size": site_batch_size,
+                            "fallback_site_batch_size": fallback_batch_size,
+                            "error": str(fallback_exc),
+                            "primary_error": str(exc),
+                        },
+                    )
+                    return {
+                        "linked_rows": 0,
+                        "measured_rows": 0,
+                        "evidence_rows": 0,
+                        "signal_rows": 0,
+                        "context_status": "deferred_after_fallback_failure",
+                        "context_error": str(fallback_exc)[:500],
+                        "primary_context_error": str(exc)[:500],
+                        "fallback_site_batch_size": fallback_batch_size,
+                    }
+            self.logger.warning(
+                "open_location_spine_context_refresh_deferred",
+                extra={"source_keys": source_keys, "site_batch_size": site_batch_size, "error": str(exc)},
+            )
+            return {
+                "linked_rows": 0,
+                "measured_rows": 0,
+                "evidence_rows": 0,
+                "signal_rows": 0,
+                "context_status": "deferred_after_primary_failure",
+                "context_error": str(exc)[:500],
+            }
 
     def _refresh_open_location_spine_context(
         self,

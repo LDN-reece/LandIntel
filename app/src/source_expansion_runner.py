@@ -95,6 +95,7 @@ OPEN_LOCATION_SPINE_BULK_FAMILIES = {
     "os_open_usrn",
     "osm",
 }
+SCOTLAND_BBOX_27700 = (-100000, 530000, 470000, 1220000)
 PROBE_ONLY_FAMILIES = {"topography", "os_places", "os_features", "os_linked_identifiers"} | OPEN_LOCATION_SPINE_FAMILIES
 
 COMMAND_TO_FAMILIES: dict[str, tuple[str, ...]] = {
@@ -3331,7 +3332,7 @@ class SourceExpansionRunner:
             "yes",
         }
         max_bytes = max(self._env_int("OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES", 90_000_000), 1)
-        priority = ("GeoPackage", "CSV", "ESRI")
+        priority = ("GeoPackage", "CSV", "GML", "ESRI")
         candidates: list[tuple[int, int, dict[str, Any]]] = []
         for download in downloads:
             fmt = str(download.get("format") or "")
@@ -3372,7 +3373,7 @@ class SourceExpansionRunner:
             return [
                 path
                 for path in extract_dir.rglob("*")
-                if path.suffix.lower() in {".gpkg", ".shp", ".csv"}
+                if path.suffix.lower() in {".gpkg", ".shp", ".gml", ".geojson", ".json", ".csv"}
             ]
         return [archive_path]
 
@@ -3396,7 +3397,7 @@ class SourceExpansionRunner:
                         max_features - len(rows),
                     )
                 )
-            elif path.suffix.lower() in {".gpkg", ".shp"}:
+            elif path.suffix.lower() in {".gpkg", ".shp", ".gml", ".geojson", ".json"}:
                 rows.extend(
                     self._open_location_rows_from_vector(
                         source,
@@ -3420,10 +3421,17 @@ class SourceExpansionRunner:
             if len(rows) >= max_features:
                 break
             try:
-                read_kwargs: dict[str, Any] = {"rows": max_features - len(rows)}
+                read_kwargs: dict[str, Any] = {
+                    "rows": max_features - len(rows),
+                    "bbox": SCOTLAND_BBOX_27700,
+                }
                 if layer_name is not None:
                     read_kwargs["layer"] = layer_name
-                frame = gpd.read_file(path, **read_kwargs)
+                try:
+                    frame = gpd.read_file(path, **read_kwargs)
+                except Exception:
+                    read_kwargs.pop("bbox", None)
+                    frame = gpd.read_file(path, **read_kwargs)
             except Exception as exc:
                 self.logger.warning(
                     "open_location_spine_vector_layer_skipped",
@@ -3605,7 +3613,8 @@ class SourceExpansionRunner:
         if geometry is None or geometry.is_empty:
             return False
         minx, miny, maxx, maxy = geometry.bounds
-        return maxx >= -100000 and minx <= 470000 and maxy >= 530000 and miny <= 1220000
+        scotland_minx, scotland_miny, scotland_maxx, scotland_maxy = SCOTLAND_BBOX_27700
+        return maxx >= scotland_minx and minx <= scotland_maxx and maxy >= scotland_miny and miny <= scotland_maxy
 
     def _fetch_osm_open_location_rows(
         self,

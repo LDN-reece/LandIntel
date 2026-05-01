@@ -60,6 +60,8 @@ PHASE2_COMMANDS = (
     "refresh-site-assessments",
     "refresh-site-prove-it-assessments",
     "audit-site-prove-it-assessments",
+    "refresh-ldn-candidate-screen",
+    "audit-ldn-candidate-screen",
     "audit-full-source-estate",
 )
 
@@ -82,6 +84,7 @@ REFRESH_COMMAND_FAMILIES = {
     "refresh-site-abnormal-risk": "terrain_abnormal",
     "refresh-site-assessments": "site_assessment",
     "refresh-site-prove-it-assessments": "site_conviction",
+    "refresh-ldn-candidate-screen": "site_conviction",
 }
 
 LIFECYCLE_STAGES = (
@@ -218,6 +221,10 @@ class Phase2SourceRunner:
             result = self.refresh_site_prove_it_assessments()
         elif command == "audit-site-prove-it-assessments":
             result = self.audit_site_prove_it_assessments()
+        elif command == "refresh-ldn-candidate-screen":
+            result = self.refresh_ldn_candidate_screen()
+        elif command == "audit-ldn-candidate-screen":
+            result = self.audit_ldn_candidate_screen()
         elif command == "refresh-site-market-context":
             result = self.ingest_market_context()
         elif command == "refresh-site-amenity-context":
@@ -4784,6 +4791,181 @@ class Phase2SourceRunner:
                 metadata=result,
             )
         self.logger.info("site_prove_it_assessment_audit", extra=result)
+        return result
+
+    def refresh_ldn_candidate_screen(self) -> dict[str, Any]:
+        selected_sources = [
+            source
+            for source in self.sources
+            if source.get("source_key") == "ldn_candidate_screen"
+        ]
+        if not self.dry_run and not self.audit_only:
+            for source in selected_sources:
+                self._upsert_source(source)
+
+        if self.audit_only:
+            return self.audit_ldn_candidate_screen(log_event=False)
+
+        if self.dry_run:
+            candidate_count = self.database.scalar(
+                """
+                select count(*)::bigint
+                from landintel.canonical_sites as site
+                where site.geometry is not null
+                  and (:authority_name = '' or site.authority_name ilike :authority_name_like)
+                """,
+                {
+                    "authority_name": self.authority_filter,
+                    "authority_name_like": f"%{self.authority_filter}%",
+                },
+            )
+            return {
+                "source_family": "site_conviction",
+                "source_key": "ldn_candidate_screen",
+                "candidate_site_count": int(candidate_count or 0),
+                "dry_run": True,
+            }
+
+        proof = self.database.fetch_one(
+            """
+            select *
+            from landintel.refresh_ldn_candidate_screen(:batch_size, :authority_name)
+            """,
+            {
+                "batch_size": self.batch_size,
+                "authority_name": self.authority_filter,
+            },
+        ) or {}
+
+        coverage = self.database.fetch_one("select * from analytics.v_ldn_candidate_screen_coverage") or {}
+        row_count = int(proof.get("candidate_screen_count") or 0) + int(proof.get("register_fact_count") or 0)
+        linked_count = int(proof.get("candidate_screen_count") or 0)
+        measured_count = int(coverage.get("screened_sites_with_measured_constraints") or 0)
+        evidence_count = int(proof.get("evidence_row_count") or 0)
+        signal_count = int(proof.get("signal_row_count") or 0)
+        change_event_count = int(proof.get("change_event_count") or 0)
+
+        self._update_family_lifecycle(
+            source_family="site_conviction",
+            source_key="ldn_candidate_screen",
+            row_count=row_count,
+            linked_count=linked_count,
+            measured_count=measured_count,
+            evidence_count=evidence_count,
+            signal_count=signal_count,
+        )
+        self.database.execute(
+            """
+            update landintel.source_estate_registry
+            set assessment_status = case when :linked_count > 0 then 'assessment_ready' else assessment_status end,
+                updated_at = now()
+            where source_key = 'ldn_candidate_screen'
+              and source_family = 'site_conviction'
+            """,
+            {"linked_count": linked_count},
+        )
+        self._record_expansion_event(
+            command_name="refresh-ldn-candidate-screen",
+            source_key="ldn_candidate_screen",
+            source_family="site_conviction",
+            status="success",
+            raw_rows=row_count,
+            linked_rows=linked_count,
+            measured_rows=measured_count,
+            evidence_rows=evidence_count,
+            signal_rows=signal_count,
+            change_event_rows=change_event_count,
+            summary="LDN private/no-builder candidate screen refreshed from register, planning, constraint and title-readiness evidence.",
+            metadata={**proof, "coverage": coverage},
+        )
+        self._record_family_freshness(
+            "site_conviction",
+            "LDN private/no-builder candidate screen",
+            linked_count,
+        )
+        audit = self.audit_ldn_candidate_screen(log_event=False)
+        return {"source_family": "site_conviction", "source_key": "ldn_candidate_screen", **proof, "coverage": coverage, "audit": audit}
+
+    def audit_ldn_candidate_screen(self, log_event: bool = True) -> dict[str, Any]:
+        coverage = self.database.fetch_one("select * from analytics.v_ldn_candidate_screen_coverage") or {}
+        status_mix = self.database.fetch_all(
+            """
+            select
+                candidate_status,
+                count(*)::integer as site_count
+            from analytics.v_ldn_candidate_screen
+            group by candidate_status
+            order by site_count desc, candidate_status
+            """
+        )
+        blockers = self.database.fetch_all(
+            """
+            select
+                control_blocker_type,
+                count(*)::integer as site_count
+            from analytics.v_ldn_candidate_screen
+            where control_blocker_type is not null
+            group by control_blocker_type
+            order by site_count desc, control_blocker_type
+            """
+        )
+        true_candidates = self.database.fetch_all(
+            """
+            select
+                canonical_site_id::text,
+                site_name,
+                authority_name,
+                area_acres,
+                owner_name_signal,
+                register_profile,
+                planning_position,
+                constraint_position,
+                title_spend_position,
+                next_action
+            from analytics.v_true_ldn_sites
+            order by area_acres desc nulls last, updated_at desc
+            limit 20
+            """
+        )
+        review_candidates = self.database.fetch_all(
+            """
+            select
+                canonical_site_id::text,
+                site_name,
+                authority_name,
+                candidate_status,
+                ownership_classification,
+                register_profile,
+                planning_position,
+                constraint_position,
+                top_warnings,
+                next_action
+            from analytics.v_ldn_review_candidates
+            order by updated_at desc nulls last, site_name
+            limit 20
+            """
+        )
+        result = {
+            "coverage": coverage,
+            "status_mix": status_mix,
+            "control_blockers": blockers,
+            "true_ldn_candidates": true_candidates,
+            "review_candidates": review_candidates,
+        }
+        if log_event and not self.dry_run and not self.audit_only:
+            self._record_expansion_event(
+                command_name="audit-ldn-candidate-screen",
+                source_key="ldn_candidate_screen",
+                source_family="site_conviction",
+                status="success",
+                raw_rows=int(coverage.get("screened_site_count") or 0),
+                linked_rows=int(coverage.get("screened_site_count") or 0),
+                measured_rows=int(coverage.get("screened_sites_with_measured_constraints") or 0),
+                evidence_rows=int(coverage.get("true_ldn_candidate_count") or 0),
+                summary="LDN candidate screen audited.",
+                metadata=result,
+            )
+        self.logger.info("ldn_candidate_screen_audit", extra=result)
         return result
 
     def audit_full_source_estate(self, log_event: bool = True) -> dict[str, Any]:

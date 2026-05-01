@@ -75,6 +75,27 @@ sources:
     limitation_notes: Conviction outputs allocate LDN attention and title spend; they do not prove legal ownership, planning certainty, engineering certainty or buyer demand.
     next_action: Refresh claim, proof, interpretation, risk, gap, action and verdict from current live evidence.
 
+  - source_key: ldn_candidate_screen
+    module_key: site_conviction
+    source_family: site_conviction
+    source_name: LDN private/no-builder candidate screen
+    source_group: review_outputs
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.site_ldn_candidate_screen
+    orchestration_mode: derived_from_registers_planning_constraints_and_title_readiness
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: This screen flags private/no-builder control fit and blocker signals; it does not confirm legal ownership before title review.
+    next_action: Refresh LDN candidate screen from HLA, ELA, VDL, LDP, settlement, planning, constraint and title-readiness evidence.
+
   - source_key: dpea_planning_appeals
     module_key: planning_appeals
     source_family: planning_appeals

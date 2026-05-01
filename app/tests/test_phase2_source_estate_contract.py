@@ -14,6 +14,7 @@ MIGRATION = "\n".join(
         "051_phase2_source_estate_framework.sql",
         "052_live_proof_workflow_gates.sql",
         "054_site_prove_it_conviction_layer.sql",
+        "055_ldn_candidate_control_screen.sql",
     )
 )
 MANIFEST = (APP_DIR / "config" / "phase2_source_estate.yaml").read_text(encoding="utf-8")
@@ -46,6 +47,8 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "refresh-site-assessments",
             "refresh-site-prove-it-assessments",
             "audit-site-prove-it-assessments",
+            "refresh-ldn-candidate-screen",
+            "audit-ldn-candidate-screen",
             "audit-full-source-estate",
         ):
             self.assertIn(f"- {command}", WORKFLOW)
@@ -167,6 +170,8 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "landintel.site_intelligence_links",
             "landintel.settlement_intelligence_links",
             "landintel.site_prove_it_assessments",
+            "landintel.site_register_status_facts",
+            "landintel.site_ldn_candidate_screen",
         ):
             self.assertIn(table_name, MIGRATION)
         for view_name in (
@@ -188,6 +193,11 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "analytics.v_site_assessment_context",
             "analytics.v_site_prove_it_coverage",
             "analytics.v_site_prove_it_assessments",
+            "analytics.v_register_site_development_status",
+            "analytics.v_ldn_candidate_screen",
+            "analytics.v_true_ldn_sites",
+            "analytics.v_ldn_review_candidates",
+            "analytics.v_ldn_candidate_screen_coverage",
             "analytics.v_landintel_source_estate_matrix",
             "analytics.v_landintel_source_lifecycle_stage_counts",
         ):
@@ -258,6 +268,26 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("def refresh_site_prove_it_assessments", RUNNER)
         self.assertIn("def audit_site_prove_it_assessments", RUNNER)
         self.assertIn("analytics.v_site_prove_it_coverage", RUNNER)
+
+    def test_ldn_candidate_screen_targets_private_no_builder_without_title_certainty(self) -> None:
+        self.assertIn("source_key: ldn_candidate_screen", MANIFEST)
+        self.assertIn("create table if not exists landintel.site_ldn_candidate_screen", MIGRATION)
+        self.assertIn("create table if not exists landintel.site_register_status_facts", MIGRATION)
+        self.assertIn("ownership_not_confirmed_until_title_review", MIGRATION)
+        self.assertIn("register_owner_or_developer_signal_not_legal_title", MIGRATION)
+        self.assertIn("ldn_target_private_no_builder", MIGRATION)
+        self.assertIn("public_sector_signal", MIGRATION)
+        self.assertIn("rsl_lha_charity_signal", MIGRATION)
+        self.assertIn("housebuilder_developer_signal", MIGRATION)
+        self.assertIn("build_started_indicator", MIGRATION)
+        self.assertIn("stalled_indicator", MIGRATION)
+        self.assertIn("unregistered_opportunity_signal", MIGRATION)
+        self.assertIn("analytics.v_true_ldn_sites", MIGRATION)
+        self.assertIn("control_blocker_type is null", MIGRATION)
+        self.assertIn("def refresh_ldn_candidate_screen", RUNNER)
+        self.assertIn("def audit_ldn_candidate_screen", RUNNER)
+        self.assertIn("landintel.refresh_ldn_candidate_screen", RUNNER)
+        self.assertIn("analytics.v_ldn_candidate_screen_coverage", RUNNER)
         self.assertIn("prove_it_coverage", RUNNER)
         self.assertIn("claim_statement", RUNNER)
         self.assertIn("jsonb_array_length(proof_points) as proof_point_count", RUNNER)

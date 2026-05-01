@@ -5338,40 +5338,57 @@ class Phase2SourceRunner:
         }
 
     def _fetch_os_places_payload(self, client: httpx.Client, point: str, api_key: str) -> dict[str, Any]:
-        attempts = (
-            (
-                "/radius",
-                {
-                    "key": api_key,
-                    "point": point,
-                    "radius": "1000",
-                    "maxresults": "10",
-                    "dataset": "DPA",
-                    "output_srs": "EPSG:27700",
-                },
-            ),
-            (
-                "/nearest",
-                {
-                    "key": api_key,
-                    "point": point,
-                    "radius": "1000",
-                    "dataset": "DPA",
-                    "output_srs": "EPSG:27700",
-                },
-            ),
-        )
+        auth_modes: list[tuple[str, dict[str, str], dict[str, str]]] = [
+            ("api_key", {"key": api_key}, {}),
+        ]
+        bearer_token = self._os_places_oauth_token(client)
+        if bearer_token:
+            auth_modes.append(("oauth2", {}, {"Authorization": f"Bearer {bearer_token}"}))
+        attempts = []
+        for auth_mode, auth_params, auth_headers in auth_modes:
+            attempts.extend(
+                (
+                    (
+                        auth_mode,
+                        "/radius",
+                        {
+                            **auth_params,
+                            "point": point,
+                            "radius": "1000",
+                            "maxresults": "10",
+                            "dataset": "DPA",
+                            "output_srs": "EPSG:27700",
+                        },
+                        auth_headers,
+                    ),
+                    (
+                        auth_mode,
+                        "/nearest",
+                        {
+                            **auth_params,
+                            "point": point,
+                            "radius": "1000",
+                            "dataset": "DPA",
+                            "output_srs": "EPSG:27700",
+                        },
+                        auth_headers,
+                    ),
+                )
+            )
         errors: list[str] = []
-        for path, params in attempts:
+        for auth_mode, path, params, auth_headers in attempts:
             endpoint = self._os_places_endpoint(path)
             response = client.get(
                 endpoint,
                 params=params,
-                headers={"User-Agent": "LandIntel/1.0 (+https://github.com/LDN-reece/LandIntel)"},
+                headers={
+                    "User-Agent": "LandIntel/1.0 (+https://github.com/LDN-reece/LandIntel)",
+                    **auth_headers,
+                },
             )
             if response.status_code < 400:
                 return response.json()
-            errors.append(f"{path} HTTP {response.status_code}: {response.text[:160]}")
+            errors.append(f"{auth_mode} {path} HTTP {response.status_code}: {response.text[:160]}")
         raise RuntimeError("; ".join(errors))
 
     def _os_places_endpoint(self, path: str) -> str:
@@ -5387,6 +5404,35 @@ class Phase2SourceRunner:
             value = (os.getenv(env_name) or "").strip()
             if value and not value.lower().startswith(("http://", "https://")):
                 return value
+        return None
+
+    def _os_places_oauth_token(self, client: httpx.Client) -> str | None:
+        cached = getattr(self, "_os_places_oauth_token_cache", None)
+        if cached:
+            return str(cached)
+        project_key = (os.getenv("OS_PROJECT_API") or "").strip()
+        project_secret = (os.getenv("OS_PROJECT_API_SECRET") or "").strip()
+        if (
+            not project_key
+            or not project_secret
+            or project_key.lower().startswith(("http://", "https://"))
+            or project_secret.lower().startswith(("http://", "https://"))
+        ):
+            return None
+        try:
+            response = client.post(
+                "https://api.os.uk/oauth2/token/v1",
+                auth=(project_key, project_secret),
+                data={"grant_type": "client_credentials"},
+                headers={"User-Agent": "LandIntel/1.0 (+https://github.com/LDN-reece/LandIntel)"},
+            )
+            response.raise_for_status()
+            token = response.json().get("access_token")
+        except Exception:
+            return None
+        if token:
+            setattr(self, "_os_places_oauth_token_cache", token)
+            return str(token)
         return None
 
     def audit_full_source_estate(self, log_event: bool = True) -> dict[str, Any]:

@@ -612,7 +612,7 @@ sources:
     source_name: OS Open Zoomstack
     source_group: base_geometry
     geography: Great Britain
-    endpoint_url: https://osdatahub.os.uk/downloads/open/OpenZoomstack
+    endpoint_url: https://api.os.uk/downloads/v1/products/OpenZoomstack/downloads
     access_status: access_confirmed
     ingest_status: source_registered_no_rows
     normalisation_status: source_registered
@@ -634,7 +634,7 @@ sources:
     source_name: OS Open TOID
     source_group: address_context
     geography: Great Britain
-    endpoint_url: https://osdatahub.os.uk/downloads/open/OpenTOID
+    endpoint_url: https://api.os.uk/downloads/v1/products/OpenTOID/downloads
     access_status: access_confirmed
     ingest_status: source_registered_no_rows
     normalisation_status: source_registered
@@ -656,7 +656,7 @@ sources:
     source_name: OS Open Built Up Areas
     source_group: settlement_context
     geography: Great Britain
-    endpoint_url: https://www.ordnancesurvey.co.uk/products/os-open-built-up-areas
+    endpoint_url: https://api.os.uk/downloads/v1/products/BuiltUpAreas/downloads
     access_status: access_confirmed
     ingest_status: source_registered_no_rows
     normalisation_status: source_registered

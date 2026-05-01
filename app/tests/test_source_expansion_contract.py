@@ -259,7 +259,7 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("https://portal.opentopography.org/API/globaldem", RUNNER)
         self.assertIn("OpenZoomstack", RUNNER)
         self.assertIn("OpenTOID", RUNNER)
-        self.assertIn("OpenBuiltUpAreas", RUNNER)
+        self.assertIn("BuiltUpAreas", RUNNER)
         self.assertIn("SRTMGL1", RUNNER)
         self.assertIn("_secret_value_is_api_key", RUNNER)
         self.assertIn("_os_downloads_product_endpoint", RUNNER)

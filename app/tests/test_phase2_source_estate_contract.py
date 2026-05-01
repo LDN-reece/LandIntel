@@ -14,7 +14,9 @@ MIGRATION = "\n".join(
         "051_phase2_source_estate_framework.sql",
         "052_live_proof_workflow_gates.sql",
         "054_site_prove_it_conviction_layer.sql",
+        "054z_urgent_site_address_title_tables.sql",
         "055_ldn_candidate_control_screen.sql",
+        "056_urgent_site_address_title_pack.sql",
     )
 )
 MANIFEST = (APP_DIR / "config" / "phase2_source_estate.yaml").read_text(encoding="utf-8")
@@ -49,6 +51,8 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "audit-site-prove-it-assessments",
             "refresh-ldn-candidate-screen",
             "audit-ldn-candidate-screen",
+            "refresh-urgent-address-title-pack",
+            "audit-urgent-address-title-pack",
             "audit-full-source-estate",
         ):
             self.assertIn(f"- {command}", WORKFLOW)
@@ -170,6 +174,8 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "landintel.site_intelligence_links",
             "landintel.settlement_intelligence_links",
             "landintel.site_prove_it_assessments",
+            "landintel.site_urgent_address_candidates",
+            "landintel.site_urgent_address_title_pack",
             "landintel.site_register_status_facts",
             "landintel.site_ldn_candidate_screen",
         ):
@@ -193,6 +199,9 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "analytics.v_site_assessment_context",
             "analytics.v_site_prove_it_coverage",
             "analytics.v_site_prove_it_assessments",
+            "analytics.v_urgent_site_address_title_pack",
+            "analytics.v_urgent_site_address_candidates",
+            "analytics.v_urgent_address_title_coverage",
             "analytics.v_register_site_development_status",
             "analytics.v_ldn_candidate_screen",
             "analytics.v_true_ldn_sites",
@@ -292,6 +301,27 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("claim_statement", RUNNER)
         self.assertIn("jsonb_array_length(proof_points) as proof_point_count", RUNNER)
         self.assertIn("missing_critical_evidence", RUNNER)
+
+    def test_urgent_address_title_pack_links_addresses_and_title_candidates_without_ownership_certainty(self) -> None:
+        self.assertIn("source_key: urgent_address_title_pack", MANIFEST)
+        self.assertIn("create table if not exists landintel.site_urgent_address_candidates", MIGRATION)
+        self.assertIn("create table if not exists landintel.site_urgent_address_title_pack", MIGRATION)
+        self.assertIn("landintel.refresh_urgent_site_address_title_pack", MIGRATION)
+        self.assertIn("analytics.v_urgent_site_address_title_pack", MIGRATION)
+        self.assertIn("analytics.v_urgent_address_title_coverage", MIGRATION)
+        self.assertIn("order_title_urgently", MIGRATION)
+        self.assertIn("true_ldn_candidate", MIGRATION)
+        self.assertIn("possible_title_reference_identified", MIGRATION)
+        self.assertIn("ownership_not_confirmed_until_title_review", MIGRATION)
+        self.assertIn("title_number_candidate_not_ownership_confirmation", MIGRATION)
+        self.assertIn("OS Places API radius search", RUNNER)
+        self.assertIn("def refresh_urgent_address_title_pack", RUNNER)
+        self.assertIn("def audit_urgent_address_title_pack", RUNNER)
+        self.assertIn("def _fetch_os_places_for_urgent_sites", RUNNER)
+        self.assertIn("OS_PLACES_API", RUNNER)
+        self.assertIn("OS_PROJECT_API", RUNNER)
+        self.assertIn("refresh-urgent-address-title-pack", WORKFLOW)
+        self.assertIn("audit-urgent-address-title-pack", WORKFLOW)
 
     def test_source_catalog_sync_uses_upserts_without_reload_deletes(self) -> None:
         self.assertNotIn("delete from landintel.source_endpoint_catalog", CATALOG_SYNC)

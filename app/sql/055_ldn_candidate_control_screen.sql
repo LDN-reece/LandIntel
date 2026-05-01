@@ -1234,6 +1234,8 @@ with source_rows as (
     union all select source_key, source_family, count(*)::bigint from landintel.intelligence_event_records group by source_key, source_family
     union all select source_key, source_family, count(*)::bigint from landintel.site_assessments group by source_key, source_family
     union all select source_key, source_family, count(*)::bigint from landintel.site_prove_it_assessments group by source_key, source_family
+    union all select source_key, source_family, count(*)::bigint from landintel.site_urgent_address_candidates group by source_key, source_family
+    union all select source_key, source_family, count(*)::bigint from landintel.site_urgent_address_title_pack group by source_key, source_family
     union all select source_key, source_family, count(*)::bigint from landintel.site_register_status_facts group by source_key, source_family
     union all select source_key, source_family, count(*)::bigint from landintel.site_ldn_candidate_screen group by source_key, source_family
 ),
@@ -1268,6 +1270,8 @@ linked_rollup as (
         join landintel.intelligence_event_records as event on event.id = link.intelligence_event_record_id
         union all select source_key, source_family, canonical_site_id from landintel.site_assessments
         union all select source_key, source_family, canonical_site_id from landintel.site_prove_it_assessments
+        union all select source_key, source_family, canonical_site_id from landintel.site_urgent_address_candidates
+        union all select source_key, source_family, canonical_site_id from landintel.site_urgent_address_title_pack
         union all select source_key, source_family, canonical_site_id from landintel.site_register_status_facts
         union all select source_key, source_family, canonical_site_id from landintel.site_ldn_candidate_screen
     ) as links
@@ -1284,6 +1288,10 @@ measured_rollup as (
         union all select source_key, source_family, canonical_site_id from landintel.site_amenity_context
         union all select source_key, source_family, canonical_site_id from landintel.site_open_location_spine_context
         union all select source_key, source_family, canonical_site_id from landintel.site_demographic_context
+        union all select source_key, source_family, canonical_site_id
+        from landintel.site_urgent_address_title_pack
+        where address_link_status = 'address_linked'
+           or title_candidate_status in ('possible_title_reference_identified', 'parcel_candidate_identified')
         union all select source_key, source_family, canonical_site_id from landintel.site_register_status_facts where measured_constraint_count > 0
         union all select source_key, source_family, canonical_site_id from landintel.site_ldn_candidate_screen where measured_constraint_count > 0
     ) as measurements
@@ -1299,6 +1307,11 @@ assessment_rollup as (
         select source_key, source_family, canonical_site_id
         from landintel.site_prove_it_assessments
         where review_ready_flag = true
+        union all
+        select source_key, source_family, canonical_site_id
+        from landintel.site_urgent_address_title_pack
+        where address_link_status = 'address_linked'
+          and title_candidate_status = 'possible_title_reference_identified'
         union all
         select source_key, source_family, canonical_site_id
         from landintel.site_ldn_candidate_screen

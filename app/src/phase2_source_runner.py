@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import io
 import json
 import os
@@ -62,6 +63,8 @@ PHASE2_COMMANDS = (
     "audit-site-prove-it-assessments",
     "refresh-ldn-candidate-screen",
     "audit-ldn-candidate-screen",
+    "refresh-urgent-address-title-pack",
+    "audit-urgent-address-title-pack",
     "audit-full-source-estate",
 )
 
@@ -85,6 +88,7 @@ REFRESH_COMMAND_FAMILIES = {
     "refresh-site-assessments": "site_assessment",
     "refresh-site-prove-it-assessments": "site_conviction",
     "refresh-ldn-candidate-screen": "site_conviction",
+    "refresh-urgent-address-title-pack": "title_control",
 }
 
 LIFECYCLE_STAGES = (
@@ -103,6 +107,15 @@ LIFECYCLE_STAGES = (
 
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, default=str, sort_keys=True)
+
+
+def _nullable_float(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -225,6 +238,10 @@ class Phase2SourceRunner:
             result = self.refresh_ldn_candidate_screen()
         elif command == "audit-ldn-candidate-screen":
             result = self.audit_ldn_candidate_screen()
+        elif command == "refresh-urgent-address-title-pack":
+            result = self.refresh_urgent_address_title_pack()
+        elif command == "audit-urgent-address-title-pack":
+            result = self.audit_urgent_address_title_pack()
         elif command == "refresh-site-market-context":
             result = self.ingest_market_context()
         elif command == "refresh-site-amenity-context":
@@ -4967,6 +4984,383 @@ class Phase2SourceRunner:
             )
         self.logger.info("ldn_candidate_screen_audit", extra=result)
         return result
+
+    def refresh_urgent_address_title_pack(self) -> dict[str, Any]:
+        selected_sources = [
+            source
+            for source in self.sources
+            if source.get("source_key") == "urgent_address_title_pack"
+        ]
+        if not self.dry_run and not self.audit_only:
+            for source in selected_sources:
+                self._upsert_source(source)
+
+        if self.audit_only:
+            return self.audit_urgent_address_title_pack(log_event=False)
+
+        if self.dry_run:
+            urgent_count = self.database.scalar(
+                """
+                select count(*)::bigint
+                from landintel.canonical_sites as site
+                left join landintel.site_prove_it_assessments as prove_it
+                  on prove_it.canonical_site_id = site.id
+                 and prove_it.source_key = 'prove_it_conviction_layer'
+                 and prove_it.assessment_version = 1
+                left join landintel.site_ldn_candidate_screen as ldn_screen
+                  on ldn_screen.canonical_site_id = site.id
+                left join landintel.title_order_workflow as title_workflow
+                  on title_workflow.canonical_site_id = site.id
+                where site.geometry is not null
+                  and (:authority_name = '' or site.authority_name ilike :authority_name_like)
+                  and (
+                        prove_it.title_spend_recommendation = 'order_title_urgently'
+                     or (prove_it.verdict = 'pursue' and prove_it.title_spend_recommendation = 'order_title')
+                     or ldn_screen.candidate_status = 'true_ldn_candidate'
+                     or title_workflow.next_action ilike '%urgent%'
+                     or title_workflow.title_order_status ilike '%urgent%'
+                  )
+                """,
+                {
+                    "authority_name": self.authority_filter,
+                    "authority_name_like": f"%{self.authority_filter}%",
+                },
+            )
+            return {
+                "source_family": "title_control",
+                "source_key": "urgent_address_title_pack",
+                "urgent_site_count": int(urgent_count or 0),
+                "dry_run": True,
+            }
+
+        os_places_result = self._fetch_os_places_for_urgent_sites()
+        proof = self.database.fetch_one(
+            """
+            select *
+            from landintel.refresh_urgent_site_address_title_pack(:batch_size, :authority_name)
+            """,
+            {
+                "batch_size": min(self.batch_size, 100),
+                "authority_name": self.authority_filter,
+            },
+        ) or {}
+        coverage = self.database.fetch_one("select * from analytics.v_urgent_address_title_coverage") or {}
+        pack_count = int(proof.get("pack_row_count") or 0)
+        address_count = int(proof.get("address_candidate_count") or 0)
+        pack_ready_count = int(coverage.get("urgent_sites_dd_pack_ready_count") or 0)
+        evidence_count = int(proof.get("evidence_row_count") or 0)
+        signal_count = int(proof.get("signal_row_count") or 0)
+        change_event_count = int(proof.get("change_event_count") or 0)
+
+        self._update_family_lifecycle(
+            source_family="title_control",
+            source_key="urgent_address_title_pack",
+            row_count=pack_count + address_count,
+            linked_count=pack_count,
+            measured_count=pack_ready_count,
+            evidence_count=evidence_count,
+            signal_count=signal_count,
+        )
+        self.database.execute(
+            """
+            update landintel.source_estate_registry
+            set assessment_status = case when :pack_ready_count > 0 then 'assessment_ready' else assessment_status end,
+                updated_at = now()
+            where source_key = 'urgent_address_title_pack'
+              and source_family = 'title_control'
+            """,
+            {"pack_ready_count": pack_ready_count},
+        )
+        self._record_expansion_event(
+            command_name="refresh-urgent-address-title-pack",
+            source_key="urgent_address_title_pack",
+            source_family="title_control",
+            status="success",
+            raw_rows=pack_count + address_count,
+            linked_rows=pack_count,
+            measured_rows=pack_ready_count,
+            evidence_rows=evidence_count,
+            signal_rows=signal_count,
+            change_event_rows=change_event_count,
+            summary="Urgent site address and RoS/ScotLIS title-number candidate pack refreshed without confirming ownership.",
+            metadata={**proof, "coverage": coverage, "os_places": os_places_result},
+        )
+        self._record_family_freshness(
+            "title_control",
+            "Urgent address and title candidate pack",
+            pack_count + address_count,
+        )
+        audit = self.audit_urgent_address_title_pack(log_event=False)
+        return {
+            "source_family": "title_control",
+            "source_key": "urgent_address_title_pack",
+            **proof,
+            "coverage": coverage,
+            "os_places": os_places_result,
+            "audit": audit,
+        }
+
+    def audit_urgent_address_title_pack(self, log_event: bool = True) -> dict[str, Any]:
+        coverage = self.database.fetch_one("select * from analytics.v_urgent_address_title_coverage") or {}
+        missing = self.database.fetch_all(
+            """
+            select
+                canonical_site_id::text,
+                site_name,
+                authority_name,
+                urgency_status,
+                address_link_status,
+                title_candidate_status,
+                next_action
+            from analytics.v_urgent_site_address_title_pack
+            where address_link_status = 'address_missing'
+               or title_candidate_status <> 'possible_title_reference_identified'
+            order by
+                case urgency_status
+                    when 'order_title_urgently' then 1
+                    when 'true_ldn_candidate' then 2
+                    when 'title_order_urgent' then 3
+                    else 4
+                end,
+                updated_at desc
+            limit 20
+            """
+        )
+        ready = self.database.fetch_all(
+            """
+            select
+                canonical_site_id::text,
+                site_name,
+                authority_name,
+                urgency_status,
+                title_number,
+                primary_uprn,
+                primary_address_text,
+                ownership_limitation,
+                next_action
+            from analytics.v_urgent_site_address_title_pack
+            where address_link_status = 'address_linked'
+              and title_candidate_status = 'possible_title_reference_identified'
+            order by updated_at desc
+            limit 20
+            """
+        )
+        result = {
+            "coverage": coverage,
+            "missing_address_or_title": missing,
+            "dd_pack_ready": ready,
+        }
+        if log_event and not self.dry_run and not self.audit_only:
+            self._record_expansion_event(
+                command_name="audit-urgent-address-title-pack",
+                source_key="urgent_address_title_pack",
+                source_family="title_control",
+                status="success",
+                raw_rows=int(coverage.get("urgent_site_pack_count") or 0),
+                linked_rows=int(coverage.get("urgent_site_pack_count") or 0),
+                measured_rows=int(coverage.get("urgent_sites_dd_pack_ready_count") or 0),
+                summary="Urgent address/title pack audited.",
+                metadata=result,
+            )
+        self.logger.info("urgent_address_title_pack_audit", extra=result)
+        return result
+
+    def _fetch_os_places_for_urgent_sites(self) -> dict[str, Any]:
+        endpoint = self._os_places_endpoint("/radius")
+        api_key = self._os_places_key_value()
+        selected = self.database.fetch_all(
+            """
+            select
+                site.id::text as canonical_site_id,
+                site.id::text as site_location_id,
+                round(st_x(st_pointonsurface(site.geometry))::numeric, 2) as x_coordinate,
+                round(st_y(st_pointonsurface(site.geometry))::numeric, 2) as y_coordinate
+            from landintel.canonical_sites as site
+            left join landintel.site_prove_it_assessments as prove_it
+              on prove_it.canonical_site_id = site.id
+             and prove_it.source_key = 'prove_it_conviction_layer'
+             and prove_it.assessment_version = 1
+            left join landintel.site_ldn_candidate_screen as ldn_screen
+              on ldn_screen.canonical_site_id = site.id
+            left join landintel.title_order_workflow as title_workflow
+              on title_workflow.canonical_site_id = site.id
+            left join lateral (
+                select true as has_address
+                from landintel.site_urgent_address_candidates as candidate
+                where candidate.canonical_site_id = site.id
+                limit 1
+            ) as existing_address on true
+            where site.geometry is not null
+              and (:authority_name = '' or site.authority_name ilike :authority_name_like)
+              and (:force_refresh or existing_address.has_address is distinct from true)
+              and (
+                    prove_it.title_spend_recommendation = 'order_title_urgently'
+                 or (prove_it.verdict = 'pursue' and prove_it.title_spend_recommendation = 'order_title')
+                 or ldn_screen.candidate_status = 'true_ldn_candidate'
+                 or title_workflow.next_action ilike '%urgent%'
+                 or title_workflow.title_order_status ilike '%urgent%'
+              )
+            order by prove_it.updated_at desc nulls last, ldn_screen.updated_at desc nulls last, site.id
+            limit :batch_size
+            """,
+            {
+                "authority_name": self.authority_filter,
+                "authority_name_like": f"%{self.authority_filter}%",
+                "force_refresh": self.force_refresh,
+                "batch_size": min(self.batch_size, 25),
+            },
+        )
+        if not selected:
+            return {"selected_site_count": 0, "inserted_address_count": 0, "status": "no_urgent_sites_requiring_os_places"}
+        if not api_key:
+            return {
+                "selected_site_count": len(selected),
+                "inserted_address_count": 0,
+                "status": "os_places_key_missing",
+            }
+
+        inserted: list[dict[str, Any]] = []
+        failed_count = 0
+        with httpx.Client(timeout=20, follow_redirects=True) as client:
+            for site in selected:
+                point = f"{site['x_coordinate']},{site['y_coordinate']}"
+                try:
+                    response = client.get(
+                        endpoint,
+                        params={
+                            "key": api_key,
+                            "point": point,
+                            "radius": "1000",
+                            "maxresults": "10",
+                            "dataset": "DPA,LPI",
+                            "output_srs": "EPSG:27700",
+                        },
+                        headers={"User-Agent": "LandIntel/1.0 (+https://github.com/LDN-reece/LandIntel)"},
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                except Exception:
+                    failed_count += 1
+                    continue
+
+                for rank, result in enumerate(payload.get("results") or [], start=1):
+                    record = result.get("DPA") or result.get("LPI") or {}
+                    address = record.get("ADDRESS")
+                    if not address:
+                        continue
+                    uprn = str(record.get("UPRN") or "").strip() or None
+                    raw_payload = {"result": result, "header": payload.get("header"), "query_point": point}
+                    signature = hashlib.md5(
+                        "|".join(
+                            [
+                                str(site["canonical_site_id"]),
+                                uprn or "",
+                                str(address),
+                                str(rank),
+                            ]
+                        ).encode("utf-8")
+                    ).hexdigest()
+                    inserted.append(
+                        {
+                            "canonical_site_id": site["canonical_site_id"],
+                            "site_location_id": site["site_location_id"],
+                            "uprn": uprn,
+                            "address_text": address,
+                            "match_rank": rank,
+                            "x_coordinate": _nullable_float(record.get("X_COORDINATE")),
+                            "y_coordinate": _nullable_float(record.get("Y_COORDINATE")),
+                            "classification_code": record.get("CLASSIFICATION_CODE"),
+                            "classification_description": record.get("CLASSIFICATION_CODE_DESCRIPTION"),
+                            "property_status": record.get("STATUS") or record.get("BLPU_STATE_CODE_DESCRIPTION"),
+                            "source_record_signature": signature,
+                            "raw_payload": _json_dumps(raw_payload),
+                        }
+                    )
+
+        if inserted:
+            self.database.execute_many(
+                """
+                insert into landintel.site_urgent_address_candidates (
+                    canonical_site_id,
+                    site_location_id,
+                    address_source,
+                    uprn,
+                    address_text,
+                    match_method,
+                    match_rank,
+                    x_coordinate,
+                    y_coordinate,
+                    classification_code,
+                    classification_description,
+                    property_status,
+                    source_record_signature,
+                    raw_payload,
+                    metadata,
+                    updated_at
+                ) values (
+                    cast(:canonical_site_id as uuid),
+                    :site_location_id,
+                    'os_places_api',
+                    :uprn,
+                    :address_text,
+                    'os_places_radius',
+                    :match_rank,
+                    :x_coordinate,
+                    :y_coordinate,
+                    :classification_code,
+                    :classification_description,
+                    :property_status,
+                    :source_record_signature,
+                    cast(:raw_payload as jsonb),
+                    jsonb_build_object(
+                        'source_key', 'urgent_address_title_pack',
+                        'address_basis', 'OS Places API radius search',
+                        'limitation', 'address_link_is_context_not_legal_extent'
+                    ),
+                    now()
+                )
+                on conflict (
+                    canonical_site_id,
+                    address_source,
+                    source_record_signature
+                ) do update set
+                    site_location_id = excluded.site_location_id,
+                    uprn = excluded.uprn,
+                    address_text = excluded.address_text,
+                    match_method = excluded.match_method,
+                    match_rank = excluded.match_rank,
+                    x_coordinate = excluded.x_coordinate,
+                    y_coordinate = excluded.y_coordinate,
+                    classification_code = excluded.classification_code,
+                    classification_description = excluded.classification_description,
+                    property_status = excluded.property_status,
+                    raw_payload = excluded.raw_payload,
+                    metadata = excluded.metadata,
+                    updated_at = now()
+                """,
+                inserted,
+            )
+        return {
+            "selected_site_count": len(selected),
+            "inserted_address_count": len(inserted),
+            "failed_site_count": failed_count,
+            "status": "success",
+        }
+
+    def _os_places_endpoint(self, path: str) -> str:
+        base = (os.getenv("OS_PLACES_API") or "https://api.os.uk/search/places/v1").strip().rstrip("/")
+        for suffix in ("/find", "/nearest", "/bbox", "/radius", "/polygon", "/postcode", "/uprn"):
+            if base.endswith(suffix):
+                base = base[: -len(suffix)]
+                break
+        return f"{base}{path}"
+
+    def _os_places_key_value(self) -> str | None:
+        for env_name in ("OS_PROJECT_API", "OS_PLACES_API_KEY", "OS_API_KEY"):
+            value = (os.getenv(env_name) or "").strip()
+            if value and not value.lower().startswith(("http://", "https://")):
+                return value
+        return None
 
     def audit_full_source_estate(self, log_event: bool = True) -> dict[str, Any]:
         matrix_summary = self.database.fetch_one(

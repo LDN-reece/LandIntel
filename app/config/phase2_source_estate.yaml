@@ -181,6 +181,27 @@ sources:
     limitation_notes: Pre-title outputs are readiness and control signals only; legal ownership is not confirmed.
     next_action: Refresh title readiness from RoS parcel and title candidate evidence.
 
+  - source_key: urgent_address_title_pack
+    module_key: title_control
+    source_family: title_control
+    source_name: Urgent site address and title candidate pack
+    source_group: title_control
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.site_urgent_address_title_pack
+    orchestration_mode: derived_from_prove_it_ldn_screen_os_places_and_ros_candidates
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: Links urgent sites to address and RoS/ScotLIS title-number candidates only; legal ownership is not confirmed until manual title review.
+    next_action: Refresh whenever a site is marked order-title-urgent or true LDN candidate.
+
   - source_key: title_review_manual
     module_key: title_control
     source_family: title_control

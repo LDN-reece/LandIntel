@@ -259,6 +259,9 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("def audit_site_prove_it_assessments", RUNNER)
         self.assertIn("analytics.v_site_prove_it_coverage", RUNNER)
         self.assertIn("prove_it_coverage", RUNNER)
+        self.assertIn("claim_statement", RUNNER)
+        self.assertIn("jsonb_array_length(proof_points) as proof_point_count", RUNNER)
+        self.assertIn("missing_critical_evidence", RUNNER)
 
     def test_source_catalog_sync_uses_upserts_without_reload_deletes(self) -> None:
         self.assertNotIn("delete from landintel.source_endpoint_catalog", CATALOG_SYNC)

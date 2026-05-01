@@ -4758,6 +4758,11 @@ class Phase2SourceRunner:
                 constraint_position,
                 market_position,
                 control_position,
+                claim_statement,
+                prove_it_drivers,
+                jsonb_array_length(proof_points) as proof_point_count,
+                top_warnings,
+                missing_critical_evidence,
                 review_ready_flag,
                 review_next_action
             from analytics.v_site_prove_it_assessments

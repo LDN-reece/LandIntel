@@ -263,6 +263,8 @@ with source_rows as (
     union all select source_key, source_family, count(*)::bigint from landintel.amenity_assets group by source_key, source_family
     union all select source_key, source_family, count(*)::bigint from landintel.site_amenity_context group by source_key, source_family
     union all select source_key, source_family, count(*)::bigint from landintel.location_strength_facts group by source_key, source_family
+    union all select source_key, source_family, count(*)::bigint from landintel.open_location_spine_features group by source_key, source_family
+    union all select source_key, source_family, count(*)::bigint from landintel.site_open_location_spine_context group by source_key, source_family
     union all select source_key, source_family, count(*)::bigint from landintel.demographic_area_metrics group by source_key, source_family
     union all select source_key, source_family, count(*)::bigint from landintel.site_demographic_context group by source_key, source_family
     union all select source_key, source_family, count(*)::bigint from landintel.housing_demand_context group by source_key, source_family
@@ -292,6 +294,7 @@ linked_rollup as (
         union all select source_key, source_family, canonical_site_id from landintel.site_ground_risk_context
         union all select source_key, source_family, canonical_site_id from landintel.site_market_context
         union all select source_key, source_family, canonical_site_id from landintel.site_amenity_context
+        union all select source_key, source_family, canonical_site_id from landintel.site_open_location_spine_context
         union all select source_key, source_family, canonical_site_id from landintel.site_demographic_context
         union all select document.source_key, link.source_family, link.canonical_site_id
         from landintel.site_planning_document_links as link
@@ -312,6 +315,7 @@ measured_rollup as (
         union all select source_key, source_family, canonical_site_id from landintel.site_ground_risk_context
         union all select source_key, source_family, canonical_site_id from landintel.site_terrain_metrics
         union all select source_key, source_family, canonical_site_id from landintel.site_amenity_context
+        union all select source_key, source_family, canonical_site_id from landintel.site_open_location_spine_context
         union all select source_key, source_family, canonical_site_id from landintel.site_demographic_context
     ) as measurements
     group by source_key, source_family
@@ -343,15 +347,28 @@ signal_rollup as (
 freshness as (
     select distinct on (source_family, source_key)
         source_family,
-        replace(source_scope_key, 'phase2:', '') as source_key,
+        source_key,
         freshness_status,
         live_access_status,
         last_success_at,
         records_observed,
         check_summary
-    from landintel.source_freshness_states
-    where source_scope_key like 'phase2:%%'
-    order by source_family, replace(source_scope_key, 'phase2:', ''), last_checked_at desc nulls last, updated_at desc
+    from (
+        select
+            source_family,
+            replace(replace(source_scope_key, 'phase2:', ''), 'source_expansion:', '') as source_key,
+            freshness_status,
+            live_access_status,
+            last_success_at,
+            records_observed,
+            check_summary,
+            last_checked_at,
+            updated_at
+        from landintel.source_freshness_states
+        where source_scope_key like 'phase2:%%'
+           or source_scope_key like 'source_expansion:%%'
+    ) as freshness_rows
+    order by source_family, source_key, last_checked_at desc nulls last, updated_at desc
 ),
 event_rollup as (
     select

@@ -4860,13 +4860,17 @@ class SourceExpansionRunner:
                 source_status, orchestration_mode, endpoint_url, auth_env_vars, target_table,
                 reconciliation_path, evidence_path, signal_output, ranking_impact,
                 resurfacing_trigger, data_age_basis, drive_folder_url, notes,
-                ranking_eligible, review_output_eligible, metadata, last_registered_at, updated_at
+                ranking_eligible, review_output_eligible, programme_phase, module_key, geography,
+                access_status, limitation_notes, next_action, lifecycle_metadata,
+                metadata, last_registered_at, updated_at
             ) values (
                 :source_key, :source_family, :source_name, :source_group, :phase_one_role,
                 :source_status, :orchestration_mode, :endpoint_url, :auth_env_vars, :target_table,
                 :reconciliation_path, :evidence_path, :signal_output, :ranking_impact,
                 :resurfacing_trigger, :data_age_basis, :drive_folder_url, :notes,
-                :ranking_eligible, :review_output_eligible, cast(:metadata as jsonb), now(), now()
+                :ranking_eligible, :review_output_eligible, :programme_phase, :module_key, :geography,
+                :access_status, :limitation_notes, :next_action, cast(:lifecycle_metadata as jsonb),
+                cast(:metadata as jsonb), now(), now()
             )
             on conflict (source_key) do update set
                 source_family = excluded.source_family,
@@ -4888,6 +4892,17 @@ class SourceExpansionRunner:
                 notes = excluded.notes,
                 ranking_eligible = excluded.ranking_eligible,
                 review_output_eligible = excluded.review_output_eligible,
+                programme_phase = excluded.programme_phase,
+                module_key = excluded.module_key,
+                geography = excluded.geography,
+                access_status = case
+                    when landintel.source_estate_registry.access_status = 'source_registered'
+                        then excluded.access_status
+                    else landintel.source_estate_registry.access_status
+                end,
+                limitation_notes = coalesce(excluded.limitation_notes, landintel.source_estate_registry.limitation_notes),
+                next_action = coalesce(excluded.next_action, landintel.source_estate_registry.next_action),
+                lifecycle_metadata = landintel.source_estate_registry.lifecycle_metadata || excluded.lifecycle_metadata,
                 metadata = excluded.metadata,
                 last_registered_at = now(),
                 updated_at = now()
@@ -4913,6 +4928,27 @@ class SourceExpansionRunner:
                 "notes": source.get("notes"),
                 "ranking_eligible": bool(source.get("ranking_eligible", source.get("phase_one_role") in {"critical", "target_live"})),
                 "review_output_eligible": bool(source.get("review_output_eligible", True)),
+                "programme_phase": source.get("programme_phase")
+                or ("phase_two" if source.get("source_family") in OPEN_LOCATION_SPINE_BULK_FAMILIES else "phase_one"),
+                "module_key": source.get("module_key")
+                or ("open_location_spine" if source.get("source_family") in OPEN_LOCATION_SPINE_BULK_FAMILIES else None),
+                "geography": source.get("geography")
+                or source.get("download_area")
+                or ("Great Britain / Scotland context" if source.get("source_family") in OPEN_LOCATION_SPINE_BULK_FAMILIES else None),
+                "access_status": source.get("access_status") or "source_registered",
+                "limitation_notes": source.get("limitation_notes"),
+                "next_action": source.get("next_action")
+                or (
+                    "Keep landing and measuring bounded open-location batches; do not mark trusted until coverage and limitations are proven."
+                    if source.get("source_family") in OPEN_LOCATION_SPINE_BULK_FAMILIES
+                    else None
+                ),
+                "lifecycle_metadata": _json_dumps(
+                    {
+                        "source_expansion_registered": True,
+                        "open_location_spine": source.get("source_family") in OPEN_LOCATION_SPINE_BULK_FAMILIES,
+                    }
+                ),
                 "metadata": _json_dumps(source),
             },
         )

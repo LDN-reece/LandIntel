@@ -202,6 +202,23 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("metadata ->> 'source_key'", trust_gate)
         self.assertIn("open_location_spine_features", trust_gate)
         self.assertIn("site_open_location_spine_context", trust_gate)
+        self.assertIn("source_scope_key like 'source_expansion:%%'", trust_gate)
+
+    def test_live_proof_gate_counts_open_location_spine_rows(self) -> None:
+        live_gate = (APP_DIR / "sql" / "052_live_proof_workflow_gates.sql").read_text(encoding="utf-8")
+        self.assertIn(
+            "union all select source_key, source_family, count(*)::bigint from landintel.open_location_spine_features",
+            live_gate,
+        )
+        self.assertIn(
+            "union all select source_key, source_family, count(*)::bigint from landintel.site_open_location_spine_context",
+            live_gate,
+        )
+        self.assertIn(
+            "union all select source_key, source_family, canonical_site_id from landintel.site_open_location_spine_context",
+            live_gate,
+        )
+        self.assertIn("source_scope_key like 'source_expansion:%%'", live_gate)
 
     def test_source_catalog_sync_uses_upserts_without_reload_deletes(self) -> None:
         self.assertNotIn("delete from landintel.source_endpoint_catalog", CATALOG_SYNC)

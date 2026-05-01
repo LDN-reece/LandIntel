@@ -88,6 +88,9 @@ on:
           - ingest-os-boundary-line
           - ingest-os-open-names
           - ingest-os-open-greenspace
+          - ingest-os-open-zoomstack
+          - ingest-os-open-toid
+          - ingest-os-open-built-up-areas
           - ingest-os-open-uprn
           - ingest-os-open-usrn
           - ingest-osm-overpass
@@ -355,7 +358,7 @@ jobs:
 
           is_source_expansion_ingest() {
             case "$1" in
-              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features|ingest-os-linked-identifiers|ingest-os-openmap-local|ingest-os-open-roads|ingest-os-open-rivers|ingest-os-boundary-line|ingest-os-open-names|ingest-os-open-greenspace|ingest-os-open-uprn|ingest-os-open-usrn|ingest-osm-overpass|ingest-naptan|ingest-statistics-gov-scot|ingest-opentopography-srtm|probe-open-location-spine)
+              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features|ingest-os-linked-identifiers|ingest-os-openmap-local|ingest-os-open-roads|ingest-os-open-rivers|ingest-os-boundary-line|ingest-os-open-names|ingest-os-open-greenspace|ingest-os-open-zoomstack|ingest-os-open-toid|ingest-os-open-built-up-areas|ingest-os-open-uprn|ingest-os-open-usrn|ingest-osm-overpass|ingest-naptan|ingest-statistics-gov-scot|ingest-opentopography-srtm|probe-open-location-spine)
                 return 0
                 ;;
               *)

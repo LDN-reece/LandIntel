@@ -32,6 +32,9 @@ alter table landintel.canonical_site_refresh_queue
             'os_boundary_line',
             'os_open_names',
             'os_open_greenspace',
+            'os_open_zoomstack',
+            'os_open_toid',
+            'os_open_built_up_areas',
             'os_open_uprn',
             'os_open_usrn',
             'osm',
@@ -92,12 +95,15 @@ with expected_sources(priority_rank, source_family, command_name, target_table, 
         (37, 'os_boundary_line', 'ingest-os-boundary-line', 'landintel.source_estate_registry', 'administrative_geography'),
         (38, 'os_open_names', 'ingest-os-open-names', 'landintel.source_estate_registry', 'location_naming'),
         (39, 'os_open_greenspace', 'ingest-os-open-greenspace', 'landintel.source_estate_registry', 'amenities'),
-        (40, 'os_open_uprn', 'ingest-os-open-uprn', 'landintel.source_estate_registry', 'address_context'),
-        (41, 'os_open_usrn', 'ingest-os-open-usrn', 'landintel.source_estate_registry', 'access_context'),
-        (42, 'osm', 'ingest-osm-overpass', 'landintel.source_estate_registry', 'open_context'),
-        (43, 'naptan', 'ingest-naptan', 'landintel.source_estate_registry', 'amenities'),
-        (44, 'statistics_gov_scot', 'ingest-statistics-gov-scot', 'landintel.source_estate_registry', 'demographics'),
-        (45, 'opentopography_srtm', 'ingest-opentopography-srtm', 'landintel.source_estate_registry', 'terrain_fallback')
+        (40, 'os_open_zoomstack', 'ingest-os-open-zoomstack', 'landintel.source_estate_registry', 'base_geometry'),
+        (41, 'os_open_toid', 'ingest-os-open-toid', 'landintel.source_estate_registry', 'address_context'),
+        (42, 'os_open_built_up_areas', 'ingest-os-open-built-up-areas', 'landintel.source_estate_registry', 'settlement_context'),
+        (43, 'os_open_uprn', 'ingest-os-open-uprn', 'landintel.source_estate_registry', 'address_context'),
+        (44, 'os_open_usrn', 'ingest-os-open-usrn', 'landintel.source_estate_registry', 'access_context'),
+        (45, 'osm', 'ingest-osm-overpass', 'landintel.source_estate_registry', 'open_context'),
+        (46, 'naptan', 'ingest-naptan', 'landintel.source_estate_registry', 'amenities'),
+        (47, 'statistics_gov_scot', 'ingest-statistics-gov-scot', 'landintel.source_estate_registry', 'demographics'),
+        (48, 'opentopography_srtm', 'ingest-opentopography-srtm', 'landintel.source_estate_registry', 'terrain_fallback')
 ), raw_counts as (
     select 'title_number'::text as source_family, count(*)::bigint as raw_row_count from public.site_title_validation
     union all

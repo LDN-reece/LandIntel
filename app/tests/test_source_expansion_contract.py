@@ -48,6 +48,9 @@ class SourceExpansionContractTests(unittest.TestCase):
             "ingest-os-boundary-line",
             "ingest-os-open-names",
             "ingest-os-open-greenspace",
+            "ingest-os-open-zoomstack",
+            "ingest-os-open-toid",
+            "ingest-os-open-built-up-areas",
             "ingest-os-open-uprn",
             "ingest-os-open-usrn",
             "ingest-osm-overpass",
@@ -254,6 +257,9 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("https://naptan.api.dft.gov.uk/swagger/v1/swagger.json", RUNNER)
         self.assertIn("https://statistics.gov.scot/sparql", RUNNER)
         self.assertIn("https://portal.opentopography.org/API/globaldem", RUNNER)
+        self.assertIn("OpenZoomstack", RUNNER)
+        self.assertIn("OpenTOID", RUNNER)
+        self.assertIn("OpenBuiltUpAreas", RUNNER)
         self.assertIn("SRTMGL1", RUNNER)
         self.assertIn("_secret_value_is_api_key", RUNNER)
         self.assertIn("_os_downloads_product_endpoint", RUNNER)

@@ -605,3 +605,289 @@ sources:
     max_staleness_days: 7
     limitation_notes: News ingestion requires source rights, deduplication and attribution control.
     next_action: Register approved sources before ingest.
+
+  - source_key: os_open_zoomstack
+    module_key: open_location_spine
+    source_family: base_geometry
+    source_name: OS Open Zoomstack
+    source_group: base_geometry
+    geography: Great Britain
+    endpoint_url: https://osdatahub.os.uk/downloads/open/OpenZoomstack
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.source_estate_registry
+    orchestration_mode: os_downloads_metadata_then_bulk_adapter
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Product metadata is accessible; bulk vector features have not yet landed.
+    next_action: Use OS Downloads proof, then add a bounded bulk vector adapter for base geometry context.
+
+  - source_key: os_open_toid
+    module_key: address_property_base
+    source_family: address_property_base
+    source_name: OS Open TOID
+    source_group: address_context
+    geography: Great Britain
+    endpoint_url: https://osdatahub.os.uk/downloads/open/OpenTOID
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: public.land_object_toid_enrichment
+    orchestration_mode: os_downloads_metadata_then_identifier_adapter
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: TOID metadata is accessible; site-to-TOID enrichment has not yet landed.
+    next_action: Add controlled identifier matching after Open UPRN and Open USRN context is stable.
+
+  - source_key: os_open_built_up_areas
+    module_key: open_location_spine
+    source_family: settlement_context
+    source_name: OS Open Built Up Areas
+    source_group: settlement_context
+    geography: Great Britain
+    endpoint_url: https://www.ordnancesurvey.co.uk/products/os-open-built-up-areas
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.source_estate_registry
+    orchestration_mode: os_downloads_metadata_then_boundary_adapter
+    refresh_cadence: annual
+    max_staleness_days: 365
+    limitation_notes: Built-up area product metadata is accessible; settlement context polygons have not yet landed.
+    next_action: Add bulk polygon adapter and compare with live settlement boundary evidence.
+
+  - source_key: overture_buildings_open
+    module_key: address_property_base
+    source_family: address_property_base
+    source_name: Overture Maps buildings
+    source_group: property_base_layer
+    geography: Global
+    endpoint_url: https://docs.overturemaps.org/guides/buildings/
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.source_estate_registry
+    orchestration_mode: overture_geoparquet_adapter_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Open release is accessible; Scotland clip and building linkage adapter has not yet landed.
+    next_action: Add bounded GeoParquet release adapter before generating building footprint facts.
+
+  - source_key: overture_places_open
+    module_key: amenities
+    source_family: amenities
+    source_name: Overture Maps places
+    source_group: location_strength
+    geography: Global
+    endpoint_url: https://docs.overturemaps.org/guides/places/
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.amenity_assets
+    orchestration_mode: overture_geoparquet_adapter_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Open release is accessible; place assets have not yet landed.
+    next_action: Add Scotland clipped places adapter and keep Overture as contextual location evidence.
+
+  - source_key: overture_transportation_open
+    module_key: open_location_spine
+    source_family: access_context
+    source_name: Overture Maps transportation
+    source_group: access_context
+    geography: Global
+    endpoint_url: https://docs.overturemaps.org/guides/transportation/
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.source_estate_registry
+    orchestration_mode: overture_geoparquet_adapter_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Open release is accessible; transport network context has not yet landed.
+    next_action: Add Scotland clip only after OS Open Roads and OSM access context are stable.
+
+  - source_key: overture_base_open
+    module_key: open_location_spine
+    source_family: base_geometry
+    source_name: Overture Maps base
+    source_group: base_geometry
+    geography: Global
+    endpoint_url: https://docs.overturemaps.org/guides/base/
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.source_estate_registry
+    orchestration_mode: overture_geoparquet_adapter_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Open release is accessible; base feature assets have not yet landed.
+    next_action: Use as contextual enrichment only after official OS open base layers are proven.
+
+  - source_key: geolytix_supermarket_points
+    module_key: amenities
+    source_family: amenities
+    source_name: Geolytix supermarket retail points
+    source_group: location_strength
+    geography: United Kingdom
+    endpoint_url: https://geolytix.com/blog/supermarket-retail-points/
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.amenity_assets
+    orchestration_mode: controlled_file_download_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Open file source is identified; controlled download and attribution check has not yet landed.
+    next_action: Add file-backed adapter, deduplicate against OSM retail amenities and generate proximity context.
+
+  - source_key: geolytix_bank_points
+    module_key: amenities
+    source_family: amenities
+    source_name: Geolytix bank and building society points
+    source_group: location_strength
+    geography: United Kingdom
+    endpoint_url: https://geolytix.co.uk/blog/banking-building-societies-locations/
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.amenity_assets
+    orchestration_mode: controlled_file_download_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Open file source is identified; controlled download and attribution check has not yet landed.
+    next_action: Add file-backed adapter and generate finance/service amenity proximity context.
+
+  - source_key: retail_centre_boundaries_open
+    module_key: amenities
+    source_family: amenities
+    source_name: Retail Centre Boundaries and Open Indicators
+    source_group: location_strength
+    geography: Great Britain
+    endpoint_url: https://data.geods.ac.uk/dataset/retail-centre-boundaries-and-open-indicators
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.amenity_assets
+    orchestration_mode: ckan_asset_adapter_required
+    refresh_cadence: annual
+    max_staleness_days: 365
+    limitation_notes: Open CKAN source is identified; boundary assets have not yet landed.
+    next_action: Add CKAN resource adapter and convert centre boundaries into service strength facts.
+
+  - source_key: nls_historic_os_maps
+    module_key: local_intelligence
+    source_family: historic_context
+    source_name: National Library of Scotland historic OS maps catalogue
+    source_group: local_intelligence
+    geography: Scotland
+    endpoint_url: https://maps.nls.uk/geo/find/
+    access_status: gated
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.source_estate_registry
+    orchestration_mode: catalogue_adapter_required
+    refresh_cadence: annual
+    max_staleness_days: 365
+    limitation_notes: Historic map catalogue needs a source URL preserving adapter before site facts are generated.
+    next_action: Use only for manual context until a bounded catalogue and citation workflow is proven.
+
+  - source_key: forest_research_trees_outside_woodland
+    module_key: constraints
+    source_family: environmental_context
+    source_name: Forest Research Trees Outside Woodland map
+    source_group: ecology
+    geography: England
+    endpoint_url: https://www.forestresearch.gov.uk/tools-and-resources/fthr/trees-outside-woodland-map/
+    access_status: gated
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: public.constraint_source_features
+    orchestration_mode: not_scotland_phase_one
+    refresh_cadence: annual
+    max_staleness_days: 365
+    limitation_notes: Dataset is England focused in the Catalyst catalogue and is gated for Scotland-first review.
+    next_action: Exclude from Scotland review outputs unless Scotland or GB coverage is confirmed.
+
+  - source_key: meta_tree_canopy_height
+    module_key: constraints
+    source_family: environmental_context
+    source_name: WRI and Meta Tree Canopy Height map
+    source_group: ecology
+    geography: Global
+    endpoint_url: https://registry.opendata.aws/dataforgood-fb-forests/
+    access_status: gated
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: public.constraint_source_features
+    orchestration_mode: raster_adapter_required
+    refresh_cadence: annual
+    max_staleness_days: 365
+    limitation_notes: Raster source needs licensing, processing and Scotland clipping checks before review use.
+    next_action: Defer until core Scottish ecology and constraint layers are materially covered.

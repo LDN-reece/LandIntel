@@ -60,6 +60,8 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         for module_key in (
             "planning_appeals",
             "planning_decisions",
+            "address_property_base",
+            "open_location_spine",
             "title_control",
             "power_infrastructure",
             "terrain_abnormal",
@@ -85,6 +87,21 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         ):
             self.assertIn(f"- {lifecycle_stage}", MANIFEST)
             self.assertIn(lifecycle_stage, MIGRATION)
+        for catalyst_source in (
+            "source_key: overture_buildings_open",
+            "source_key: overture_places_open",
+            "source_key: overture_transportation_open",
+            "source_key: geolytix_supermarket_points",
+            "source_key: geolytix_bank_points",
+            "source_key: retail_centre_boundaries_open",
+            "source_key: nls_historic_os_maps",
+            "source_key: forest_research_trees_outside_woodland",
+            "source_key: meta_tree_canopy_height",
+            "source_key: os_open_zoomstack",
+            "source_key: os_open_toid",
+            "source_key: os_open_built_up_areas",
+        ):
+            self.assertIn(catalyst_source, MANIFEST)
 
     def test_phase2_schema_creates_required_tables_and_views(self) -> None:
         for table_name in (

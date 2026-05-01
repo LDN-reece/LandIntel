@@ -10,7 +10,11 @@ WORKFLOW = (APP_DIR.parent / ".github" / "workflows" / "run-landintel-sources.ym
 RUNNER = (APP_DIR / "src" / "phase2_source_runner.py").read_text(encoding="utf-8")
 MIGRATION = "\n".join(
     (APP_DIR / "sql" / filename).read_text(encoding="utf-8")
-    for filename in ("051_phase2_source_estate_framework.sql", "052_live_proof_workflow_gates.sql")
+    for filename in (
+        "051_phase2_source_estate_framework.sql",
+        "052_live_proof_workflow_gates.sql",
+        "054_site_prove_it_conviction_layer.sql",
+    )
 )
 MANIFEST = (APP_DIR / "config" / "phase2_source_estate.yaml").read_text(encoding="utf-8")
 CATALOG_SYNC = (APP_DIR / "src" / "source_catalog_sync.py").read_text(encoding="utf-8")
@@ -40,6 +44,8 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "refresh-site-power-context",
             "refresh-site-abnormal-risk",
             "refresh-site-assessments",
+            "refresh-site-prove-it-assessments",
+            "audit-site-prove-it-assessments",
             "audit-full-source-estate",
         ):
             self.assertIn(f"- {command}", WORKFLOW)
@@ -81,6 +87,7 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "planning_documents",
             "local_intelligence",
             "site_assessment",
+            "site_conviction",
         ):
             self.assertIn(f"module_key: {module_key}", MANIFEST)
         for lifecycle_stage in (
@@ -159,6 +166,7 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "landintel.intelligence_event_records",
             "landintel.site_intelligence_links",
             "landintel.settlement_intelligence_links",
+            "landintel.site_prove_it_assessments",
         ):
             self.assertIn(table_name, MIGRATION)
         for view_name in (
@@ -178,6 +186,8 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "analytics.v_site_planning_document_context",
             "analytics.v_site_intelligence_events",
             "analytics.v_site_assessment_context",
+            "analytics.v_site_prove_it_coverage",
+            "analytics.v_site_prove_it_assessments",
             "analytics.v_landintel_source_estate_matrix",
             "analytics.v_landintel_source_lifecycle_stage_counts",
         ):
@@ -219,6 +229,33 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             live_gate,
         )
         self.assertIn("source_scope_key like 'source_expansion:%%'", live_gate)
+
+    def test_prove_it_conviction_layer_gates_review_and_pursuit(self) -> None:
+        self.assertIn("source_key: prove_it_conviction_layer", MANIFEST)
+        self.assertIn("create table if not exists landintel.site_prove_it_assessments", MIGRATION)
+        self.assertIn("site_prove_it_assessments_review_ready_check", MIGRATION)
+        self.assertIn("site_prove_it_assessments_pursue_gate_check", MIGRATION)
+        self.assertIn(
+            "union all select source_key, source_family, count(*)::bigint from landintel.site_prove_it_assessments",
+            MIGRATION,
+        )
+        self.assertIn(
+            "union all select source_key, source_family, canonical_site_id from landintel.site_prove_it_assessments",
+            MIGRATION,
+        )
+        self.assertIn("where review_ready_flag = true", MIGRATION)
+        self.assertIn("jsonb_array_length(proof_points) > 0", MIGRATION)
+        self.assertIn("cardinality(prove_it_drivers) > 0", MIGRATION)
+        self.assertIn("cardinality(top_warnings) > 0", MIGRATION)
+        self.assertIn("cardinality(missing_critical_evidence) > 0", MIGRATION)
+        self.assertIn("title_spend_recommendation is not null", MIGRATION)
+        self.assertIn("planning_journey_type is distinct from 'no_clear_journey'", MIGRATION)
+        self.assertIn("constraint_position is distinct from 'terminal'", MIGRATION)
+        self.assertIn("control_position is distinct from 'known_blocked'", MIGRATION)
+        self.assertIn("def refresh_site_prove_it_assessments", RUNNER)
+        self.assertIn("def audit_site_prove_it_assessments", RUNNER)
+        self.assertIn("analytics.v_site_prove_it_coverage", RUNNER)
+        self.assertIn("prove_it_coverage", RUNNER)
 
     def test_source_catalog_sync_uses_upserts_without_reload_deletes(self) -> None:
         self.assertNotIn("delete from landintel.source_endpoint_catalog", CATALOG_SYNC)

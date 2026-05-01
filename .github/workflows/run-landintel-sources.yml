@@ -58,6 +58,8 @@ on:
           - refresh-site-power-context
           - refresh-site-abnormal-risk
           - refresh-site-assessments
+          - refresh-site-prove-it-assessments
+          - audit-site-prove-it-assessments
           - audit-full-source-estate
           - discover-ldp-sources
           - discover-settlement-sources
@@ -304,7 +306,7 @@ jobs:
           fi
           echo "SELECTED_COMMAND=${selected_command}" >> "$GITHUB_ENV"
           case "$selected_command" in
-            validate-only|run-migrations|sync-source-catalog|audit-source-footprint|audit-source-freshness|register-source-estate|probe-source-estate|audit-source-estate|process-reconcile-queue|reconcile-catchup-scan|refresh-affected-sites|weekly-reconcile-maintenance|discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|audit-full-source-estate|refresh-planning-decisions|audit-planning-decisions|refresh-title-readiness|refresh-title-reviews|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|refresh-site-assessments|ingest-companies-house|ingest-fca-entities)
+            validate-only|run-migrations|sync-source-catalog|audit-source-footprint|audit-source-freshness|register-source-estate|probe-source-estate|audit-source-estate|process-reconcile-queue|reconcile-catchup-scan|refresh-affected-sites|weekly-reconcile-maintenance|discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|audit-full-source-estate|refresh-planning-decisions|audit-planning-decisions|refresh-title-readiness|refresh-title-reviews|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|refresh-site-assessments|refresh-site-prove-it-assessments|audit-site-prove-it-assessments|ingest-companies-house|ingest-fca-entities)
               system_package_profile="minimal"
               ;;
             *)
@@ -377,7 +379,7 @@ jobs:
 
           is_phase2_command() {
             case "$1" in
-              discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|ingest-companies-house|ingest-fca-entities|refresh-title-reviews|refresh-planning-decisions|audit-planning-decisions|refresh-title-readiness|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|refresh-site-assessments|audit-full-source-estate)
+              discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|ingest-companies-house|ingest-fca-entities|refresh-title-reviews|refresh-planning-decisions|audit-planning-decisions|refresh-title-readiness|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|refresh-site-assessments|refresh-site-prove-it-assessments|audit-site-prove-it-assessments|audit-full-source-estate)
                 return 0
                 ;;
               *)

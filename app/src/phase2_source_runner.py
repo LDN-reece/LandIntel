@@ -57,6 +57,8 @@ PHASE2_COMMANDS = (
     "refresh-site-power-context",
     "refresh-site-abnormal-risk",
     "refresh-site-assessments",
+    "refresh-site-prove-it-assessments",
+    "audit-site-prove-it-assessments",
     "audit-full-source-estate",
 )
 
@@ -78,6 +80,7 @@ REFRESH_COMMAND_FAMILIES = {
     "refresh-site-power-context": "power_infrastructure",
     "refresh-site-abnormal-risk": "terrain_abnormal",
     "refresh-site-assessments": "site_assessment",
+    "refresh-site-prove-it-assessments": "site_conviction",
 }
 
 LIFECYCLE_STAGES = (
@@ -210,6 +213,10 @@ class Phase2SourceRunner:
             result = self.refresh_site_abnormal_risk()
         elif command == "refresh-site-assessments":
             result = self.refresh_site_assessments()
+        elif command == "refresh-site-prove-it-assessments":
+            result = self.refresh_site_prove_it_assessments()
+        elif command == "audit-site-prove-it-assessments":
+            result = self.audit_site_prove_it_assessments()
         elif command == "refresh-site-market-context":
             result = self.ingest_market_context()
         elif command == "refresh-site-amenity-context":
@@ -4045,6 +4052,728 @@ class Phase2SourceRunner:
         self._record_family_freshness("site_assessment", "Site assessment refresh engine", int(proof.get("assessment_row_count") or 0))
         return {"source_family": "site_assessment", **proof}
 
+    def refresh_site_prove_it_assessments(self) -> dict[str, Any]:
+        selected_sources = self._selected_sources(source_family="site_conviction")
+        if not self.dry_run and not self.audit_only:
+            for source in selected_sources:
+                self._upsert_source(source)
+
+        if self.dry_run or self.audit_only:
+            candidate_count = self.database.scalar(
+                """
+                select count(*)::bigint
+                from landintel.canonical_sites as site
+                where (:authority_name = '' or site.authority_name ilike :authority_name_like)
+                """,
+                {
+                    "authority_name": self.authority_filter,
+                    "authority_name_like": f"%{self.authority_filter}%",
+                },
+            )
+            return {
+                "source_family": "site_conviction",
+                "candidate_site_count": int(candidate_count or 0),
+                "dry_run": self.dry_run,
+                "audit_only": self.audit_only,
+            }
+
+        proof = self.database.fetch_one(
+            """
+            with selected_sites as (
+                select
+                    site.id as canonical_site_id,
+                    site.site_name_primary,
+                    site.authority_name,
+                    site.surfaced_reason,
+                    title.title_required_flag,
+                    title.title_review_status,
+                    title.title_order_status,
+                    title.control_signal_summary,
+                    title.planning_applicant_signal,
+                    review_row.ownership_outcome,
+                    planning.latest_decision_status,
+                    planning.approved_count,
+                    planning.refused_count,
+                    planning.withdrawn_count,
+                    planning.live_count,
+                    planning.decision_record_count,
+                    hla.hla_count,
+                    hla.remaining_capacity,
+                    ldp.ldp_count,
+                    ela.ela_count,
+                    vdl.vdl_count,
+                    constraints.constraint_count,
+                    constraints.constraint_group_count,
+                    constraints.max_overlap_pct_of_site,
+                    constraints.constraint_character,
+                    constraints.flood_constraint_present,
+                    constraints.mining_constraint_present,
+                    constraints.central_constraint_present,
+                    ground.boreholes_within_500m,
+                    ground.flood_constraint_present as ground_flood_present,
+                    ground.mining_constraint_present as ground_mining_present,
+                    market.id is not null as market_context_present,
+                    market.market_confidence_tier,
+                    amenity.amenity_context_count,
+                    open_location.open_location_context_count,
+                    demographic.id is not null as demographic_context_present,
+                    control.ownership_control_signal_count,
+                    control.builder_control_signal_present,
+                    control.local_control_signal_present,
+                    known_control.known_control_count,
+                    existing.source_record_signature as previous_signature
+                from landintel.canonical_sites as site
+                left join landintel.title_order_workflow as title on title.canonical_site_id = site.id
+                left join lateral (
+                    select *
+                    from landintel.title_review_records as title_review
+                    where title_review.canonical_site_id = site.id
+                    order by title_review.review_date desc nulls last, title_review.updated_at desc
+                    limit 1
+                ) as review_row on true
+                left join landintel.site_planning_decision_context as planning on planning.canonical_site_id = site.id
+                left join lateral (
+                    select
+                        count(*)::integer as hla_count,
+                        coalesce(sum(remaining_capacity), 0)::integer as remaining_capacity
+                    from landintel.hla_site_records as record
+                    where record.canonical_site_id = site.id
+                ) as hla on true
+                left join lateral (
+                    select count(*)::integer as ldp_count
+                    from landintel.ldp_site_records as record
+                    where record.canonical_site_id = site.id
+                ) as ldp on true
+                left join lateral (
+                    select count(*)::integer as ela_count
+                    from landintel.ela_site_records as record
+                    where record.canonical_site_id = site.id
+                ) as ela on true
+                left join lateral (
+                    select count(*)::integer as vdl_count
+                    from landintel.vdl_site_records as record
+                    where record.canonical_site_id = site.id
+                ) as vdl on true
+                left join lateral (
+                    select
+                        count(*)::integer as constraint_count,
+                        count(distinct constraint_group)::integer as constraint_group_count,
+                        coalesce(max(max_overlap_pct_of_site), 0) as max_overlap_pct_of_site,
+                        (array_agg(constraint_character order by max_overlap_pct_of_site desc nulls last))[1] as constraint_character,
+                        bool_or(constraint_group ilike '%flood%') as flood_constraint_present,
+                        bool_or(constraint_group ilike '%coal%' or constraint_group ilike '%mining%') as mining_constraint_present,
+                        bool_or(
+                            coalesce(max_overlap_pct_of_site, 0) >= 25
+                            and constraint_character = any(array['central', 'core-based']::text[])
+                        ) as central_constraint_present
+                    from public.site_constraint_group_summaries as summary
+                    where summary.site_id = site.id::text
+                ) as constraints on true
+                left join landintel.site_ground_risk_context as ground on ground.canonical_site_id = site.id
+                left join landintel.site_market_context as market on market.canonical_site_id = site.id
+                left join lateral (
+                    select count(*)::integer as amenity_context_count
+                    from landintel.site_amenity_context as amenity_row
+                    where amenity_row.canonical_site_id = site.id
+                ) as amenity on true
+                left join lateral (
+                    select count(*)::integer as open_location_context_count
+                    from landintel.site_open_location_spine_context as context
+                    where context.canonical_site_id = site.id
+                ) as open_location on true
+                left join landintel.site_demographic_context as demographic on demographic.canonical_site_id = site.id
+                left join lateral (
+                    select
+                        count(*)::integer as ownership_control_signal_count,
+                        bool_or(
+                            coalesce(signal_label, '') ilike any(array['%miller%', '%persimmon%', '%barratt%', '%bellway%', '%cala%', '%taylor wimpey%', '%housebuilder%', '%promoter%'])
+                            or coalesce(signal_value_text, '') ilike any(array['%miller%', '%persimmon%', '%barratt%', '%bellway%', '%cala%', '%taylor wimpey%', '%housebuilder%', '%promoter%'])
+                        ) as builder_control_signal_present,
+                        bool_or(
+                            coalesce(signal_label, '') ilike any(array['%local%', '%private company%', '%trading company%'])
+                            or coalesce(signal_value_text, '') ilike any(array['%local%', '%private company%', '%trading company%'])
+                        ) as local_control_signal_present
+                    from landintel.ownership_control_signals as signal
+                    where signal.canonical_site_id = site.id
+                ) as control on true
+                left join lateral (
+                    select count(*)::integer as known_control_count
+                    from landintel.known_controlled_sites as controlled
+                    where controlled.canonical_site_id = site.id
+                ) as known_control on true
+                left join landintel.site_prove_it_assessments as existing
+                  on existing.canonical_site_id = site.id
+                 and existing.source_key = 'prove_it_conviction_layer'
+                 and existing.assessment_version = 1
+                where (:authority_name = '' or site.authority_name ilike :authority_name_like)
+                order by existing.updated_at nulls first, site.updated_at desc nulls last, site.id
+                limit :batch_size
+            ),
+            classified as (
+                select
+                    selected_sites.*,
+                    case
+                        when coalesce(hla_count, 0) > 0 or coalesce(ldp_count, 0) > 0 then 'allocated_or_recognised'
+                        when coalesce(approved_count, 0) > 0 then 'adjacent_precedent'
+                        when coalesce(refused_count, 0) > 0 then 'refusal_repair'
+                        when coalesce(vdl_count, 0) > 0 then 'brownfield_regeneration'
+                        when coalesce(live_count, 0) > 0 then 'policy_momentum'
+                        else 'no_clear_journey'
+                    end as planning_journey_type,
+                    case
+                        when coalesce(constraint_count, 0) = 0 then 'unknown'
+                        when coalesce(max_overlap_pct_of_site, 0) >= 95
+                         and constraint_character = any(array['central', 'core-based']::text[]) then 'terminal'
+                        when coalesce(central_constraint_present, false)
+                          or coalesce(flood_constraint_present, false)
+                          or coalesce(mining_constraint_present, false)
+                          or coalesce(ground_flood_present, false)
+                          or coalesce(ground_mining_present, false) then 'major_review'
+                        when constraint_character = any(array['edge-based', 'linear', 'fragmented']::text[]) then 'priceable_design_led'
+                        else 'context_only'
+                    end as constraint_position,
+                    case
+                        when market_context_present and coalesce(market_confidence_tier, '') ilike '%high%' then 'strong'
+                        when market_context_present
+                          or coalesce(approved_count, 0) > 0
+                          or coalesce(hla_count, 0) > 0 then 'credible'
+                        when coalesce(approved_count, 0) = 0
+                         and coalesce(live_count, 0) = 0
+                         and not market_context_present then 'weak'
+                        else 'unproven'
+                    end as market_position,
+                    case
+                        when coalesce(known_control_count, 0) > 0
+                          or coalesce(ownership_outcome, '') ilike '%controlled%' then 'known_blocked'
+                        when coalesce(builder_control_signal_present, false) then 'likely_controlled_by_housebuilder_promoter'
+                        when title_review_status = 'reviewed' then 'known_and_attractive'
+                        when coalesce(local_control_signal_present, false) then 'likely_local_trading_company'
+                        when coalesce(hla_count, 0) > 0
+                          or coalesce(ldp_count, 0) > 0
+                          or coalesce(approved_count, 0) > 0
+                          or market_context_present then 'unknown_but_worth_title_spend'
+                        when coalesce(title_required_flag, true) then 'unknown_not_worth_title_spend'
+                        else 'ownership_not_confirmed'
+                    end as control_position
+                from selected_sites
+            ),
+            drivered as (
+                select
+                    classified.*,
+                    array_remove(array[
+                        case when planning_journey_type is distinct from 'no_clear_journey' then 'planning_angle' end,
+                        case when coalesce(vdl_count, 0) > 0 or coalesce(ela_count, 0) > 0 then 'mispricing_or_overlooked_angle' end,
+                        case when control_position = any(array['likely_local_trading_company', 'likely_controlled_by_small_private_company', 'unknown_but_worth_title_spend']::text[]) then 'control_opportunity' end,
+                        case when market_position = any(array['strong', 'credible']::text[]) then 'buyer_angle' end,
+                        case when coalesce(live_count, 0) > 0 or coalesce(approved_count, 0) > 0 then 'timing_angle' end
+                    ]::text[], null) as prove_it_drivers
+                from classified
+            ),
+            proofed as (
+                select
+                    drivered.*,
+                    coalesce((
+                        select jsonb_agg(point order by ord)
+                        from (
+                            values
+                                (1, case when coalesce(hla_count, 0) > 0 then jsonb_build_object('fact', 'Site has HLA evidence', 'source', 'HLA', 'confidence', 'high', 'evidence_type', 'direct') end),
+                                (2, case when coalesce(ldp_count, 0) > 0 then jsonb_build_object('fact', 'Site has LDP allocation or policy evidence', 'source', 'LDP', 'confidence', 'high', 'evidence_type', 'direct') end),
+                                (3, case when coalesce(vdl_count, 0) > 0 then jsonb_build_object('fact', 'Vacant or derelict land evidence exists', 'source', 'VDL', 'confidence', 'medium', 'evidence_type', 'direct') end),
+                                (4, case when coalesce(ela_count, 0) > 0 then jsonb_build_object('fact', 'Employment land evidence exists', 'source', 'ELA', 'confidence', 'medium', 'evidence_type', 'direct') end),
+                                (5, case when coalesce(approved_count, 0) > 0 then jsonb_build_object('fact', coalesce(approved_count, 0)::text || ' approval record(s) linked to this site context', 'source', 'Planning records', 'confidence', 'medium', 'evidence_type', 'direct') end),
+                                (6, case when coalesce(refused_count, 0) > 0 then jsonb_build_object('fact', coalesce(refused_count, 0)::text || ' refusal record(s) linked to this site context', 'source', 'Planning records', 'confidence', 'medium', 'evidence_type', 'direct') end),
+                                (7, case when coalesce(live_count, 0) > 0 then jsonb_build_object('fact', coalesce(live_count, 0)::text || ' live planning record(s) linked to this site context', 'source', 'Planning records', 'confidence', 'medium', 'evidence_type', 'direct') end),
+                                (8, case when coalesce(constraint_count, 0) > 0 then jsonb_build_object('fact', coalesce(constraint_count, 0)::text || ' measured constraint summary row(s)', 'source', 'Constraint measurements', 'confidence', 'high', 'evidence_type', 'direct') end),
+                                (9, case when coalesce(flood_constraint_present, false) or coalesce(ground_flood_present, false) then jsonb_build_object('fact', 'Flood evidence is present in measured constraints or abnormal-risk context', 'source', 'SEPA / constraint measurement', 'confidence', 'high', 'evidence_type', 'direct') end),
+                                (10, case when coalesce(mining_constraint_present, false) or coalesce(ground_mining_present, false) then jsonb_build_object('fact', 'Mining or coal evidence is present', 'source', 'Coal Authority / constraint measurement', 'confidence', 'high', 'evidence_type', 'direct') end),
+                                (11, case when market_context_present then jsonb_build_object('fact', 'Market context exists for this site', 'source', 'Market context engine', 'confidence', 'medium', 'evidence_type', 'contextual') end),
+                                (12, case when coalesce(amenity_context_count, 0) + coalesce(open_location_context_count, 0) > 0 then jsonb_build_object('fact', 'Location and amenity context exists', 'source', 'Amenities / open location spine', 'confidence', 'medium', 'evidence_type', 'contextual') end),
+                                (13, case when demographic_context_present then jsonb_build_object('fact', 'Demographic context exists', 'source', 'Demographics engine', 'confidence', 'medium', 'evidence_type', 'contextual') end),
+                                (14, case when coalesce(title_required_flag, true) then jsonb_build_object('fact', 'Ownership is not confirmed before title review', 'source', 'Title readiness workflow', 'confidence', 'high', 'evidence_type', 'direct') end),
+                                (15, case when coalesce(ownership_control_signal_count, 0) > 0 then jsonb_build_object('fact', coalesce(ownership_control_signal_count, 0)::text || ' ownership/control signal(s) exist', 'source', 'Title/control workflow', 'confidence', 'medium', 'evidence_type', 'inferred') end)
+                        ) as proof(ord, point)
+                        where point is not null
+                    ), '[]'::jsonb) as proof_points
+                from drivered
+            ),
+            narrated as (
+                select
+                    proofed.*,
+                    case
+                        when jsonb_array_length(proof_points) >= 6
+                         and planning_journey_type is distinct from 'no_clear_journey'
+                         and market_position = any(array['strong', 'credible']::text[])
+                         and constraint_position is distinct from 'terminal' then 'high'
+                        when cardinality(prove_it_drivers) >= 2
+                         and jsonb_array_length(proof_points) >= 4
+                         and planning_journey_type is distinct from 'no_clear_journey' then 'medium'
+                        when jsonb_array_length(proof_points) >= 2 then 'low'
+                        when jsonb_array_length(proof_points) > 0 then 'low'
+                        else 'insufficient'
+                    end as evidence_confidence,
+                    case
+                        when constraint_position = 'terminal' then array['Whole-site or central constraint evidence requires review before any spend']
+                        else '{}'::text[]
+                    end
+                    || array_remove(array[
+                        case when coalesce(title_required_flag, true) then 'Ownership not confirmed' end,
+                        case when control_position = 'likely_controlled_by_housebuilder_promoter' then 'Likely housebuilder/promoter control signal' end,
+                        case when constraint_position = 'major_review' then 'Major constraint review required' end,
+                        case when planning_journey_type = 'no_clear_journey' then 'Planning journey is not clear' end,
+                        case when market_position = any(array['weak', 'unproven']::text[]) then 'Buyer or market evidence is not proven' end
+                    ]::text[], null) as warning_candidates,
+                    array_remove(array[
+                        case when coalesce(title_review_status, 'not_reviewed') is distinct from 'reviewed' then 'Title not reviewed' end,
+                        case when coalesce(decision_record_count, 0) = 0 then 'Planning decision evidence not reviewed' end,
+                        case when coalesce(constraint_count, 0) = 0 then 'Measured constraints missing' end,
+                        case when not market_context_present then 'Buyer or market appetite evidence missing' end,
+                        case when not demographic_context_present then 'Demographic context missing' end
+                    ]::text[], null) as gap_candidates,
+                    array_remove(array[
+                        case when planning_journey_type = 'allocated_or_recognised' then 'Planning journey exists through allocation or HLA/LDP recognition' end,
+                        case when planning_journey_type = 'adjacent_precedent' then 'Residential precedent or planning approval evidence exists' end,
+                        case when planning_journey_type = 'brownfield_regeneration' then 'Brownfield or vacant-land angle exists' end,
+                        case when market_position = any(array['strong', 'credible']::text[]) then 'Buyer or market context exists' end,
+                        case when control_position = any(array['likely_local_trading_company', 'unknown_but_worth_title_spend']::text[]) then 'Control route may justify title spend' end,
+                        case when constraint_position = 'priceable_design_led' then 'Measured constraint appears design-led rather than central' end
+                    ]::text[], null) as positive_candidates
+                from proofed
+            ),
+            finalised as (
+                select
+                    narrated.*,
+                    case
+                        when cardinality(positive_candidates) = 0 then '{}'::text[]
+                        else positive_candidates[1:3]
+                    end as top_positives,
+                    case
+                        when cardinality(warning_candidates) = 0 then array['No major warning identified yet']
+                        else warning_candidates[1:3]
+                    end as top_warnings,
+                    case
+                        when cardinality(gap_candidates) = 0 then array['No decision-critical evidence gap identified yet']
+                        else gap_candidates[1:3]
+                    end as missing_critical_evidence,
+                    case
+                        when constraint_position = 'terminal'
+                          or cardinality(prove_it_drivers) = 0
+                          or jsonb_array_length(proof_points) = 0 then 'ignore'
+                        when planning_journey_type is distinct from 'no_clear_journey'
+                         and market_position = any(array['strong', 'credible']::text[])
+                         and control_position <> all(array['known_blocked', 'likely_controlled_by_housebuilder_promoter']::text[])
+                         and constraint_position <> all(array['terminal', 'major_review']::text[])
+                         and evidence_confidence = any(array['high', 'medium']::text[]) then 'pursue'
+                        when planning_journey_type is distinct from 'no_clear_journey'
+                          or market_position = 'credible'
+                          or control_position = 'unknown_but_worth_title_spend' then 'review'
+                        else 'monitor'
+                    end as verdict
+                from narrated
+            ),
+            actioned as (
+                select
+                    finalised.*,
+                    case
+                        when verdict = 'ignore'
+                          or constraint_position = 'terminal'
+                          or (planning_journey_type = 'no_clear_journey' and market_position = 'weak') then 'do_not_order'
+                        when verdict = 'pursue'
+                         and coalesce(title_review_status, 'not_reviewed') is distinct from 'reviewed'
+                         and control_position = 'unknown_but_worth_title_spend' then 'order_title_urgently'
+                        when verdict = any(array['review', 'pursue']::text[])
+                         and coalesce(title_review_status, 'not_reviewed') is distinct from 'reviewed'
+                         and evidence_confidence = any(array['high', 'medium']::text[])
+                         and constraint_position <> 'major_review' then 'order_title'
+                        else 'manual_review_before_order'
+                    end as title_spend_recommendation,
+                    case
+                        when verdict = 'ignore' then 'Do not spend title money until a planning, control, timing or buyer angle appears.'
+                        when constraint_position = 'major_review' then 'Constraint interpretation should happen before title spend.'
+                        when coalesce(title_review_status, 'not_reviewed') = 'reviewed' then 'Title has already been reviewed; use reviewed ownership evidence.'
+                        when control_position = 'unknown_but_worth_title_spend' then 'Ownership is unknown and would materially affect the next commercial decision.'
+                        else 'Manual review should confirm whether title spend is justified.'
+                    end as title_spend_reason,
+                    case
+                        when verdict = 'pursue' and title_spend_recommendation = 'order_title_urgently' then 'Order title urgently.'
+                        when title_spend_recommendation = 'order_title' then 'Order title.'
+                        when constraint_position = 'major_review' then 'Run constraint review before title spend.'
+                        when planning_journey_type is distinct from 'no_clear_journey' then 'Review planning documents before title spend.'
+                        when verdict = 'monitor' then 'Monitor only. Do not spend time or title money yet.'
+                        else 'Ignore until new evidence appears.'
+                    end as review_next_action
+                from finalised
+            ),
+            completed as (
+                select
+                    actioned.*,
+                    case
+                        when verdict = 'ignore' then
+                            'This is not currently an opportunity because current evidence does not justify LDN spending the next pound or hour.'
+                        when verdict = 'monitor' then
+                            'This site is worth monitoring because it has weak or incomplete evidence, but not enough to justify active LDN time yet.'
+                        when verdict = 'review' then
+                            'This site is worth LDN review because it has a credible evidence thread, but key commercial gaps still need testing.'
+                        else
+                            'This site is worth LDN attention because planning, market and control evidence may justify active pursuit.'
+                    end as claim_statement,
+                    concat_ws(
+                        ' ',
+                        case
+                            when planning_journey_type = 'allocated_or_recognised' then 'Planning evidence suggests the site is already recognised in policy or supply data.'
+                            when planning_journey_type = 'adjacent_precedent' then 'Planning evidence suggests residential development is not alien to this location.'
+                            when planning_journey_type = 'refusal_repair' then 'Planning evidence is mixed; refusal reasons need review before spend.'
+                            when planning_journey_type = 'brownfield_regeneration' then 'The site may be an overlooked regeneration lead rather than a standard greenfield search result.'
+                            when planning_journey_type = 'policy_momentum' then 'Live planning activity creates a timing reason to keep the site under review.'
+                            else 'No clear planning journey is proven yet.'
+                        end,
+                        case
+                            when constraint_position = 'terminal' then 'Constraint evidence may prevent a commercial route unless specialist review changes that view.'
+                            when constraint_position = 'major_review' then 'Constraints need interpretation before LDN spends on ownership.'
+                            when constraint_position = 'priceable_design_led' then 'Measured constraints appear more likely to affect layout or pricing than remove the whole opportunity.'
+                            when constraint_position = 'context_only' then 'Constraint evidence is present but currently looks contextual.'
+                            else 'Constraint evidence is not yet strong enough to interpret.'
+                        end,
+                        case
+                            when control_position = 'likely_controlled_by_housebuilder_promoter' then 'Control evidence weakens the opportunity because a housebuilder or promoter signal is present.'
+                            when control_position = 'unknown_but_worth_title_spend' then 'Ownership is unknown, but current evidence may justify targeted title spend.'
+                            when control_position = 'likely_local_trading_company' then 'A local company signal may support a direct-to-owner control route.'
+                            else 'Ownership remains a controlled evidence gap.'
+                        end,
+                        case
+                            when market_position = any(array['strong', 'credible']::text[]) then 'Market context gives a possible exit argument, but buyer demand is not treated as certain.'
+                            else 'Buyer demand is not yet proven.'
+                        end
+                    ) as interpretation_text,
+                    (
+                        verdict = any(array['review', 'pursue']::text[])
+                        and cardinality(prove_it_drivers) > 0
+                        and jsonb_array_length(proof_points) > 0
+                        and title_spend_recommendation is not null
+                        and review_next_action is not null
+                    ) as review_ready_flag,
+                    md5(concat_ws(
+                        '|',
+                        canonical_site_id::text,
+                        verdict,
+                        title_spend_recommendation,
+                        planning_journey_type,
+                        constraint_position,
+                        market_position,
+                        control_position,
+                        evidence_confidence,
+                        prove_it_drivers::text,
+                        proof_points::text,
+                        top_warnings::text,
+                        missing_critical_evidence::text,
+                        review_next_action
+                    )) as current_signature
+                from actioned
+            ),
+            upserted as (
+                insert into landintel.site_prove_it_assessments (
+                    canonical_site_id,
+                    assessment_version,
+                    source_key,
+                    source_family,
+                    claim_statement,
+                    prove_it_drivers,
+                    proof_points,
+                    interpretation_text,
+                    top_positives,
+                    top_warnings,
+                    missing_critical_evidence,
+                    title_spend_recommendation,
+                    title_spend_reason,
+                    constraint_position,
+                    planning_journey_type,
+                    market_position,
+                    control_position,
+                    evidence_confidence,
+                    verdict,
+                    review_next_action,
+                    review_ready_flag,
+                    source_record_signature,
+                    metadata,
+                    updated_at
+                )
+                select
+                    canonical_site_id,
+                    1,
+                    'prove_it_conviction_layer',
+                    'site_conviction',
+                    claim_statement,
+                    prove_it_drivers,
+                    proof_points,
+                    interpretation_text,
+                    top_positives,
+                    top_warnings,
+                    missing_critical_evidence,
+                    title_spend_recommendation,
+                    title_spend_reason,
+                    constraint_position,
+                    planning_journey_type,
+                    market_position,
+                    control_position,
+                    evidence_confidence,
+                    verdict,
+                    review_next_action,
+                    review_ready_flag,
+                    current_signature,
+                    jsonb_build_object(
+                        'source_key', 'prove_it_conviction_layer',
+                        'evidence_standard', 'next_pound_or_hour',
+                        'title_ownership_limitation', 'ownership_not_confirmed_until_title_review',
+                        'site_name', site_name_primary,
+                        'authority_name', authority_name
+                    ),
+                    now()
+                from completed
+                on conflict (canonical_site_id, source_key, assessment_version) do update set
+                    claim_statement = excluded.claim_statement,
+                    prove_it_drivers = excluded.prove_it_drivers,
+                    proof_points = excluded.proof_points,
+                    interpretation_text = excluded.interpretation_text,
+                    top_positives = excluded.top_positives,
+                    top_warnings = excluded.top_warnings,
+                    missing_critical_evidence = excluded.missing_critical_evidence,
+                    title_spend_recommendation = excluded.title_spend_recommendation,
+                    title_spend_reason = excluded.title_spend_reason,
+                    constraint_position = excluded.constraint_position,
+                    planning_journey_type = excluded.planning_journey_type,
+                    market_position = excluded.market_position,
+                    control_position = excluded.control_position,
+                    evidence_confidence = excluded.evidence_confidence,
+                    verdict = excluded.verdict,
+                    review_next_action = excluded.review_next_action,
+                    review_ready_flag = excluded.review_ready_flag,
+                    source_record_signature = excluded.source_record_signature,
+                    metadata = excluded.metadata,
+                    updated_at = now()
+                returning *
+            ),
+            changed as (
+                select upserted.*, completed.previous_signature
+                from upserted
+                join completed on completed.canonical_site_id = upserted.canonical_site_id
+                where completed.previous_signature is distinct from completed.current_signature
+            ),
+            deleted_evidence as (
+                delete from landintel.evidence_references as evidence
+                using changed
+                where evidence.canonical_site_id = changed.canonical_site_id
+                  and evidence.source_family = 'site_conviction'
+                  and evidence.metadata ->> 'source_key' = 'prove_it_conviction_layer'
+                returning evidence.id
+            ),
+            inserted_evidence as (
+                insert into landintel.evidence_references (
+                    canonical_site_id,
+                    source_family,
+                    source_dataset,
+                    source_record_id,
+                    source_reference,
+                    confidence,
+                    metadata
+                )
+                select
+                    changed.canonical_site_id,
+                    'site_conviction',
+                    'LandIntel Prove It conviction layer',
+                    changed.id::text,
+                    changed.verdict,
+                    case
+                        when changed.evidence_confidence = 'high' then 'high'
+                        when changed.evidence_confidence = any(array['medium', 'mixed']::text[]) then 'medium'
+                        else 'low'
+                    end,
+                    jsonb_build_object(
+                        'source_key', 'prove_it_conviction_layer',
+                        'verdict', changed.verdict,
+                        'title_spend_recommendation', changed.title_spend_recommendation,
+                        'prove_it_drivers', changed.prove_it_drivers,
+                        'proof_point_count', jsonb_array_length(changed.proof_points)
+                    )
+                from changed
+                returning id
+            ),
+            deleted_signals as (
+                delete from landintel.site_signals as signal
+                using changed
+                where signal.canonical_site_id = changed.canonical_site_id
+                  and signal.source_family = 'site_conviction'
+                  and signal.metadata ->> 'source_key' = 'prove_it_conviction_layer'
+                returning signal.id
+            ),
+            inserted_signals as (
+                insert into landintel.site_signals (
+                    canonical_site_id,
+                    signal_family,
+                    signal_name,
+                    signal_value_text,
+                    signal_value_numeric,
+                    confidence,
+                    source_family,
+                    source_record_id,
+                    fact_label,
+                    evidence_metadata,
+                    metadata,
+                    current_flag
+                )
+                select
+                    changed.canonical_site_id,
+                    'conviction',
+                    'prove_it_verdict',
+                    changed.verdict,
+                    jsonb_array_length(changed.proof_points),
+                    case
+                        when changed.evidence_confidence = 'high' then 0.85
+                        when changed.evidence_confidence = any(array['medium', 'mixed']::text[]) then 0.65
+                        else 0.35
+                    end,
+                    'site_conviction',
+                    changed.id::text,
+                    'prove_it_conviction_output',
+                    jsonb_build_object('source_key', 'prove_it_conviction_layer'),
+                    jsonb_build_object(
+                        'source_key', 'prove_it_conviction_layer',
+                        'title_spend_recommendation', changed.title_spend_recommendation,
+                        'review_ready_flag', changed.review_ready_flag
+                    ),
+                    true
+                from changed
+                returning id
+            ),
+            inserted_events as (
+                insert into landintel.site_change_events (
+                    canonical_site_id,
+                    source_family,
+                    source_record_id,
+                    change_type,
+                    change_summary,
+                    previous_signature,
+                    current_signature,
+                    triggered_refresh,
+                    metadata
+                )
+                select
+                    changed.canonical_site_id,
+                    'site_conviction',
+                    changed.id::text,
+                    'prove_it_assessment_changed',
+                    'LandIntel Prove It verdict or next action changed.',
+                    changed.previous_signature,
+                    changed.source_record_signature,
+                    false,
+                    jsonb_build_object(
+                        'source_key', 'prove_it_conviction_layer',
+                        'verdict', changed.verdict,
+                        'review_next_action', changed.review_next_action
+                    )
+                from changed
+                returning id
+            )
+            select
+                (select count(*)::integer from selected_sites) as selected_site_count,
+                (select count(*)::integer from upserted) as prove_it_assessment_count,
+                (select count(*)::integer from changed) as changed_assessment_count,
+                (select count(*)::integer from inserted_evidence) as evidence_row_count,
+                (select count(*)::integer from inserted_signals) as signal_row_count,
+                (select count(*)::integer from inserted_events) as change_event_count,
+                (select count(*)::integer from upserted where review_ready_flag) as review_ready_count,
+                (select count(*)::integer from upserted where verdict = 'ignore') as ignore_count,
+                (select count(*)::integer from upserted where verdict = 'monitor') as monitor_count,
+                (select count(*)::integer from upserted where verdict = 'review') as review_count,
+                (select count(*)::integer from upserted where verdict = 'pursue') as pursue_count
+            """,
+            {
+                "batch_size": self.batch_size,
+                "authority_name": self.authority_filter,
+                "authority_name_like": f"%{self.authority_filter}%",
+            },
+        ) or {}
+
+        assessment_count = int(proof.get("prove_it_assessment_count") or 0)
+        evidence_count = int(proof.get("evidence_row_count") or 0)
+        signal_count = int(proof.get("signal_row_count") or 0)
+        change_event_count = int(proof.get("change_event_count") or 0)
+        self._update_family_lifecycle(
+            source_family="site_conviction",
+            source_key="prove_it_conviction_layer",
+            row_count=assessment_count,
+            linked_count=assessment_count,
+            measured_count=0,
+            evidence_count=evidence_count,
+            signal_count=signal_count,
+        )
+        self.database.execute(
+            """
+            update landintel.source_estate_registry
+            set assessment_status = case when :assessment_count > 0 then 'assessment_ready' else assessment_status end,
+                updated_at = now()
+            where source_key = 'prove_it_conviction_layer'
+              and source_family = 'site_conviction'
+            """,
+            {"assessment_count": assessment_count},
+        )
+        self._record_expansion_event(
+            command_name="refresh-site-prove-it-assessments",
+            source_key="prove_it_conviction_layer",
+            source_family="site_conviction",
+            status="success",
+            raw_rows=assessment_count,
+            linked_rows=assessment_count,
+            evidence_rows=evidence_count,
+            signal_rows=signal_count,
+            change_event_rows=change_event_count,
+            summary="Prove It conviction assessments refreshed from current site evidence.",
+            metadata=proof,
+        )
+        self._record_family_freshness(
+            "site_conviction",
+            "LandIntel Prove It conviction layer",
+            assessment_count,
+        )
+        audit = self.audit_site_prove_it_assessments(log_event=False)
+        return {"source_family": "site_conviction", **proof, "coverage": audit.get("coverage", {})}
+
+    def audit_site_prove_it_assessments(self, log_event: bool = True) -> dict[str, Any]:
+        coverage = self.database.fetch_one("select * from analytics.v_site_prove_it_coverage") or {}
+        sample_rows = self.database.fetch_all(
+            """
+            select
+                canonical_site_id::text,
+                site_name_primary,
+                authority_name,
+                verdict,
+                title_spend_recommendation,
+                evidence_confidence,
+                planning_journey_type,
+                constraint_position,
+                market_position,
+                control_position,
+                review_ready_flag,
+                review_next_action
+            from analytics.v_site_prove_it_assessments
+            order by updated_at desc nulls last, site_name_primary
+            limit 20
+            """
+        )
+        result = {"coverage": coverage, "sample_assessments": sample_rows}
+        if log_event and not self.dry_run and not self.audit_only:
+            self._record_expansion_event(
+                command_name="audit-site-prove-it-assessments",
+                source_key="prove_it_conviction_layer",
+                source_family="site_conviction",
+                status="success",
+                raw_rows=int(coverage.get("prove_it_assessment_count") or 0),
+                linked_rows=int(coverage.get("assessed_site_count") or 0),
+                evidence_rows=int(coverage.get("review_ready_site_count") or 0),
+                summary="Prove It conviction layer audited.",
+                metadata=result,
+            )
+        self.logger.info("site_prove_it_assessment_audit", extra=result)
+        return result
+
     def audit_full_source_estate(self, log_event: bool = True) -> dict[str, Any]:
         matrix_summary = self.database.fetch_one(
             """
@@ -4100,6 +4829,12 @@ class Phase2SourceRunner:
             limit 50
             """
         )
+        prove_it_coverage = self.database.fetch_one(
+            """
+            select *
+            from analytics.v_site_prove_it_coverage
+            """
+        ) or {}
         result = {
             "source_count": int(matrix_summary.get("source_count") or 0),
             "phase2_source_count": int(matrix_summary.get("phase2_source_count") or 0),
@@ -4111,6 +4846,7 @@ class Phase2SourceRunner:
             "trusted_source_count": int(matrix_summary.get("trusted_source_count") or 0),
             "lifecycle_counts": lifecycle_counts,
             "sample_sources": matrix_rows,
+            "prove_it_coverage": prove_it_coverage,
         }
         if log_event and not self.dry_run and not self.audit_only:
             self._record_expansion_event(
@@ -4128,6 +4864,7 @@ class Phase2SourceRunner:
                     "phase2_source_count": result["phase2_source_count"],
                     "trusted_source_count": result["trusted_source_count"],
                     "lifecycle_counts": lifecycle_counts,
+                    "prove_it_coverage": prove_it_coverage,
                 },
             )
         self.logger.info("full_source_estate_audit", extra=result)

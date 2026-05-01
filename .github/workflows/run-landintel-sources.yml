@@ -36,6 +36,7 @@ on:
           - resolve-title-numbers
           - audit-title-number-control
           - measure-constraints
+          - measure-constraints-duckdb
           - measure-constraints-debug-all-layers
           - audit-constraint-measurements
           - discover-phase2-sources
@@ -134,6 +135,10 @@ on:
         description: Feature probe cap for measure-constraints-debug-all-layers
         required: false
         default: "50"
+      constraint_duckdb_max_features_per_batch:
+        description: Feature cap for DuckDB constraint prefilter batches
+        required: false
+        default: "10000"
       phase2_source_family:
         description: Optional Phase 2 source family, module key or source key filter
         required: false
@@ -246,6 +251,7 @@ jobs:
       CONSTRAINT_MEASURE_AUTHORITY: ${{ inputs.constraint_measure_authority || '' }}
       CONSTRAINT_MEASURE_DEBUG_SITE_COUNT: ${{ inputs.constraint_measure_site_batch_size || '25' }}
       CONSTRAINT_MEASURE_DEBUG_FEATURE_PROBE_LIMIT: ${{ inputs.constraint_measure_debug_feature_probe_limit || '50' }}
+      CONSTRAINT_DUCKDB_MAX_FEATURES_PER_BATCH: ${{ inputs.constraint_duckdb_max_features_per_batch || '10000' }}
       CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT: "1"
       CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"
       OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: "90000000"
@@ -455,6 +461,12 @@ jobs:
             python -m src.source_estate_registry register-source-estate
             python -m src.source_policy_discovery register-supplemental-sources
             run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging measure-constraints
+            python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
+          elif [ "$SELECTED_COMMAND" = "measure-constraints-duckdb" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_estate_registry register-source-estate
+            python -m src.source_policy_discovery register-supplemental-sources
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging measure-constraints-duckdb
             python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
           elif [ "$SELECTED_COMMAND" = "measure-constraints-debug-all-layers" ]; then
             python -m src.source_phase_runner run-migrations

@@ -21,9 +21,14 @@ from urllib.parse import urljoin, urlparse
 import xml.etree.ElementTree as ET
 import zipfile
 
+try:
+    import duckdb
+except ImportError:  # pragma: no cover - command reports this at runtime.
+    duckdb = None
 import geopandas as gpd
 import httpx
 import pandas as pd
+from shapely import wkb
 from shapely.geometry import Point
 import yaml
 from shapely import force_2d
@@ -577,6 +582,8 @@ class SourceExpansionRunner:
             return self.audit_title_number_control()
         if command == "measure-constraints":
             return self.measure_constraints()
+        if command == "measure-constraints-duckdb":
+            return self.measure_constraints_duckdb()
         if command == "measure-constraints-debug-all-layers":
             return self.measure_constraints_debug_all_layers()
         if command == "audit-constraint-measurements":
@@ -1504,6 +1511,642 @@ class SourceExpansionRunner:
         )
         self.logger.info("constraint_measurement_command_completed", extra=proof)
         return proof
+
+    def measure_constraints_duckdb(self) -> dict[str, Any]:
+        """Accelerate constraint/flood scans with a local DuckDB spatial prefilter.
+
+        DuckDB is deliberately not the source of truth here. It narrows each
+        bounded site batch to likely site/layer relationships, then the existing
+        PostGIS finalizer writes measurements, summaries, evidence, signals and
+        scan state.
+        """
+
+        if duckdb is None:
+            raise RuntimeError("duckdb is required for measure-constraints-duckdb. Install app requirements.")
+
+        layer_key_filter = (os.getenv("CONSTRAINT_MEASURE_LAYER_KEY") or "").strip() or None
+        source_family_filter = (os.getenv("CONSTRAINT_MEASURE_SOURCE_FAMILY") or "").strip() or None
+        authority_filter = (os.getenv("CONSTRAINT_MEASURE_AUTHORITY") or "").strip() or None
+        batch_size = max(self._env_int("CONSTRAINT_MEASURE_SITE_BATCH_SIZE", 250), 1)
+        max_batches = max(self._env_int("CONSTRAINT_MEASURE_MAX_BATCHES", 0), 0)
+        max_batches_per_layer = max(
+            self._env_int(
+                "CONSTRAINT_MEASURE_MAX_BATCHES_PER_LAYER",
+                1 if max_batches else 0,
+            ),
+            0,
+        )
+        max_layers_per_run = max(self._env_int("CONSTRAINT_MEASURE_MAX_LAYERS_PER_RUN", 1), 0)
+        runtime_minutes = max(self._env_int("CONSTRAINT_MEASURE_RUNTIME_MINUTES", 40), 1)
+        min_area_acres = self._env_float("CONSTRAINT_MEASURE_MIN_AREA_ACRES", 0.0)
+        overlap_delta_pct = self._env_float("CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT", 1.0)
+        distance_delta_m = self._env_float("CONSTRAINT_MATERIAL_DISTANCE_DELTA_M", 25.0)
+        max_features_per_batch = max(self._env_int("CONSTRAINT_DUCKDB_MAX_FEATURES_PER_BATCH", 10000), 1)
+        refresh_existing = str(os.getenv("CONSTRAINT_MEASURE_REFRESH_EXISTING") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "force",
+        }
+
+        for source_family in sorted(CONSTRAINT_FAMILIES):
+            for source in self._sources_for_family(source_family):
+                self._upsert_source_estate(source)
+
+        layers = self.database.fetch_all(
+            """
+            with scan_state as (
+                select
+                    constraint_layer_id,
+                    count(*)::integer as scan_state_row_count
+                from public.site_constraint_measurement_scan_state
+                group by constraint_layer_id
+            ), layer_rows as (
+                select
+                    layer.id::text as constraint_layer_id,
+                    layer.layer_key,
+                    layer.layer_name,
+                    layer.source_family,
+                    layer.buffer_distance_m,
+                    count(feature.id)::integer as source_feature_count,
+                    coalesce(scan_state.scan_state_row_count, 0)::integer as scan_state_row_count,
+                    case layer.source_family
+                        when 'sepa_flood' then 0
+                        when 'tpo' then 1
+                        when 'conservation_areas' then 2
+                        when 'naturescot' then 3
+                        when 'hes' then 4
+                        when 'greenbelt' then 5
+                        when 'contaminated_land' then 6
+                        when 'culverts' then 7
+                        when 'coal_authority' then 8
+                        else 9
+                    end as source_family_priority
+                from public.constraint_layer_registry as layer
+                join public.constraint_source_features as feature
+                  on feature.constraint_layer_id = layer.id
+                left join scan_state
+                  on scan_state.constraint_layer_id = layer.id
+                where layer.is_active = true
+                  and (
+                      cast(:layer_key_filter as text) is null
+                      or layer.layer_key = cast(:layer_key_filter as text)
+                  )
+                  and (
+                      cast(:source_family_filter as text) is null
+                      or layer.source_family = cast(:source_family_filter as text)
+                  )
+                group by
+                    layer.id,
+                    layer.layer_key,
+                    layer.layer_name,
+                    layer.source_family,
+                    layer.buffer_distance_m,
+                    scan_state.scan_state_row_count
+            ), ranked_layers as (
+                select
+                    *,
+                    row_number() over (
+                        partition by source_family
+                        order by scan_state_row_count, layer_key
+                    ) as source_family_layer_rank
+                from layer_rows
+            )
+            select
+                layer.constraint_layer_id,
+                layer.layer_key,
+                layer.layer_name,
+                layer.source_family,
+                layer.buffer_distance_m,
+                layer.source_feature_count,
+                layer.scan_state_row_count
+            from ranked_layers as layer
+            order by
+                layer.source_family_layer_rank,
+                layer.scan_state_row_count,
+                layer.source_family_priority,
+                layer.layer_key
+            """,
+            {"layer_key_filter": layer_key_filter, "source_family_filter": source_family_filter},
+        )
+
+        deadline = datetime.now(timezone.utc) + timedelta(minutes=runtime_minutes)
+        proof: dict[str, Any] = {
+            "command": "measure-constraints-duckdb",
+            "backend": "duckdb_spatial_prefilter_postgis_finalizer",
+            "layer_key_filter": layer_key_filter,
+            "source_family_filter": source_family_filter,
+            "authority_filter": authority_filter,
+            "batch_size": batch_size,
+            "max_batches": max_batches,
+            "max_batches_per_layer": max_batches_per_layer,
+            "max_layers_per_run": max_layers_per_run,
+            "runtime_minutes": runtime_minutes,
+            "min_area_acres": min_area_acres,
+            "refresh_existing": refresh_existing,
+            "max_features_per_batch": max_features_per_batch,
+            "layer_count": len(layers),
+            "source_feature_count": sum(int(layer.get("source_feature_count") or 0) for layer in layers),
+            "processed_site_count": 0,
+            "processed_batch_count": 0,
+            "duckdb_candidate_site_count": 0,
+            "duckdb_no_candidate_site_count": 0,
+            "duckdb_prefilter_feature_count": 0,
+            "duckdb_spatial_exact_batch_count": 0,
+            "duckdb_bbox_fallback_batch_count": 0,
+            "feature_truncated_batch_count": 0,
+            "no_relationship_scan_state_count": 0,
+            "postgis_finalizer_site_count": 0,
+            "measurement_count": 0,
+            "summary_count": 0,
+            "friction_fact_count": 0,
+            "evidence_count": 0,
+            "signal_count": 0,
+            "change_event_count": 0,
+            "affected_site_count": 0,
+            "material_change_count": 0,
+            "failed_batch_count": 0,
+            "failed_layers": [],
+            "layers": [],
+        }
+
+        for layer in layers:
+            if datetime.now(timezone.utc) >= deadline:
+                break
+            if max_batches and proof["processed_batch_count"] >= max_batches:
+                break
+            if max_layers_per_run and len(proof["layers"]) >= max_layers_per_run:
+                break
+
+            layer_key = str(layer["layer_key"])
+            buffer_distance_m = float(layer.get("buffer_distance_m") or 0)
+            layer_payload: dict[str, Any] = {
+                "layer_key": layer_key,
+                "layer_name": layer.get("layer_name"),
+                "source_family": layer.get("source_family"),
+                "source_feature_count": int(layer.get("source_feature_count") or 0),
+                "starting_scan_state_row_count": int(layer.get("scan_state_row_count") or 0),
+                "buffer_distance_m": buffer_distance_m,
+                "processed_site_count": 0,
+                "processed_batch_count": 0,
+                "duckdb_candidate_site_count": 0,
+                "duckdb_no_candidate_site_count": 0,
+                "duckdb_prefilter_feature_count": 0,
+                "duckdb_spatial_exact_batch_count": 0,
+                "duckdb_bbox_fallback_batch_count": 0,
+                "feature_truncated_batch_count": 0,
+                "no_relationship_scan_state_count": 0,
+                "postgis_finalizer_site_count": 0,
+                "measurement_count": 0,
+                "summary_count": 0,
+                "friction_fact_count": 0,
+                "evidence_count": 0,
+                "signal_count": 0,
+                "change_event_count": 0,
+                "affected_site_count": 0,
+                "material_change_count": 0,
+                "failed_batch_count": 0,
+                "last_error": None,
+            }
+            after_site_location_id: str | None = None
+
+            while datetime.now(timezone.utc) < deadline:
+                if max_batches and proof["processed_batch_count"] >= max_batches:
+                    break
+                if max_batches_per_layer and layer_payload["processed_batch_count"] >= max_batches_per_layer:
+                    break
+
+                site_rows = self._constraint_measurement_site_rows(
+                    layer_key=layer_key,
+                    authority_filter=authority_filter,
+                    after_site_location_id=after_site_location_id,
+                    min_area_acres=min_area_acres,
+                    refresh_existing=refresh_existing,
+                    batch_size=batch_size,
+                )
+                if not site_rows:
+                    break
+
+                try:
+                    prepared_sites = self._prepare_duckdb_geometry_rows(site_rows, id_column="site_location_id")
+                    site_location_ids = [str(row["site_location_id"]) for row in site_rows]
+                    feature_rows = self._constraint_feature_rows_for_duckdb_batch(
+                        layer_key=layer_key,
+                        prepared_sites=prepared_sites,
+                        buffer_distance_m=buffer_distance_m,
+                        max_features_per_batch=max_features_per_batch,
+                    )
+                    prepared_features = self._prepare_duckdb_geometry_rows(feature_rows, id_column="constraint_feature_id")
+                    feature_truncated = len(prepared_features) >= max_features_per_batch
+                    candidate_ids, used_spatial_exact, fallback_reason = self._duckdb_candidate_site_location_ids(
+                        prepared_sites=prepared_sites,
+                        prepared_features=prepared_features,
+                        buffer_distance_m=buffer_distance_m,
+                    )
+
+                    ordered_candidate_ids = [
+                        site_location_id for site_location_id in site_location_ids if site_location_id in candidate_ids
+                    ]
+                    if feature_truncated or refresh_existing:
+                        finalizer_site_ids = site_location_ids
+                        no_candidate_ids: list[str] = []
+                    else:
+                        finalizer_site_ids = ordered_candidate_ids
+                        no_candidate_ids = [
+                            site_location_id
+                            for site_location_id in site_location_ids
+                            if site_location_id not in candidate_ids
+                        ]
+
+                    batch_proof: dict[str, Any] = {}
+                    if finalizer_site_ids:
+                        batch_proof = self.database.fetch_one(
+                            """
+                            select *
+                            from public.refresh_constraint_measurements_for_layer_sites(
+                                :layer_key,
+                                cast(:site_location_ids as text[]),
+                                cast(:overlap_delta_pct as numeric),
+                                cast(:distance_delta_m as numeric)
+                            )
+                            """,
+                            {
+                                "layer_key": layer_key,
+                                "site_location_ids": finalizer_site_ids,
+                                "overlap_delta_pct": overlap_delta_pct,
+                                "distance_delta_m": distance_delta_m,
+                            },
+                        ) or {}
+                    no_relationship_count = self._mark_constraint_duckdb_no_relationship_scan_state(
+                        layer_key=layer_key,
+                        site_location_ids=no_candidate_ids,
+                    )
+                except Exception as exc:
+                    error_message = str(exc)
+                    layer_payload["failed_batch_count"] += 1
+                    layer_payload["last_error"] = error_message[:1000]
+                    proof["failed_batch_count"] += 1
+                    proof["failed_layers"].append(
+                        {
+                            "layer_key": layer_key,
+                            "site_count": len(site_rows),
+                            "last_site_location_id": str(site_rows[-1]["site_location_id"]),
+                            "error": error_message[:1000],
+                        }
+                    )
+                    self.logger.warning(
+                        "constraint_measurement_duckdb_batch_failed",
+                        extra={
+                            "layer_key": layer_key,
+                            "site_batch_count": len(site_rows),
+                            "last_site_location_id": str(site_rows[-1]["site_location_id"]),
+                            "error": error_message,
+                        },
+                    )
+                    break
+
+                after_site_location_id = str(site_rows[-1]["site_location_id"])
+                layer_payload["processed_site_count"] += len(site_rows)
+                layer_payload["processed_batch_count"] += 1
+                layer_payload["duckdb_candidate_site_count"] += len(ordered_candidate_ids)
+                layer_payload["duckdb_no_candidate_site_count"] += len(no_candidate_ids)
+                layer_payload["duckdb_prefilter_feature_count"] += len(prepared_features)
+                layer_payload["postgis_finalizer_site_count"] += len(finalizer_site_ids)
+                layer_payload["no_relationship_scan_state_count"] += no_relationship_count
+                proof["processed_site_count"] += len(site_rows)
+                proof["processed_batch_count"] += 1
+                proof["duckdb_candidate_site_count"] += len(ordered_candidate_ids)
+                proof["duckdb_no_candidate_site_count"] += len(no_candidate_ids)
+                proof["duckdb_prefilter_feature_count"] += len(prepared_features)
+                proof["postgis_finalizer_site_count"] += len(finalizer_site_ids)
+                proof["no_relationship_scan_state_count"] += no_relationship_count
+                if used_spatial_exact:
+                    layer_payload["duckdb_spatial_exact_batch_count"] += 1
+                    proof["duckdb_spatial_exact_batch_count"] += 1
+                else:
+                    layer_payload["duckdb_bbox_fallback_batch_count"] += 1
+                    proof["duckdb_bbox_fallback_batch_count"] += 1
+                if feature_truncated:
+                    layer_payload["feature_truncated_batch_count"] += 1
+                    proof["feature_truncated_batch_count"] += 1
+
+                for key in (
+                    "measurement_count",
+                    "summary_count",
+                    "friction_fact_count",
+                    "evidence_count",
+                    "signal_count",
+                    "change_event_count",
+                    "affected_site_count",
+                    "material_change_count",
+                ):
+                    increment = int(batch_proof.get(key) or 0)
+                    layer_payload[key] += increment
+                    proof[key] += increment
+
+                self.logger.info(
+                    "constraint_measurement_duckdb_batch_completed",
+                    extra={
+                        "layer_key": layer_key,
+                        "site_batch_count": len(site_rows),
+                        "candidate_site_count": len(ordered_candidate_ids),
+                        "no_candidate_site_count": len(no_candidate_ids),
+                        "postgis_finalizer_site_count": len(finalizer_site_ids),
+                        "prefilter_feature_count": len(prepared_features),
+                        "duckdb_spatial_exact": used_spatial_exact,
+                        "duckdb_fallback_reason": fallback_reason,
+                        "feature_truncated": feature_truncated,
+                        "last_site_location_id": after_site_location_id,
+                        **batch_proof,
+                    },
+                )
+
+            proof["layers"].append(layer_payload)
+
+        if proof["failed_batch_count"]:
+            status = "constraint_measurements_duckdb_completed_with_layer_failures"
+        elif proof["measurement_count"]:
+            status = "constraint_measurements_duckdb_refreshed"
+        elif proof["processed_site_count"]:
+            status = "constraint_measurements_duckdb_scanned_no_material_change"
+        else:
+            status = "constraint_measurements_duckdb_no_pending_sites"
+        proof["status"] = status
+
+        self._record_expansion_event(
+            command_name="measure-constraints-duckdb",
+            source_key=layer_key_filter,
+            source_family=source_family_filter or "constraint_measurement",
+            status=status,
+            raw_rows=int(proof["source_feature_count"]),
+            linked_rows=int(proof["affected_site_count"]),
+            measured_rows=int(proof["measurement_count"]),
+            evidence_rows=int(proof["evidence_count"]),
+            signal_rows=int(proof["signal_count"]),
+            change_event_rows=int(proof["change_event_count"]),
+            summary=(
+                "Constraint measurements accelerated with DuckDB spatial prefilter; "
+                "Supabase/PostGIS remains the authoritative finalizer and audit store."
+            ),
+            metadata=proof,
+        )
+        self.logger.info("constraint_measurement_duckdb_command_completed", extra=proof)
+        return proof
+
+    def _constraint_measurement_site_rows(
+        self,
+        *,
+        layer_key: str,
+        authority_filter: str | None,
+        after_site_location_id: str | None,
+        min_area_acres: float,
+        refresh_existing: bool,
+        batch_size: int,
+    ) -> list[dict[str, Any]]:
+        return self.database.fetch_all(
+            """
+            with layer_row as (
+                select id
+                from public.constraint_layer_registry
+                where layer_key = :layer_key
+            ), anchor as (
+                select *
+                from public.constraints_site_anchor()
+                where geometry is not null
+                  and (
+                      cast(:authority_filter as text) is null
+                      or lower(authority_name) = lower(cast(:authority_filter as text))
+                  )
+                  and (
+                      cast(:after_site_location_id as text) is null
+                      or site_location_id > cast(:after_site_location_id as text)
+                  )
+                  and (
+                      cast(:min_area_acres as numeric) <= 0
+                      or coalesce(area_acres, public.calculate_area_acres(st_area(geometry)::numeric))
+                          >= cast(:min_area_acres as numeric)
+                  )
+            )
+            select
+                anchor.site_id,
+                anchor.site_location_id,
+                st_asbinary(anchor.geometry) as geometry_wkb
+            from anchor
+            cross join layer_row
+            where (
+                cast(:refresh_existing as boolean)
+                or not exists (
+                    select 1
+                    from public.site_constraint_measurement_scan_state as scan_state
+                    where scan_state.constraint_layer_id = layer_row.id
+                      and scan_state.site_location_id = anchor.site_location_id
+                      and scan_state.scan_scope = 'canonical_site_geometry'
+                )
+            )
+            order by anchor.site_location_id
+            limit :batch_size
+            """,
+            {
+                "layer_key": layer_key,
+                "authority_filter": authority_filter,
+                "after_site_location_id": after_site_location_id,
+                "min_area_acres": min_area_acres,
+                "refresh_existing": refresh_existing,
+                "batch_size": batch_size,
+            },
+        )
+
+    def _prepare_duckdb_geometry_rows(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        id_column: str,
+    ) -> list[dict[str, Any]]:
+        prepared_rows: list[dict[str, Any]] = []
+        for row in rows:
+            raw_geometry = row.get("geometry_wkb")
+            if raw_geometry is None:
+                continue
+            geometry_bytes = bytes(raw_geometry)
+            geometry = wkb.loads(geometry_bytes)
+            if geometry.is_empty:
+                continue
+            xmin, ymin, xmax, ymax = geometry.bounds
+            prepared_rows.append(
+                {
+                    **row,
+                    id_column: str(row[id_column]),
+                    "geometry_wkb": geometry_bytes,
+                    "xmin": float(xmin),
+                    "ymin": float(ymin),
+                    "xmax": float(xmax),
+                    "ymax": float(ymax),
+                }
+            )
+        return prepared_rows
+
+    def _constraint_feature_rows_for_duckdb_batch(
+        self,
+        *,
+        layer_key: str,
+        prepared_sites: list[dict[str, Any]],
+        buffer_distance_m: float,
+        max_features_per_batch: int,
+    ) -> list[dict[str, Any]]:
+        if not prepared_sites:
+            return []
+        xmin = min(float(site["xmin"]) for site in prepared_sites) - buffer_distance_m
+        ymin = min(float(site["ymin"]) for site in prepared_sites) - buffer_distance_m
+        xmax = max(float(site["xmax"]) for site in prepared_sites) + buffer_distance_m
+        ymax = max(float(site["ymax"]) for site in prepared_sites) + buffer_distance_m
+        return self.database.fetch_all(
+            """
+            select
+                feature.id::text as constraint_feature_id,
+                st_asbinary(feature.geometry) as geometry_wkb
+            from public.constraint_source_features as feature
+            join public.constraint_layer_registry as layer_row
+              on layer_row.id = feature.constraint_layer_id
+            where layer_row.layer_key = :layer_key
+              and feature.geometry is not null
+              and feature.geometry OPERATOR(extensions.&&)
+                  st_makeenvelope(:xmin, :ymin, :xmax, :ymax, 27700)
+            order by feature.id
+            limit :max_features_per_batch
+            """,
+            {
+                "layer_key": layer_key,
+                "xmin": xmin,
+                "ymin": ymin,
+                "xmax": xmax,
+                "ymax": ymax,
+                "max_features_per_batch": max_features_per_batch,
+            },
+        )
+
+    def _duckdb_candidate_site_location_ids(
+        self,
+        *,
+        prepared_sites: list[dict[str, Any]],
+        prepared_features: list[dict[str, Any]],
+        buffer_distance_m: float,
+    ) -> tuple[set[str], bool, str | None]:
+        if not prepared_sites or not prepared_features:
+            return set(), False, None
+
+        site_frame = pd.DataFrame(prepared_sites)
+        feature_frame = pd.DataFrame(prepared_features)
+        buffer_sql = repr(max(buffer_distance_m, 0.0))
+        bbox_where = f"""
+            s.xmin <= f.xmax + {buffer_sql}
+            and s.xmax >= f.xmin - {buffer_sql}
+            and s.ymin <= f.ymax + {buffer_sql}
+            and s.ymax >= f.ymin - {buffer_sql}
+        """
+        bbox_query = f"""
+            select distinct s.site_location_id
+            from sites as s
+            join features as f
+              on {bbox_where}
+        """
+        exact_query = f"""
+            select distinct s.site_location_id
+            from sites as s
+            join features as f
+              on {bbox_where}
+             and (
+                case
+                    when {buffer_sql} > 0 then
+                        ST_DWithin(ST_GeomFromWKB(s.geometry_wkb), ST_GeomFromWKB(f.geometry_wkb), {buffer_sql})
+                    else
+                        ST_Intersects(ST_GeomFromWKB(s.geometry_wkb), ST_GeomFromWKB(f.geometry_wkb))
+                end
+             )
+        """
+
+        connection = duckdb.connect(database=":memory:")
+        try:
+            connection.register("sites", site_frame)
+            connection.register("features", feature_frame)
+            try:
+                connection.execute("install spatial")
+                connection.execute("load spatial")
+                rows = connection.execute(exact_query).fetchall()
+                return {str(row[0]) for row in rows}, True, None
+            except Exception as exc:
+                rows = connection.execute(bbox_query).fetchall()
+                return {str(row[0]) for row in rows}, False, str(exc)[:300]
+        finally:
+            connection.close()
+
+    def _mark_constraint_duckdb_no_relationship_scan_state(
+        self,
+        *,
+        layer_key: str,
+        site_location_ids: list[str],
+    ) -> int:
+        if not site_location_ids:
+            return 0
+        result = self.database.fetch_one(
+            """
+            with layer_row as (
+                select
+                    id,
+                    constraint_group
+                from public.constraint_layer_registry
+                where layer_key = :layer_key
+            ), requested as (
+                select distinct input.site_location_id
+                from unnest(cast(:site_location_ids as text[])) as input(site_location_id)
+            ), inserted as (
+                insert into public.site_constraint_measurement_scan_state (
+                    site_id,
+                    site_location_id,
+                    constraint_layer_id,
+                    scan_scope,
+                    latest_measurement_count,
+                    latest_summary_signature,
+                    has_constraint_relationship,
+                    scanned_at,
+                    updated_at,
+                    metadata
+                )
+                select
+                    anchor.site_id,
+                    anchor.site_location_id,
+                    layer_row.id,
+                    'canonical_site_geometry',
+                    0,
+                    null,
+                    false,
+                    now(),
+                    now(),
+                    jsonb_build_object(
+                        'constraint_layer_key', :layer_key,
+                        'constraint_group', layer_row.constraint_group,
+                        'source_expansion_constraint', true,
+                        'duckdb_prefilter_no_relationship', true,
+                        'has_constraint_relationship', false
+                    )
+                from requested
+                join public.constraints_site_anchor() as anchor
+                  on anchor.site_location_id = requested.site_location_id
+                cross join layer_row
+                on conflict (constraint_layer_id, site_location_id, scan_scope) do update set
+                    latest_measurement_count = 0,
+                    latest_summary_signature = null,
+                    has_constraint_relationship = false,
+                    scanned_at = now(),
+                    updated_at = now(),
+                    metadata = excluded.metadata
+                returning id
+            )
+            select count(*)::integer as scan_state_count
+            from inserted
+            """,
+            {"layer_key": layer_key, "site_location_ids": site_location_ids},
+        ) or {}
+        return int(result.get("scan_state_count") or 0)
 
     def measure_constraints_debug_all_layers(self) -> dict[str, Any]:
         layer_key_filter = (os.getenv("CONSTRAINT_MEASURE_LAYER_KEY") or "").strip() or None
@@ -5335,6 +5978,7 @@ def build_parser() -> argparse.ArgumentParser:
             "resolve-title-numbers",
             "audit-title-number-control",
             "measure-constraints",
+            "measure-constraints-duckdb",
             "measure-constraints-debug-all-layers",
             "audit-constraint-measurements",
             "ingest-ldp",

@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import sys
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -5497,13 +5498,20 @@ def main() -> int:
         runner.run_command(args.command)
         return 0
     except Exception as exc:
-        runner.logger.error(
-            "phase2_source_command_failed",
-            extra={"command": args.command, "exception": str(exc), "traceback": traceback.format_exc()},
-        )
+        print(traceback.format_exc(), file=sys.stderr)
+        try:
+            runner.logger.error(
+                "phase2_source_command_failed",
+                extra={"command": args.command, "exception": str(exc), "traceback": traceback.format_exc()},
+            )
+        except Exception:
+            print(f"phase2_source_command_failed: {exc}", file=sys.stderr)
         return 1
     finally:
-        runner.close()
+        try:
+            runner.close()
+        except Exception as exc:
+            print(f"phase2_source_runner_close_failed: {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":

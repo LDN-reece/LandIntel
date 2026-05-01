@@ -2626,9 +2626,13 @@ class SourceExpansionRunner:
                 break
 
         inserted_rows = self._upsert_open_location_spine_rows(rows)
+        context_site_batch_size = min(
+            max(self._env_int("OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE", 250), 1),
+            max(self._env_int("OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE", 25), 1),
+        )
         context = self._refresh_open_location_spine_context(
             [str(source["source_key"])],
-            max(self._env_int("OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE", 250), 1),
+            context_site_batch_size,
         )
         result = {
             "source_key": source["source_key"],
@@ -3129,6 +3133,7 @@ class SourceExpansionRunner:
                     where feature.geometry is not null
                       and feature.source_key = feature_types.source_key
                       and feature.feature_type = feature_types.feature_type
+                      and feature.geometry OPERATOR(extensions.&&) st_expand(site.geometry, 1600)
                 ) as nearby
             ),
             upserted_context as (

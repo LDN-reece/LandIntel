@@ -887,6 +887,7 @@ create index if not exists market_transactions_geometry_gix on landintel.market_
 create index if not exists amenity_assets_geometry_gix on landintel.amenity_assets using gist (geometry);
 create index if not exists open_location_spine_features_geometry_gix on landintel.open_location_spine_features using gist (geometry);
 create index if not exists open_location_spine_features_family_type_idx on landintel.open_location_spine_features (source_family, source_key, feature_type);
+create index if not exists open_location_spine_features_source_type_idx on landintel.open_location_spine_features (source_key, feature_type);
 
 create index if not exists planning_appeal_links_site_idx on landintel.site_planning_appeal_links (canonical_site_id);
 create index if not exists title_order_workflow_status_idx on landintel.title_order_workflow (title_order_status, title_review_status, updated_at desc);

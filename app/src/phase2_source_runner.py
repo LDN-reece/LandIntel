@@ -4362,7 +4362,7 @@ class Phase2SourceRunner:
                         when planning_journey_type is distinct from 'no_clear_journey'
                          and market_position = any(array['strong', 'credible']::text[])
                          and control_position <> all(array['known_blocked', 'likely_controlled_by_housebuilder_promoter']::text[])
-                         and constraint_position <> all(array['terminal', 'major_review']::text[])
+                         and constraint_position = any(array['priceable_design_led', 'context_only']::text[])
                          and evidence_confidence = any(array['high', 'medium']::text[]) then 'pursue'
                         when planning_journey_type is distinct from 'no_clear_journey'
                           or market_position = 'credible'
@@ -4404,6 +4404,7 @@ class Phase2SourceRunner:
                         when title_spend_recommendation = 'order_title' then 'Order title.'
                         when constraint_position = 'major_review' then 'Run constraint review before title spend.'
                         when planning_journey_type is distinct from 'no_clear_journey' then 'Review planning documents before title spend.'
+                        when verdict = 'review' then 'Manual review before title spend.'
                         when verdict = 'monitor' then 'Monitor only. Do not spend time or title money yet.'
                         else 'Ignore until new evidence appears.'
                     end as review_next_action

@@ -150,6 +150,7 @@ alter table landintel.site_prove_it_assessments
             planning_journey_type is distinct from 'no_clear_journey'
             and evidence_confidence = any (array['high', 'medium', 'mixed']::text[])
             and constraint_position is distinct from 'terminal'
+            and constraint_position is distinct from 'unknown'
             and control_position is distinct from 'known_blocked'
             and control_position is distinct from 'likely_controlled_by_housebuilder_promoter'
             and market_position is distinct from 'weak'

@@ -251,6 +251,7 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("title_spend_recommendation is not null", MIGRATION)
         self.assertIn("planning_journey_type is distinct from 'no_clear_journey'", MIGRATION)
         self.assertIn("constraint_position is distinct from 'terminal'", MIGRATION)
+        self.assertIn("constraint_position is distinct from 'unknown'", MIGRATION)
         self.assertIn("control_position is distinct from 'known_blocked'", MIGRATION)
         self.assertIn("def refresh_site_prove_it_assessments", RUNNER)
         self.assertIn("def audit_site_prove_it_assessments", RUNNER)

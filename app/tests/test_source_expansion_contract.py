@@ -58,6 +58,7 @@ class SourceExpansionContractTests(unittest.TestCase):
             "ingest-naptan",
             "ingest-statistics-gov-scot",
             "ingest-opentopography-srtm",
+            "ingest-bulk-download-universe",
             "probe-open-location-spine",
             "ingest-settlement-boundaries",
         ):
@@ -277,6 +278,20 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("_os_downloads_product_endpoint", RUNNER)
         self.assertIn("cleaned_url.endswith(cleaned_suffix_path)", RUNNER)
         self.assertNotIn("TEMP_STORAGE_PATH", RUNNER)
+
+    def test_bulk_download_universe_orchestrates_bounded_location_sources(self) -> None:
+        self.assertIn("- ingest-bulk-download-universe", WORKFLOW)
+        self.assertIn('"ingest-bulk-download-universe"', RUNNER)
+        self.assertIn('elif [ "$SELECTED_COMMAND" = "ingest-bulk-download-universe" ]; then', WORKFLOW)
+        self.assertIn("python -m src.source_expansion_runner_wfs_paging ingest-bulk-download-universe", WORKFLOW)
+        self.assertIn("python -m src.phase2_source_runner ingest-amenities", WORKFLOW)
+        self.assertIn("python -m src.phase2_source_runner ingest-demographics", WORKFLOW)
+        self.assertIn("python -m src.phase2_source_runner ingest-market-context", WORKFLOW)
+        self.assertIn("python -m src.phase2_source_runner ingest-power-infrastructure", WORKFLOW)
+        self.assertIn("python -m src.phase2_source_runner audit-full-source-estate", WORKFLOW)
+        self.assertIn("open_location_spine_max_download_bytes", WORKFLOW)
+        self.assertIn("inputs.open_location_spine_max_download_bytes", WORKFLOW)
+        self.assertIn("OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE", WORKFLOW)
 
     def test_control_policy_spine_prioritises_title_ldp_and_settlement(self) -> None:
         priority_migration = (APP_DIR / "sql" / "046_phase_one_control_policy_priority.sql").read_text(encoding="utf-8")

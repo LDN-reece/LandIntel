@@ -101,6 +101,7 @@ on:
           - ingest-naptan
           - ingest-statistics-gov-scot
           - ingest-opentopography-srtm
+          - ingest-bulk-download-universe
           - probe-open-location-spine
           - process-reconcile-queue
           - reconcile-catchup-scan
@@ -170,6 +171,30 @@ on:
         required: false
         type: boolean
         default: false
+      open_location_spine_max_download_bytes:
+        description: Max bytes per OS bulk download asset for open location spine runs
+        required: false
+        default: "90000000"
+      open_location_spine_max_features_per_source:
+        description: Max feature rows landed per open location source per run
+        required: false
+        default: "2500"
+      open_location_spine_site_context_batch_size:
+        description: Canonical site batch size for open location context refresh
+        required: false
+        default: "250"
+      open_location_spine_osm_site_batch_size:
+        description: Canonical site batch size for OSM Overpass harvesting
+        required: false
+        default: "10"
+      open_location_spine_osm_context_batch_size:
+        description: Canonical site batch size for OSM context refresh
+        required: false
+        default: "25"
+      open_location_spine_osm_element_limit:
+        description: Max OSM elements landed per OSM open location run
+        required: false
+        default: "2000"
 
 concurrency:
   group: "landintel-sources-${{ github.ref }}"
@@ -254,12 +279,12 @@ jobs:
       CONSTRAINT_DUCKDB_MAX_FEATURES_PER_BATCH: ${{ inputs.constraint_duckdb_max_features_per_batch || '10000' }}
       CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT: "1"
       CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"
-      OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: "90000000"
-      OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: "2500"
-      OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: "250"
-      OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE: "10"
-      OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: "25"
-      OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT: "2000"
+      OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: ${{ inputs.open_location_spine_max_download_bytes || '90000000' }}
+      OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: ${{ inputs.open_location_spine_max_features_per_source || '2500' }}
+      OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: ${{ inputs.open_location_spine_site_context_batch_size || '250' }}
+      OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE: ${{ inputs.open_location_spine_osm_site_batch_size || '10' }}
+      OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: ${{ inputs.open_location_spine_osm_context_batch_size || '25' }}
+      OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT: ${{ inputs.open_location_spine_osm_element_limit || '2000' }}
       PHASE2_SOURCE_FAMILY: ${{ inputs.phase2_source_family || '' }}
       PHASE2_AUTHORITY: ${{ inputs.phase2_authority || '' }}
       PHASE2_BATCH_SIZE: ${{ inputs.phase2_batch_size || '250' }}
@@ -374,7 +399,7 @@ jobs:
 
           is_source_expansion_ingest() {
             case "$1" in
-              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features|ingest-os-linked-identifiers|ingest-os-openmap-local|ingest-os-open-roads|ingest-os-open-rivers|ingest-os-boundary-line|ingest-os-open-names|ingest-os-open-greenspace|ingest-os-open-zoomstack|ingest-os-open-toid|ingest-os-open-built-up-areas|ingest-os-open-uprn|ingest-os-open-usrn|ingest-osm-overpass|ingest-open-location-spine|ingest-naptan|ingest-statistics-gov-scot|ingest-opentopography-srtm|probe-open-location-spine)
+              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features|ingest-os-linked-identifiers|ingest-os-openmap-local|ingest-os-open-roads|ingest-os-open-rivers|ingest-os-boundary-line|ingest-os-open-names|ingest-os-open-greenspace|ingest-os-open-zoomstack|ingest-os-open-toid|ingest-os-open-built-up-areas|ingest-os-open-uprn|ingest-os-open-usrn|ingest-osm-overpass|ingest-open-location-spine|ingest-naptan|ingest-statistics-gov-scot|ingest-opentopography-srtm|ingest-bulk-download-universe|probe-open-location-spine)
                 return 0
                 ;;
               *)
@@ -477,6 +502,17 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "audit-constraint-measurements" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
+          elif [ "$SELECTED_COMMAND" = "ingest-bulk-download-universe" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_estate_registry register-source-estate
+            python -m src.source_policy_discovery register-supplemental-sources
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging ingest-bulk-download-universe
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.phase2_source_runner ingest-amenities
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.phase2_source_runner ingest-demographics
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.phase2_source_runner ingest-market-context
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.phase2_source_runner ingest-power-infrastructure
+            python -m src.source_expansion_runner_wfs_paging audit-source-expansion
+            python -m src.phase2_source_runner audit-full-source-estate
           elif is_phase2_command "$SELECTED_COMMAND"; then
             python -m src.source_phase_runner run-migrations
             run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.phase2_source_runner "$SELECTED_COMMAND"

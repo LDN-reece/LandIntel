@@ -131,6 +131,8 @@ COMMAND_TO_FAMILIES: dict[str, tuple[str, ...]] = {
     "ingest-statistics-gov-scot": ("statistics_gov_scot",),
     "ingest-opentopography-srtm": ("opentopography_srtm",),
     "ingest-open-location-spine": tuple(sorted(OPEN_LOCATION_SPINE_BULK_FAMILIES)),
+    "ingest-bulk-download-universe": tuple(sorted(OPEN_LOCATION_SPINE_BULK_FAMILIES))
+    + ("naptan", "statistics_gov_scot", "opentopography_srtm"),
     "probe-open-location-spine": (
         "topography",
         "os_openmap_local",
@@ -6014,6 +6016,7 @@ def build_parser() -> argparse.ArgumentParser:
             "ingest-naptan",
             "ingest-statistics-gov-scot",
             "ingest-opentopography-srtm",
+            "ingest-bulk-download-universe",
             "probe-open-location-spine",
             "promote-ldp-authority-source",
         ),

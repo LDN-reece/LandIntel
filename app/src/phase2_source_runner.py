@@ -4393,7 +4393,12 @@ class Phase2SourceRunner:
                         when coalesce(title_review_status, 'not_reviewed') = 'reviewed' then 'Title has already been reviewed; use reviewed ownership evidence.'
                         when control_position = 'unknown_but_worth_title_spend' then 'Ownership is unknown and would materially affect the next commercial decision.'
                         else 'Manual review should confirm whether title spend is justified.'
-                    end as title_spend_reason,
+                    end as title_spend_reason
+                from finalised
+            ),
+            next_actioned as (
+                select
+                    actioned.*,
                     case
                         when verdict = 'pursue' and title_spend_recommendation = 'order_title_urgently' then 'Order title urgently.'
                         when title_spend_recommendation = 'order_title' then 'Order title.'
@@ -4402,11 +4407,11 @@ class Phase2SourceRunner:
                         when verdict = 'monitor' then 'Monitor only. Do not spend time or title money yet.'
                         else 'Ignore until new evidence appears.'
                     end as review_next_action
-                from finalised
+                from actioned
             ),
             completed as (
                 select
-                    actioned.*,
+                    next_actioned.*,
                     case
                         when verdict = 'ignore' then
                             'This is not currently an opportunity because current evidence does not justify LDN spending the next pound or hour.'
@@ -4468,7 +4473,7 @@ class Phase2SourceRunner:
                         missing_critical_evidence::text,
                         review_next_action
                     )) as current_signature
-                from actioned
+                from next_actioned
             ),
             upserted as (
                 insert into landintel.site_prove_it_assessments (

@@ -19,10 +19,12 @@ import traceback
 from typing import Any
 from urllib.parse import urljoin, urlparse
 import xml.etree.ElementTree as ET
+import zipfile
 
 import geopandas as gpd
 import httpx
 import pandas as pd
+from shapely.geometry import Point
 import yaml
 from shapely import force_2d
 from shapely.geometry import shape
@@ -74,6 +76,20 @@ OPEN_LOCATION_SPINE_FAMILIES = {
     "statistics_gov_scot",
     "opentopography_srtm",
 }
+OPEN_LOCATION_SPINE_BULK_FAMILIES = {
+    "os_openmap_local",
+    "os_open_roads",
+    "os_open_rivers",
+    "os_boundary_line",
+    "os_open_names",
+    "os_open_greenspace",
+    "os_open_zoomstack",
+    "os_open_toid",
+    "os_open_built_up_areas",
+    "os_open_uprn",
+    "os_open_usrn",
+    "osm",
+}
 PROBE_ONLY_FAMILIES = {"topography", "os_places", "os_features", "os_linked_identifiers"} | OPEN_LOCATION_SPINE_FAMILIES
 
 COMMAND_TO_FAMILIES: dict[str, tuple[str, ...]] = {
@@ -109,6 +125,7 @@ COMMAND_TO_FAMILIES: dict[str, tuple[str, ...]] = {
     "ingest-naptan": ("naptan",),
     "ingest-statistics-gov-scot": ("statistics_gov_scot",),
     "ingest-opentopography-srtm": ("opentopography_srtm",),
+    "ingest-open-location-spine": tuple(sorted(OPEN_LOCATION_SPINE_BULK_FAMILIES)),
     "probe-open-location-spine": (
         "topography",
         "os_openmap_local",
@@ -1180,6 +1197,7 @@ class SourceExpansionRunner:
             ),
             0,
         )
+        max_layers_per_run = max(self._env_int("CONSTRAINT_MEASURE_MAX_LAYERS_PER_RUN", 1), 0)
         runtime_minutes = max(self._env_int("CONSTRAINT_MEASURE_RUNTIME_MINUTES", 40), 1)
         min_area_acres = self._env_float("CONSTRAINT_MEASURE_MIN_AREA_ACRES", 0.0)
         overlap_delta_pct = self._env_float("CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT", 1.0)
@@ -1276,6 +1294,7 @@ class SourceExpansionRunner:
             "batch_size": batch_size,
             "max_batches": max_batches,
             "max_batches_per_layer": max_batches_per_layer,
+            "max_layers_per_run": max_layers_per_run,
             "runtime_minutes": runtime_minutes,
             "min_area_acres": min_area_acres,
             "refresh_existing": refresh_existing,
@@ -1302,6 +1321,8 @@ class SourceExpansionRunner:
             if datetime.now(timezone.utc) >= deadline:
                 break
             if max_batches and proof["processed_batch_count"] >= max_batches:
+                break
+            if max_layers_per_run and len(proof["layers"]) >= max_layers_per_run:
                 break
 
             layer_key = str(layer["layer_key"])
@@ -2045,6 +2066,8 @@ class SourceExpansionRunner:
                 result = self._ingest_settlement_boundary_family(command, source_family, sources, run_id)
             elif source_family in CONSTRAINT_FAMILIES:
                 result = self._ingest_constraint_family(command, source_family, sources, run_id)
+            elif command != "probe-open-location-spine" and source_family in OPEN_LOCATION_SPINE_BULK_FAMILIES:
+                result = self._ingest_open_location_spine_family(command, source_family, sources, run_id)
             elif source_family in PROBE_ONLY_FAMILIES:
                 result = self._probe_catalogue_family(command, source_family, sources, run_id)
             else:
@@ -2423,6 +2446,872 @@ class SourceExpansionRunner:
             "blocked_sources": blocked,
             "results": results,
         }
+
+    def _ingest_open_location_spine_family(
+        self,
+        command: str,
+        source_family: str,
+        sources: list[dict[str, Any]],
+        run_id: str,
+    ) -> dict[str, Any]:
+        raw_rows = 0
+        linked_rows = 0
+        measured_rows = 0
+        evidence_rows = 0
+        signal_rows = 0
+        results: list[dict[str, Any]] = []
+        for source in sources:
+            self._upsert_source_estate(source)
+            if str(source.get("orchestration_mode") or "") == "os_downloads_opendata":
+                source_result = self._ingest_os_download_open_location_source(source, run_id)
+            elif source_family == "osm":
+                source_result = self._ingest_osm_open_location_source(source, run_id)
+            else:
+                status, summary = self._probe_source(source)
+                source_result = {
+                    "source_key": source["source_key"],
+                    "source_family": source_family,
+                    "status": status,
+                    "summary": summary,
+                    "raw_rows": 0,
+                    "linked_rows": 0,
+                    "measured_rows": 0,
+                    "evidence_rows": 0,
+                    "signal_rows": 0,
+                }
+            raw_rows += int(source_result.get("raw_rows") or 0)
+            linked_rows += int(source_result.get("linked_rows") or 0)
+            measured_rows += int(source_result.get("measured_rows") or 0)
+            evidence_rows += int(source_result.get("evidence_rows") or 0)
+            signal_rows += int(source_result.get("signal_rows") or 0)
+            results.append(source_result)
+
+        status = (
+            "open_location_spine_landed"
+            if raw_rows and linked_rows
+            else "open_location_spine_rows_landed_unlinked"
+            if raw_rows
+            else "open_location_spine_no_rows_landed"
+        )
+        result = {
+            "command": command,
+            "source_family": source_family,
+            "raw_rows": raw_rows,
+            "linked_rows": linked_rows,
+            "measured_rows": measured_rows,
+            "evidence_rows": evidence_rows,
+            "signal_rows": signal_rows,
+            "status": status,
+            "results": results,
+        }
+        self._record_expansion_event(
+            command_name=command,
+            source_key=None,
+            source_family=source_family,
+            status=status,
+            raw_rows=raw_rows,
+            linked_rows=linked_rows,
+            measured_rows=measured_rows,
+            evidence_rows=evidence_rows,
+            signal_rows=signal_rows,
+            summary="Open location spine bulk landing attempted with download and site-context budgets.",
+            metadata=result,
+        )
+        return result
+
+    def _ingest_os_download_open_location_source(self, source: dict[str, Any], run_id: str) -> dict[str, Any]:
+        del run_id
+        downloads, download_summary = self._os_download_options(source)
+        selected_download = self._select_open_location_download(downloads)
+        if selected_download is None:
+            result = {
+                "source_key": source["source_key"],
+                "source_family": source["source_family"],
+                "status": "download_size_or_format_budget_skipped",
+                "summary": download_summary,
+                "raw_rows": 0,
+                "linked_rows": 0,
+                "measured_rows": 0,
+                "evidence_rows": 0,
+                "signal_rows": 0,
+                "download_options": downloads[:8],
+            }
+            self._record_source_freshness(source, "empty", "reachable", 0, result)
+            self._update_open_location_lifecycle(source, result)
+            self._record_expansion_event(
+                command_name=f"ingest-{source['source_family'].replace('_', '-')}",
+                source_key=source["source_key"],
+                source_family=source["source_family"],
+                status=str(result["status"]),
+                summary=str(result["summary"]),
+                metadata=result,
+            )
+            return result
+
+        max_bytes = max(self._env_int("OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES", 90_000_000), 1)
+        max_features = max(self._env_int("OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE", 2500), 1)
+        with tempfile.TemporaryDirectory(prefix="landintel-open-spine-") as tmp_dir:
+            archive_path = Path(tmp_dir) / str(selected_download.get("fileName") or "download.zip")
+            self._download_budgeted_file(str(selected_download["url"]), archive_path, max_bytes)
+            extracted_paths = self._extract_open_location_archive(archive_path, Path(tmp_dir) / "extract")
+            rows = self._open_location_rows_from_paths(source, selected_download, extracted_paths, max_features)
+
+        inserted_rows = self._upsert_open_location_spine_rows(rows)
+        context = self._refresh_open_location_spine_context(
+            [str(source["source_key"])],
+            max(self._env_int("OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE", 250), 1),
+        )
+        result = {
+            "source_key": source["source_key"],
+            "source_family": source["source_family"],
+            "status": "raw_data_landed" if inserted_rows else "reachable_no_supported_features",
+            "summary": (
+                f"{source['source_name']} landed {inserted_rows} open-location feature row(s) "
+                f"from {selected_download.get('format')} {selected_download.get('fileName')}."
+            ),
+            "raw_rows": inserted_rows,
+            "linked_rows": int(context.get("linked_rows") or 0),
+            "measured_rows": int(context.get("measured_rows") or 0),
+            "evidence_rows": int(context.get("evidence_rows") or 0),
+            "signal_rows": int(context.get("signal_rows") or 0),
+            "selected_download": {
+                "fileName": selected_download.get("fileName"),
+                "format": selected_download.get("format"),
+                "subformat": selected_download.get("subformat"),
+                "size": selected_download.get("size"),
+            },
+            "context": context,
+        }
+        self._record_source_freshness(source, "current" if inserted_rows else "empty", "reachable", inserted_rows, result)
+        self._update_open_location_lifecycle(source, result)
+        self._record_expansion_event(
+            command_name=f"ingest-{source['source_family'].replace('_', '-')}",
+            source_key=source["source_key"],
+            source_family=source["source_family"],
+            status=str(result["status"]),
+            raw_rows=inserted_rows,
+            linked_rows=int(result["linked_rows"]),
+            measured_rows=int(result["measured_rows"]),
+            evidence_rows=int(result["evidence_rows"]),
+            signal_rows=int(result["signal_rows"]),
+            summary=str(result["summary"]),
+            metadata=result,
+        )
+        return result
+
+    def _ingest_osm_open_location_source(self, source: dict[str, Any], run_id: str) -> dict[str, Any]:
+        del run_id
+        site_limit = max(self._env_int("OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE", 10), 1)
+        element_limit = max(self._env_int("OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT", 2000), 1)
+        site_rows = self.database.fetch_all(
+            """
+            select
+                site.id::text as canonical_site_id,
+                st_ymin(st_transform(st_expand(site.geometry, 1000), 4326)) as south,
+                st_xmin(st_transform(st_expand(site.geometry, 1000), 4326)) as west,
+                st_ymax(st_transform(st_expand(site.geometry, 1000), 4326)) as north,
+                st_xmax(st_transform(st_expand(site.geometry, 1000), 4326)) as east
+            from landintel.canonical_sites as site
+            where site.geometry is not null
+            order by site.updated_at desc nulls last, site.id
+            limit :site_limit
+            """,
+            {"site_limit": site_limit},
+        )
+        rows: list[dict[str, Any]] = []
+        for site in site_rows:
+            rows.extend(self._fetch_osm_open_location_rows(source, site, element_limit))
+            if len(rows) >= element_limit:
+                rows = rows[:element_limit]
+                break
+
+        inserted_rows = self._upsert_open_location_spine_rows(rows)
+        context = self._refresh_open_location_spine_context(
+            [str(source["source_key"])],
+            max(self._env_int("OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE", 250), 1),
+        )
+        result = {
+            "source_key": source["source_key"],
+            "source_family": source["source_family"],
+            "status": "raw_data_landed" if inserted_rows else "reachable_no_supported_features",
+            "summary": f"OSM site-bounded open context landed {inserted_rows} feature row(s).",
+            "raw_rows": inserted_rows,
+            "linked_rows": int(context.get("linked_rows") or 0),
+            "measured_rows": int(context.get("measured_rows") or 0),
+            "evidence_rows": int(context.get("evidence_rows") or 0),
+            "signal_rows": int(context.get("signal_rows") or 0),
+            "site_probe_count": len(site_rows),
+            "context": context,
+        }
+        self._record_source_freshness(source, "current" if inserted_rows else "empty", "reachable", inserted_rows, result)
+        self._update_open_location_lifecycle(source, result)
+        self._record_expansion_event(
+            command_name="ingest-osm-overpass",
+            source_key=source["source_key"],
+            source_family=source["source_family"],
+            status=str(result["status"]),
+            raw_rows=inserted_rows,
+            linked_rows=int(result["linked_rows"]),
+            measured_rows=int(result["measured_rows"]),
+            evidence_rows=int(result["evidence_rows"]),
+            signal_rows=int(result["signal_rows"]),
+            summary=str(result["summary"]),
+            metadata=result,
+        )
+        return result
+
+    def _os_download_options(self, source: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
+        endpoint = self._os_downloads_product_endpoint(source)
+        params: dict[str, str] = {}
+        if source.get("download_area"):
+            params["area"] = str(source["download_area"])
+        response = self.client.get(
+            endpoint,
+            params=params,
+            headers={"User-Agent": "LandIntel/1.0 (+https://github.com/LDN-reece/LandIntel)"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        downloads = [dict(item) for item in payload] if isinstance(payload, list) else []
+        return downloads, f"HTTP {response.status_code}: {len(downloads)} OS Downloads option(s)"
+
+    def _select_open_location_download(self, downloads: list[dict[str, Any]]) -> dict[str, Any] | None:
+        force_large = str(os.getenv("OPEN_LOCATION_SPINE_FORCE_LARGE_DOWNLOADS") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        max_bytes = max(self._env_int("OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES", 90_000_000), 1)
+        priority = ("GeoPackage", "CSV", "ESRI")
+        candidates: list[tuple[int, int, dict[str, Any]]] = []
+        for download in downloads:
+            fmt = str(download.get("format") or "")
+            size = int(download.get("size") or 0)
+            if not force_large and size > max_bytes:
+                continue
+            priority_index = next((index for index, token in enumerate(priority) if token.lower() in fmt.lower()), 999)
+            if priority_index == 999:
+                continue
+            candidates.append((priority_index, size, download))
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: (item[0], item[1]))
+        return dict(candidates[0][2])
+
+    def _download_budgeted_file(self, url: str, target_path: Path, max_bytes: int) -> None:
+        total_bytes = 0
+        with self.client.stream(
+            "GET",
+            url,
+            headers={"User-Agent": "LandIntel/1.0 (+https://github.com/LDN-reece/LandIntel)"},
+        ) as response:
+            response.raise_for_status()
+            with target_path.open("wb") as handle:
+                for chunk in response.iter_bytes():
+                    if not chunk:
+                        continue
+                    total_bytes += len(chunk)
+                    if total_bytes > max_bytes:
+                        raise RuntimeError("open_location_spine_download_budget_exceeded")
+                    handle.write(chunk)
+
+    def _extract_open_location_archive(self, archive_path: Path, extract_dir: Path) -> list[Path]:
+        extract_dir.mkdir(parents=True, exist_ok=True)
+        if zipfile.is_zipfile(archive_path):
+            with zipfile.ZipFile(archive_path) as archive:
+                archive.extractall(extract_dir)
+            return [
+                path
+                for path in extract_dir.rglob("*")
+                if path.suffix.lower() in {".gpkg", ".shp", ".csv"}
+            ]
+        return [archive_path]
+
+    def _open_location_rows_from_paths(
+        self,
+        source: dict[str, Any],
+        selected_download: dict[str, Any],
+        paths: list[Path],
+        max_features: int,
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for path in paths:
+            if len(rows) >= max_features:
+                break
+            if path.suffix.lower() == ".csv":
+                rows.extend(
+                    self._open_location_rows_from_csv(
+                        source,
+                        selected_download,
+                        path,
+                        max_features - len(rows),
+                    )
+                )
+            elif path.suffix.lower() in {".gpkg", ".shp"}:
+                rows.extend(
+                    self._open_location_rows_from_vector(
+                        source,
+                        selected_download,
+                        path,
+                        max_features - len(rows),
+                    )
+                )
+        return rows[:max_features]
+
+    def _open_location_rows_from_vector(
+        self,
+        source: dict[str, Any],
+        selected_download: dict[str, Any],
+        path: Path,
+        max_features: int,
+    ) -> list[dict[str, Any]]:
+        layer_names = self._vector_layer_names(path)
+        rows: list[dict[str, Any]] = []
+        for layer_name in layer_names:
+            if len(rows) >= max_features:
+                break
+            try:
+                read_kwargs: dict[str, Any] = {"rows": max_features - len(rows)}
+                if layer_name is not None:
+                    read_kwargs["layer"] = layer_name
+                frame = gpd.read_file(path, **read_kwargs)
+            except Exception as exc:
+                self.logger.warning(
+                    "open_location_spine_vector_layer_skipped",
+                    extra={"path": str(path), "layer_name": layer_name, "error": str(exc)},
+                )
+                continue
+            if frame.empty or "geometry" not in frame:
+                continue
+            if frame.crs is None:
+                frame = frame.set_crs(27700, allow_override=True)
+            if frame.crs.to_epsg() != 27700:
+                frame = frame.to_crs(27700)
+            frame = frame[frame.geometry.notna()]
+            frame = frame[frame.geometry.apply(self._geometry_intersects_scotland_bbox)]
+            for index, row in frame.iterrows():
+                geometry = force_2d(row.geometry) if row.geometry is not None else None
+                if geometry is None or geometry.is_empty:
+                    continue
+                raw_payload = _raw_payload(dict(row.drop(labels=["geometry"], errors="ignore")))
+                rows.append(
+                    self._open_location_row_payload(
+                        source,
+                        selected_download,
+                        str(layer_name or path.stem),
+                        raw_payload,
+                        geometry,
+                        index,
+                    )
+                )
+                if len(rows) >= max_features:
+                    break
+        return rows
+
+    def _open_location_rows_from_csv(
+        self,
+        source: dict[str, Any],
+        selected_download: dict[str, Any],
+        path: Path,
+        max_features: int,
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        try:
+            for chunk in pd.read_csv(path, chunksize=2000, low_memory=False):
+                for index, row in chunk.iterrows():
+                    geometry = self._point_from_open_location_csv_row(row.to_dict())
+                    if geometry is None or not self._geometry_intersects_scotland_bbox(geometry):
+                        continue
+                    rows.append(
+                        self._open_location_row_payload(
+                            source,
+                            selected_download,
+                            path.stem,
+                            _raw_payload(row.to_dict()),
+                            geometry,
+                            index,
+                        )
+                    )
+                    if len(rows) >= max_features:
+                        return rows
+        except Exception as exc:
+            self.logger.warning("open_location_spine_csv_skipped", extra={"path": str(path), "error": str(exc)})
+        return rows
+
+    def _vector_layer_names(self, path: Path) -> list[str | None]:
+        if path.suffix.lower() != ".gpkg":
+            return [None]
+        try:
+            import pyogrio
+
+            layers = pyogrio.list_layers(path)
+            names: list[str | None] = []
+            for layer in layers:
+                try:
+                    names.append(str(layer[0]))
+                except Exception:
+                    names.append(str(layer))
+            return names or [None]
+        except Exception:
+            return [None]
+
+    def _point_from_open_location_csv_row(self, row: dict[str, Any]) -> Point | None:
+        lowered = {str(key).lower(): key for key in row.keys()}
+        east_key = next((lowered[key] for key in ("geometry_x", "x", "easting", "eastings") if key in lowered), None)
+        north_key = next((lowered[key] for key in ("geometry_y", "y", "northing", "northings") if key in lowered), None)
+        lon_key = next((lowered[key] for key in ("longitude", "lon", "long") if key in lowered), None)
+        lat_key = next((lowered[key] for key in ("latitude", "lat") if key in lowered), None)
+        if east_key and north_key:
+            east = _to_float(row.get(east_key))
+            north = _to_float(row.get(north_key))
+            if east is not None and north is not None:
+                return Point(east, north)
+        if lon_key and lat_key:
+            lon = _to_float(row.get(lon_key))
+            lat = _to_float(row.get(lat_key))
+            if lon is not None and lat is not None:
+                return gpd.GeoSeries([Point(lon, lat)], crs=4326).to_crs(27700).iloc[0]
+        return None
+
+    def _open_location_row_payload(
+        self,
+        source: dict[str, Any],
+        selected_download: dict[str, Any],
+        layer_name: str,
+        raw_payload: dict[str, Any],
+        geometry: BaseGeometry,
+        row_index: Any,
+    ) -> dict[str, Any]:
+        reference = (
+            _pick_text(raw_payload, REFERENCE_FIELDS)
+            or _pick_text(raw_payload, ("toid", "TOID", "id", "identifier", "gml_id"))
+            or row_index
+        )
+        feature_name = _pick_text(raw_payload, NAME_FIELDS)
+        feature_type = self._open_location_feature_type(str(source["source_family"]), layer_name, raw_payload)
+        signature_payload = _json_dumps(
+            {
+                "source_key": source["source_key"],
+                "layer": layer_name,
+                "reference": reference,
+                "geometry_hash": self._geometry_hash(geometry),
+            }
+        )
+        return {
+            "source_key": source["source_key"],
+            "source_family": source["source_family"],
+            "source_record_id": f"{source['source_key']}:{_slug(layer_name)}:{_slug(reference)}",
+            "feature_type": feature_type,
+            "feature_name": feature_name,
+            "source_layer": layer_name,
+            "source_url": selected_download.get("url"),
+            "geometry_wkb": _geometry_hex(geometry),
+            "source_record_signature": hashlib.md5(signature_payload.encode("utf-8")).hexdigest(),
+            "raw_payload": _json_dumps(
+                {
+                    **raw_payload,
+                    "_download_file_name": selected_download.get("fileName"),
+                    "_download_format": selected_download.get("format"),
+                    "_licence_basis": source.get("licence_basis") or "open_data",
+                }
+            ),
+        }
+
+    def _open_location_feature_type(
+        self,
+        source_family: str,
+        layer_name: str,
+        raw_payload: dict[str, Any],
+    ) -> str:
+        if source_family == "os_open_roads":
+            return "road"
+        if source_family == "os_open_rivers":
+            return "watercourse"
+        if source_family == "os_boundary_line":
+            return _slug(_pick_text(raw_payload, ("boundary_type", "type", "theme")) or "administrative_boundary")
+        if source_family == "os_open_names":
+            return _slug(_pick_text(raw_payload, ("local_type", "type", "classification")) or "place_name")
+        if source_family == "os_open_greenspace":
+            return _slug(_pick_text(raw_payload, ("function", "function_code", "type")) or "greenspace")
+        if source_family == "os_open_built_up_areas":
+            return "built_up_area"
+        if source_family == "os_open_toid":
+            return "toid"
+        if source_family == "os_open_uprn":
+            return "uprn"
+        if source_family == "os_open_usrn":
+            return "usrn"
+        if source_family == "osm":
+            return _slug(
+                raw_payload.get("amenity")
+                or raw_payload.get("shop")
+                or raw_payload.get("power")
+                or raw_payload.get("highway")
+                or raw_payload.get("landuse")
+                or "osm_context"
+            )
+        return _slug(layer_name or source_family)
+
+    def _geometry_intersects_scotland_bbox(self, geometry: BaseGeometry | None) -> bool:
+        if geometry is None or geometry.is_empty:
+            return False
+        minx, miny, maxx, maxy = geometry.bounds
+        return maxx >= -100000 and minx <= 470000 and maxy >= 530000 and miny <= 1220000
+
+    def _fetch_osm_open_location_rows(
+        self,
+        source: dict[str, Any],
+        site: dict[str, Any],
+        element_limit: int,
+    ) -> list[dict[str, Any]]:
+        south = float(site["south"])
+        west = float(site["west"])
+        north = float(site["north"])
+        east = float(site["east"])
+        query = f"""
+        [out:json][timeout:25];
+        (
+          node["amenity"]({south},{west},{north},{east});
+          node["shop"]({south},{west},{north},{east});
+          node["highway"]({south},{west},{north},{east});
+          node["power"]({south},{west},{north},{east});
+          way["highway"]({south},{west},{north},{east});
+          way["power"]({south},{west},{north},{east});
+          way["landuse"]({south},{west},{north},{east});
+          relation["landuse"]({south},{west},{north},{east});
+        );
+        out center tags {element_limit};
+        """
+        response = self.client.post(
+            str(source.get("endpoint_url") or "https://overpass-api.de/api/interpreter"),
+            data={"data": query},
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "LandIntel/1.0 (+https://github.com/LDN-reece/LandIntel)",
+            },
+        )
+        response.raise_for_status()
+        payload = response.json()
+        rows: list[dict[str, Any]] = []
+        for element in payload.get("elements") or []:
+            tags = dict(element.get("tags") or {})
+            latitude = element.get("lat") or (element.get("center") or {}).get("lat")
+            longitude = element.get("lon") or (element.get("center") or {}).get("lon")
+            lat_float = _to_float(latitude)
+            lon_float = _to_float(longitude)
+            if lat_float is None or lon_float is None:
+                continue
+            geometry = gpd.GeoSeries([Point(lon_float, lat_float)], crs=4326).to_crs(27700).iloc[0]
+            raw_payload = {
+                **tags,
+                "osm_type": element.get("type"),
+                "osm_id": element.get("id"),
+                "source_canonical_site_id": site.get("canonical_site_id"),
+                "latitude": lat_float,
+                "longitude": lon_float,
+            }
+            rows.append(
+                {
+                    "source_key": source["source_key"],
+                    "source_family": source["source_family"],
+                    "source_record_id": f"{source['source_key']}:{element.get('type')}:{element.get('id')}",
+                    "feature_type": self._open_location_feature_type("osm", "overpass", raw_payload),
+                    "feature_name": tags.get("name"),
+                    "source_layer": "overpass_site_bbox",
+                    "source_url": source.get("endpoint_url"),
+                    "geometry_wkb": _geometry_hex(geometry),
+                    "source_record_signature": hashlib.md5(_json_dumps(raw_payload).encode("utf-8")).hexdigest(),
+                    "raw_payload": _json_dumps(raw_payload),
+                }
+            )
+        return rows
+
+    def _upsert_open_location_spine_rows(self, rows: list[dict[str, Any]]) -> int:
+        valid_rows = [row for row in rows if row.get("geometry_wkb")]
+        if not valid_rows:
+            return 0
+        self.database.execute_many(
+            """
+            insert into landintel.open_location_spine_features (
+                source_key,
+                source_family,
+                source_record_id,
+                feature_type,
+                feature_name,
+                source_layer,
+                source_url,
+                geometry,
+                source_record_signature,
+                raw_payload,
+                updated_at
+            ) values (
+                :source_key,
+                :source_family,
+                :source_record_id,
+                :feature_type,
+                :feature_name,
+                :source_layer,
+                :source_url,
+                ST_GeomFromWKB(decode(:geometry_wkb, 'hex'), 27700),
+                :source_record_signature,
+                cast(:raw_payload as jsonb),
+                now()
+            )
+            on conflict (source_key, source_record_id) do update set
+                source_family = excluded.source_family,
+                feature_type = excluded.feature_type,
+                feature_name = excluded.feature_name,
+                source_layer = excluded.source_layer,
+                source_url = excluded.source_url,
+                geometry = excluded.geometry,
+                source_record_signature = excluded.source_record_signature,
+                raw_payload = excluded.raw_payload,
+                updated_at = now()
+            """,
+            valid_rows,
+        )
+        return len(valid_rows)
+
+    def _refresh_open_location_spine_context(
+        self,
+        source_keys: list[str],
+        site_batch_size: int,
+    ) -> dict[str, Any]:
+        if not source_keys:
+            return {"linked_rows": 0, "measured_rows": 0, "evidence_rows": 0, "signal_rows": 0}
+        return self.database.fetch_one(
+            """
+            with selected_sites as (
+                select site.id, site.geometry
+                from landintel.canonical_sites as site
+                where site.geometry is not null
+                order by site.updated_at desc nulls last, site.id
+                limit :site_batch_size
+            ),
+            feature_types as (
+                select distinct source_key, source_family, feature_type
+                from landintel.open_location_spine_features
+                where geometry is not null
+                  and source_key = any(cast(:source_keys as text[]))
+            ),
+            nearest_features as (
+                select
+                    site.id as canonical_site_id,
+                    feature_types.source_key,
+                    feature_types.source_family,
+                    feature_types.feature_type,
+                    nearest.id as nearest_feature_id,
+                    nearest.feature_name as nearest_feature_name,
+                    nearest.nearest_distance_m,
+                    nearby.count_within_400m,
+                    nearby.count_within_800m,
+                    nearby.count_within_1600m
+                from selected_sites as site
+                join feature_types on true
+                join lateral (
+                    select
+                        feature.id,
+                        feature.feature_name,
+                        st_distance(site.geometry, feature.geometry) as nearest_distance_m
+                    from landintel.open_location_spine_features as feature
+                    where feature.geometry is not null
+                      and feature.source_key = feature_types.source_key
+                      and feature.feature_type = feature_types.feature_type
+                    order by site.geometry OPERATOR(extensions.<->) feature.geometry, feature.id
+                    limit 1
+                ) as nearest on true
+                cross join lateral (
+                    select
+                        count(*) filter (where st_dwithin(site.geometry, feature.geometry, 400))::integer as count_within_400m,
+                        count(*) filter (where st_dwithin(site.geometry, feature.geometry, 800))::integer as count_within_800m,
+                        count(*) filter (where st_dwithin(site.geometry, feature.geometry, 1600))::integer as count_within_1600m
+                    from landintel.open_location_spine_features as feature
+                    where feature.geometry is not null
+                      and feature.source_key = feature_types.source_key
+                      and feature.feature_type = feature_types.feature_type
+                ) as nearby
+            ),
+            upserted_context as (
+                insert into landintel.site_open_location_spine_context (
+                    canonical_site_id,
+                    source_key,
+                    source_family,
+                    feature_type,
+                    nearest_feature_id,
+                    nearest_feature_name,
+                    nearest_distance_m,
+                    count_within_400m,
+                    count_within_800m,
+                    count_within_1600m,
+                    source_record_signature,
+                    metadata,
+                    measured_at,
+                    updated_at
+                )
+                select
+                    nearest_features.canonical_site_id,
+                    nearest_features.source_key,
+                    nearest_features.source_family,
+                    nearest_features.feature_type,
+                    nearest_features.nearest_feature_id,
+                    nearest_features.nearest_feature_name,
+                    round(nearest_features.nearest_distance_m::numeric, 2),
+                    nearest_features.count_within_400m,
+                    nearest_features.count_within_800m,
+                    nearest_features.count_within_1600m,
+                    md5(concat_ws('|', nearest_features.canonical_site_id::text, nearest_features.source_key, nearest_features.feature_type, nearest_features.nearest_feature_id::text, round(nearest_features.nearest_distance_m::numeric, 2)::text)),
+                    jsonb_build_object('source_key', nearest_features.source_key, 'feature_type', nearest_features.feature_type, 'source_limitation', 'open_location_context_not_legal_or_engineering_evidence'),
+                    now(),
+                    now()
+                from nearest_features
+                on conflict (canonical_site_id, source_key, feature_type) do update set
+                    source_family = excluded.source_family,
+                    nearest_feature_id = excluded.nearest_feature_id,
+                    nearest_feature_name = excluded.nearest_feature_name,
+                    nearest_distance_m = excluded.nearest_distance_m,
+                    count_within_400m = excluded.count_within_400m,
+                    count_within_800m = excluded.count_within_800m,
+                    count_within_1600m = excluded.count_within_1600m,
+                    source_record_signature = excluded.source_record_signature,
+                    metadata = excluded.metadata,
+                    measured_at = now(),
+                    updated_at = now()
+                returning *
+            ),
+            deleted_evidence as (
+                delete from landintel.evidence_references as evidence
+                using upserted_context
+                where evidence.canonical_site_id = upserted_context.canonical_site_id
+                  and evidence.source_family = upserted_context.source_family
+                  and evidence.metadata ->> 'source_key' = upserted_context.source_key
+                  and evidence.metadata ->> 'feature_type' = upserted_context.feature_type
+                returning evidence.id
+            ),
+            deleted_signals as (
+                delete from landintel.site_signals as signal
+                using upserted_context
+                where signal.canonical_site_id = upserted_context.canonical_site_id
+                  and signal.source_family = upserted_context.source_family
+                  and signal.signal_family = 'location_context'
+                  and signal.signal_name = 'open_location_spine_proximity'
+                  and signal.metadata ->> 'source_key' = upserted_context.source_key
+                  and signal.metadata ->> 'feature_type' = upserted_context.feature_type
+                returning signal.id
+            ),
+            inserted_evidence as (
+                insert into landintel.evidence_references (
+                    canonical_site_id,
+                    source_family,
+                    source_dataset,
+                    source_record_id,
+                    source_reference,
+                    confidence,
+                    metadata
+                )
+                select
+                    upserted_context.canonical_site_id,
+                    upserted_context.source_family,
+                    'Open location spine context',
+                    upserted_context.id::text,
+                    coalesce(upserted_context.nearest_feature_name, upserted_context.feature_type),
+                    'medium',
+                    jsonb_build_object(
+                        'source_key', upserted_context.source_key,
+                        'feature_type', upserted_context.feature_type,
+                        'nearest_distance_m', upserted_context.nearest_distance_m,
+                        'source_limitation', 'open_location_context_not_legal_or_engineering_evidence'
+                    )
+                from upserted_context
+                returning id
+            ),
+            inserted_signals as (
+                insert into landintel.site_signals (
+                    canonical_site_id,
+                    signal_family,
+                    signal_name,
+                    signal_value_text,
+                    signal_value_numeric,
+                    confidence,
+                    source_family,
+                    source_record_id,
+                    fact_label,
+                    evidence_metadata,
+                    metadata,
+                    current_flag
+                )
+                select
+                    upserted_context.canonical_site_id,
+                    'location_context',
+                    'open_location_spine_proximity',
+                    upserted_context.feature_type,
+                    upserted_context.nearest_distance_m,
+                    0.55,
+                    upserted_context.source_family,
+                    upserted_context.id::text,
+                    'open_location_context_evidence',
+                    jsonb_build_object('source_key', upserted_context.source_key, 'feature_type', upserted_context.feature_type),
+                    jsonb_build_object('source_key', upserted_context.source_key, 'feature_type', upserted_context.feature_type),
+                    true
+                from upserted_context
+                returning id
+            )
+            select
+                (select count(distinct canonical_site_id)::integer from upserted_context) as linked_rows,
+                (select count(distinct canonical_site_id)::integer from upserted_context) as measured_rows,
+                (select count(*)::integer from inserted_evidence) as evidence_rows,
+                (select count(*)::integer from inserted_signals) as signal_rows
+            """,
+            {"source_keys": source_keys, "site_batch_size": site_batch_size},
+        ) or {"linked_rows": 0, "measured_rows": 0, "evidence_rows": 0, "signal_rows": 0}
+
+    def _update_open_location_lifecycle(self, source: dict[str, Any], result: dict[str, Any]) -> None:
+        raw_rows = int(result.get("raw_rows") or 0)
+        linked_rows = int(result.get("linked_rows") or 0)
+        measured_rows = int(result.get("measured_rows") or 0)
+        evidence_rows = int(result.get("evidence_rows") or 0)
+        signal_rows = int(result.get("signal_rows") or 0)
+        self.database.execute(
+            """
+            update landintel.source_estate_registry
+            set access_status = 'access_confirmed',
+                ingest_status = case when :raw_rows > 0 then 'raw_data_landed' else ingest_status end,
+                normalisation_status = case when :raw_rows > 0 then 'normalised' else normalisation_status end,
+                site_link_status = case when :linked_rows > 0 then 'linked_to_site' else site_link_status end,
+                measurement_status = case when :measured_rows > 0 then 'measured' else measurement_status end,
+                evidence_status = case when :evidence_rows > 0 then 'evidence_generated' else evidence_status end,
+                signal_status = case when :signal_rows > 0 then 'signals_generated' else signal_status end,
+                trusted_for_review = false,
+                limitation_notes = coalesce(:limitation_notes, limitation_notes),
+                next_action = coalesce(:next_action, next_action),
+                lifecycle_metadata = lifecycle_metadata || cast(:metadata as jsonb),
+                updated_at = now()
+            where source_key = :source_key
+            """,
+            {
+                "source_key": source["source_key"],
+                "raw_rows": raw_rows,
+                "linked_rows": linked_rows,
+                "measured_rows": measured_rows,
+                "evidence_rows": evidence_rows,
+                "signal_rows": signal_rows,
+                "limitation_notes": source.get("limitation_notes")
+                or "Open location spine context only; does not prove legal access, ownership or engineering capacity.",
+                "next_action": source.get("next_action")
+                or "Keep measuring site context and promote only after coverage and source limitations are proven.",
+                "metadata": _json_dumps(
+                    {
+                        "latest_bulk_landing": {
+                            "raw_rows": raw_rows,
+                            "linked_rows": linked_rows,
+                            "measured_rows": measured_rows,
+                            "evidence_rows": evidence_rows,
+                            "signal_rows": signal_rows,
+                            "status": result.get("status"),
+                        }
+                    }
+                ),
+            },
+        )
 
     def _fetch_wfs_source_frames(self, source: dict[str, Any]) -> list[gpd.GeoDataFrame]:
         endpoint_url = str(source["endpoint_url"])
@@ -4314,6 +5203,18 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _to_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    text = str(value).replace(",", "").strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
 def _json_dumps(payload: Any) -> str:
     return json.dumps(_json_safe(payload), ensure_ascii=True, default=str)
 
@@ -4424,6 +5325,7 @@ def build_parser() -> argparse.ArgumentParser:
             "ingest-os-open-uprn",
             "ingest-os-open-usrn",
             "ingest-osm-overpass",
+            "ingest-open-location-spine",
             "ingest-naptan",
             "ingest-statistics-gov-scot",
             "ingest-opentopography-srtm",

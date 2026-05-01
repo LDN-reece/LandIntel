@@ -54,6 +54,7 @@ class SourceExpansionContractTests(unittest.TestCase):
             "ingest-os-open-uprn",
             "ingest-os-open-usrn",
             "ingest-osm-overpass",
+            "ingest-open-location-spine",
             "ingest-naptan",
             "ingest-statistics-gov-scot",
             "ingest-opentopography-srtm",
@@ -201,7 +202,7 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertNotIn("reconcile-catchup-scan --source-family ela", WORKFLOW)
         self.assertNotIn("reconcile-catchup-scan --source-family vdl", WORKFLOW)
 
-    def test_os_sources_are_registered_without_local_storage(self) -> None:
+    def test_os_sources_are_registered_and_bulk_landing_is_bounded(self) -> None:
         for source_key in (
             "os_downloads_terrain50",
             "os_places_api",
@@ -260,6 +261,14 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("OpenZoomstack", RUNNER)
         self.assertIn("OpenTOID", RUNNER)
         self.assertIn("BuiltUpAreas", RUNNER)
+        self.assertIn("OPEN_LOCATION_SPINE_BULK_FAMILIES", RUNNER)
+        self.assertIn("ingest-open-location-spine", RUNNER)
+        self.assertIn("landintel.open_location_spine_features", RUNNER)
+        self.assertIn("landintel.site_open_location_spine_context", RUNNER)
+        self.assertIn("OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES", RUNNER)
+        self.assertIn("OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES", WORKFLOW)
+        self.assertIn("download_size_or_format_budget_skipped", RUNNER)
+        self.assertIn("open_location_context_not_legal_or_engineering_evidence", RUNNER)
         self.assertIn("SRTMGL1", RUNNER)
         self.assertIn("_secret_value_is_api_key", RUNNER)
         self.assertIn("_os_downloads_product_endpoint", RUNNER)
@@ -429,6 +438,8 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("CONSTRAINT_MEASURE_SITE_BATCH_SIZE: ${{ inputs.constraint_measure_site_batch_size || '25' }}", WORKFLOW)
         self.assertIn("CONSTRAINT_MEASURE_MAX_BATCHES: ${{ inputs.constraint_measure_max_batches || '4' }}", WORKFLOW)
         self.assertIn('CONSTRAINT_MEASURE_MAX_BATCHES_PER_LAYER: "1"', WORKFLOW)
+        self.assertIn('CONSTRAINT_MEASURE_MAX_LAYERS_PER_RUN: "1"', WORKFLOW)
+        self.assertIn("max_layers_per_run", RUNNER)
 
 
 if __name__ == "__main__":

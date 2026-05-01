@@ -147,6 +147,8 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "landintel.amenity_assets",
             "landintel.site_amenity_context",
             "landintel.location_strength_facts",
+            "landintel.open_location_spine_features",
+            "landintel.site_open_location_spine_context",
             "landintel.demographic_area_metrics",
             "landintel.site_demographic_context",
             "landintel.housing_demand_context",
@@ -170,6 +172,8 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "analytics.v_site_abnormal_risk_context",
             "analytics.v_site_market_context",
             "analytics.v_site_amenity_context",
+            "analytics.v_open_location_spine_coverage",
+            "analytics.v_site_open_location_spine_context",
             "analytics.v_site_demographic_context",
             "analytics.v_site_planning_document_context",
             "analytics.v_site_intelligence_events",
@@ -196,6 +200,8 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("evidence_rollup.source_key = registry.source_key", trust_gate)
         self.assertIn("signal_rollup.source_key = registry.source_key", trust_gate)
         self.assertIn("metadata ->> 'source_key'", trust_gate)
+        self.assertIn("open_location_spine_features", trust_gate)
+        self.assertIn("site_open_location_spine_context", trust_gate)
 
     def test_source_catalog_sync_uses_upserts_without_reload_deletes(self) -> None:
         self.assertNotIn("delete from landintel.source_endpoint_catalog", CATALOG_SYNC)

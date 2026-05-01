@@ -94,6 +94,7 @@ on:
           - ingest-os-open-uprn
           - ingest-os-open-usrn
           - ingest-osm-overpass
+          - ingest-open-location-spine
           - ingest-naptan
           - ingest-statistics-gov-scot
           - ingest-opentopography-srtm
@@ -235,6 +236,7 @@ jobs:
       CONSTRAINT_MEASURE_SITE_BATCH_SIZE: ${{ inputs.constraint_measure_site_batch_size || '25' }}
       CONSTRAINT_MEASURE_MAX_BATCHES: ${{ inputs.constraint_measure_max_batches || '4' }}
       CONSTRAINT_MEASURE_MAX_BATCHES_PER_LAYER: "1"
+      CONSTRAINT_MEASURE_MAX_LAYERS_PER_RUN: "1"
       CONSTRAINT_MEASURE_RUNTIME_MINUTES: ${{ inputs.constraint_measure_runtime_minutes || '10' }}
       CONSTRAINT_MEASURE_MIN_AREA_ACRES: "0"
       CONSTRAINT_MEASURE_SOURCE_FAMILY: ${{ inputs.constraint_measure_source_family || '' }}
@@ -244,6 +246,11 @@ jobs:
       CONSTRAINT_MEASURE_DEBUG_FEATURE_PROBE_LIMIT: ${{ inputs.constraint_measure_debug_feature_probe_limit || '50' }}
       CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT: "1"
       CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"
+      OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: "90000000"
+      OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: "2500"
+      OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: "250"
+      OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE: "10"
+      OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT: "2000"
       PHASE2_SOURCE_FAMILY: ${{ inputs.phase2_source_family || '' }}
       PHASE2_AUTHORITY: ${{ inputs.phase2_authority || '' }}
       PHASE2_BATCH_SIZE: ${{ inputs.phase2_batch_size || '250' }}
@@ -358,7 +365,7 @@ jobs:
 
           is_source_expansion_ingest() {
             case "$1" in
-              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features|ingest-os-linked-identifiers|ingest-os-openmap-local|ingest-os-open-roads|ingest-os-open-rivers|ingest-os-boundary-line|ingest-os-open-names|ingest-os-open-greenspace|ingest-os-open-zoomstack|ingest-os-open-toid|ingest-os-open-built-up-areas|ingest-os-open-uprn|ingest-os-open-usrn|ingest-osm-overpass|ingest-naptan|ingest-statistics-gov-scot|ingest-opentopography-srtm|probe-open-location-spine)
+              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features|ingest-os-linked-identifiers|ingest-os-openmap-local|ingest-os-open-roads|ingest-os-open-rivers|ingest-os-boundary-line|ingest-os-open-names|ingest-os-open-greenspace|ingest-os-open-zoomstack|ingest-os-open-toid|ingest-os-open-built-up-areas|ingest-os-open-uprn|ingest-os-open-usrn|ingest-osm-overpass|ingest-open-location-spine|ingest-naptan|ingest-statistics-gov-scot|ingest-opentopography-srtm|probe-open-location-spine)
                 return 0
                 ;;
               *)

@@ -163,6 +163,10 @@ on:
         type: boolean
         default: false
 
+concurrency:
+  group: "landintel-sources-${{ github.ref }}"
+  cancel-in-progress: false
+
 # Automated schedules are intentionally paused during incremental reconcile burn-in.
 # Push runs are validation-only. Source-estate maintenance is manual-only during
 # burn-in because it registers, probes, discovers, and audits sources. It keeps
@@ -173,10 +177,6 @@ on:
 # HLA is supporting evidence only; the source universe now expands through
 # Title Number, LDP, settlement, constraints, ELA, VDL and OS commands instead
 # of repeating HLA.
-
-concurrency:
-  group: landintel-sources-${{ github.event_name }}-${{ inputs.command || 'manual' }}
-  cancel-in-progress: false
 
 jobs:
   run:

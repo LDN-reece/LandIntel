@@ -14,6 +14,7 @@ MIGRATION = "\n".join(
 )
 MANIFEST = (APP_DIR / "config" / "phase2_source_estate.yaml").read_text(encoding="utf-8")
 CATALOG_SYNC = (APP_DIR / "src" / "source_catalog_sync.py").read_text(encoding="utf-8")
+DB_HELPER = (APP_DIR / "src" / "db.py").read_text(encoding="utf-8")
 
 
 class Phase2SourceEstateContractTests(unittest.TestCase):
@@ -55,6 +56,15 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             self.assertIn(input_name, WORKFLOW)
         self.assertIn("src/phase2_source_runner.py", WORKFLOW)
         self.assertIn("python -m src.phase2_source_runner \"$SELECTED_COMMAND\"", WORKFLOW)
+
+    def test_source_runs_and_migrations_are_serialized(self) -> None:
+        self.assertIn("concurrency:", WORKFLOW)
+        self.assertEqual(WORKFLOW.count("concurrency:"), 1)
+        self.assertIn("landintel-sources-${{ github.ref }}", WORKFLOW)
+        self.assertIn("cancel-in-progress: false", WORKFLOW)
+        self.assertIn("pg_advisory_lock", DB_HELPER)
+        self.assertIn("landintel.run_migrations", DB_HELPER)
+        self.assertIn("pg_advisory_unlock", DB_HELPER)
 
     def test_manifest_registers_all_phase2_modules_with_lifecycle_statuses(self) -> None:
         for module_key in (

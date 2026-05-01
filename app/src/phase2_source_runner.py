@@ -5109,6 +5109,8 @@ class Phase2SourceRunner:
                 site_name,
                 authority_name,
                 urgency_status,
+                title_number,
+                normalized_title_number,
                 address_link_status,
                 title_candidate_status,
                 next_action

@@ -142,6 +142,40 @@ alter table landintel.site_prove_it_assessments
 alter table landintel.site_prove_it_assessments
     drop constraint if exists site_prove_it_assessments_pursue_gate_check;
 
+update landintel.site_prove_it_assessments
+set
+    verdict = 'review',
+    title_spend_recommendation = case
+        when title_spend_recommendation = 'order_title_urgently' then 'manual_review_before_order'
+        else title_spend_recommendation
+    end,
+    review_next_action = case
+        when review_next_action = any (array[
+            'Ignore until new evidence appears.',
+            'Monitor only. Do not spend time or title money yet.'
+        ]::text[]) then 'Run constraint review before title spend.'
+        else review_next_action
+    end,
+    metadata = metadata || jsonb_build_object(
+        'gate_downgrade_reason',
+        'pursue_requires_measured_non_terminal_constraint_position'
+    ),
+    updated_at = now()
+where source_key = 'prove_it_conviction_layer'
+  and verdict = 'pursue'
+  and (
+        constraint_position is null
+        or constraint_position = any (array['terminal', 'unknown']::text[])
+        or control_position = any (array['known_blocked', 'likely_controlled_by_housebuilder_promoter']::text[])
+        or market_position = any (array['weak', 'unknown']::text[])
+        or planning_journey_type = 'no_clear_journey'
+        or evidence_confidence <> all (array['high', 'medium', 'mixed']::text[])
+        or review_next_action = any (array[
+            'Ignore until new evidence appears.',
+            'Monitor only. Do not spend time or title money yet.'
+        ]::text[])
+      );
+
 alter table landintel.site_prove_it_assessments
     add constraint site_prove_it_assessments_pursue_gate_check
     check (

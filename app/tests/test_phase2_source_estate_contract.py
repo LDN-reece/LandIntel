@@ -7,6 +7,9 @@ import unittest
 
 APP_DIR = Path(__file__).resolve().parents[1]
 WORKFLOW = (APP_DIR.parent / ".github" / "workflows" / "run-landintel-sources.yml").read_text(encoding="utf-8")
+SOURCING_WORKFLOW = (
+    APP_DIR.parent / ".github" / "workflows" / "run-landintel-sourcing-pulse.yml"
+).read_text(encoding="utf-8")
 RUNNER = (APP_DIR / "src" / "phase2_source_runner.py").read_text(encoding="utf-8")
 MIGRATION = "\n".join(
     (APP_DIR / "sql" / filename).read_text(encoding="utf-8")
@@ -25,6 +28,26 @@ DB_HELPER = (APP_DIR / "src" / "db.py").read_text(encoding="utf-8")
 
 
 class Phase2SourceEstateContractTests(unittest.TestCase):
+    def test_sourcing_pulse_button_runs_bounded_decision_sequence(self) -> None:
+        self.assertIn("name: Run LandIntel Sourcing Pulse", SOURCING_WORKFLOW)
+        self.assertIn("workflow_dispatch:", SOURCING_WORKFLOW)
+        self.assertIn("sourcing_runtime_minutes", SOURCING_WORKFLOW)
+        self.assertIn("sourcing_step_timeout_minutes", SOURCING_WORKFLOW)
+        self.assertIn("sourcing_include_source_ingest", SOURCING_WORKFLOW)
+        self.assertIn("sourcing_include_title_linking", SOURCING_WORKFLOW)
+        self.assertIn("sourcing_include_address_pack", SOURCING_WORKFLOW)
+        self.assertIn("cancel-in-progress: false", SOURCING_WORKFLOW)
+        self.assertIn("python -m src.source_phase_runner run-migrations", SOURCING_WORKFLOW)
+        self.assertIn("python -m src.source_reconcile_incremental process-reconcile-queue", SOURCING_WORKFLOW)
+        self.assertIn("CONSTRAINT_MEASURE_SOURCE_FAMILY=sepa_flood", SOURCING_WORKFLOW)
+        self.assertIn("measure-constraints-duckdb", SOURCING_WORKFLOW)
+        self.assertIn("refresh-planning-decisions", SOURCING_WORKFLOW)
+        self.assertIn("refresh-title-readiness", SOURCING_WORKFLOW)
+        self.assertIn("refresh-site-prove-it-assessments", SOURCING_WORKFLOW)
+        self.assertIn("refresh-ldn-candidate-screen", SOURCING_WORKFLOW)
+        self.assertIn("audit-full-source-estate", SOURCING_WORKFLOW)
+        self.assertIn("Skipping optional OS Places address/title pack", SOURCING_WORKFLOW)
+
     def test_workflow_exposes_phase2_commands_and_inputs(self) -> None:
         for command in (
             "discover-phase2-sources",

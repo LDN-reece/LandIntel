@@ -192,9 +192,9 @@ on:
         required: false
         default: "500000"
       open_location_spine_site_context_batch_size:
-        description: Canonical site batch size for open location context refresh
+        description: Canonical site batch size for light open location context refresh
         required: false
-        default: "250"
+        default: "25"
       open_location_spine_force_large_downloads:
         description: Allow supported OS downloads above the default byte budget when explicitly capped
         required: false
@@ -207,7 +207,7 @@ on:
       open_location_spine_osm_context_batch_size:
         description: Canonical site batch size for OSM context refresh
         required: false
-        default: "25"
+        default: "10"
       open_location_spine_osm_element_limit:
         description: Max OSM elements landed per OSM open location run
         required: false
@@ -215,7 +215,7 @@ on:
       open_location_spine_context_fallback_batch_size:
         description: Smaller site batch used if open location context refresh hits statement timeout
         required: false
-        default: "25"
+        default: "5"
 
 concurrency:
   group: "landintel-sources-${{ github.ref }}"
@@ -304,12 +304,14 @@ jobs:
       OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: ${{ inputs.open_location_spine_max_download_bytes || '90000000' }}
       OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: ${{ inputs.open_location_spine_max_features_per_source || '2500' }}
       OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS: ${{ inputs.open_location_spine_max_csv_scan_rows || '500000' }}
-      OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: ${{ inputs.open_location_spine_site_context_batch_size || '250' }}
+      OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: ${{ inputs.open_location_spine_site_context_batch_size || '25' }}
       OPEN_LOCATION_SPINE_FORCE_LARGE_DOWNLOADS: ${{ inputs.open_location_spine_force_large_downloads || false }}
       OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE: ${{ inputs.open_location_spine_osm_site_batch_size || '10' }}
-      OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: ${{ inputs.open_location_spine_osm_context_batch_size || '25' }}
+      OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: ${{ inputs.open_location_spine_osm_context_batch_size || '10' }}
       OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT: ${{ inputs.open_location_spine_osm_element_limit || '2000' }}
-      OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE: ${{ inputs.open_location_spine_context_fallback_batch_size || '25' }}
+      OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE: ${{ inputs.open_location_spine_context_fallback_batch_size || '5' }}
+      OPEN_LOCATION_SPINE_CONTEXT_REFRESH_MODE: "light"
+      OPEN_LOCATION_SPINE_MAX_CONTEXT_FEATURE_TYPES: "2"
       PHASE2_SOURCE_FAMILY: ${{ inputs.phase2_source_family || '' }}
       PHASE2_AUTHORITY: ${{ inputs.phase2_authority || '' }}
       PHASE2_BATCH_SIZE: ${{ inputs.phase2_batch_size || '250' }}

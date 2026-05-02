@@ -23,7 +23,7 @@ This runs the normal sourcing/DD preparation sequence without spending OS Places
 ## Stage guide
 
 - `01 - Open data location spine`
-  Lands and refreshes open location context.
+  Lands open-data files first, then runs a small light-touch site context pass. If the context pass is deferred, the raw data landing still counts and later sourcing stages can continue.
 
 - `02 - Flood constraints`
   Measures SEPA flood against sites.
@@ -51,6 +51,8 @@ This runs the normal sourcing/DD preparation sequence without spending OS Places
 - Leave `authority_filter` blank for Scotland-wide.
 - Leave `batch_size` at `250`.
 - Leave `runtime_minutes` at `15`.
+
+The open-data location spine intentionally uses a smaller internal context batch than the main sourcing batch. That stops heavy OS boundary/amenity geometry refreshes from blocking the whole run.
 
 ## Rules
 

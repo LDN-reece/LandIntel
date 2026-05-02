@@ -28,9 +28,9 @@ on:
         required: false
         default: "500000"
       open_data_site_context_batch_size:
-        description: Site context refresh batch size after each source batch
+        description: Light site context refresh batch size after each source batch
         required: false
-        default: "500"
+        default: "25"
       open_data_force_large_downloads:
         description: Allow selecting larger supported OS downloads up to the byte cap
         required: false
@@ -76,13 +76,15 @@ jobs:
       OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: ${{ inputs.open_data_max_download_bytes || '2500000000' }}
       OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: ${{ inputs.open_data_max_features_per_source || '25000' }}
       OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS: ${{ inputs.open_data_max_csv_scan_rows || '500000' }}
-      OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: ${{ inputs.open_data_site_context_batch_size || '500' }}
-      OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE: "50"
+      OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: ${{ inputs.open_data_site_context_batch_size || '25' }}
+      OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE: "5"
+      OPEN_LOCATION_SPINE_CONTEXT_REFRESH_MODE: "light"
+      OPEN_LOCATION_SPINE_MAX_CONTEXT_FEATURE_TYPES: "2"
       OPEN_LOCATION_SPINE_FORCE_LARGE_DOWNLOADS: ${{ inputs.open_data_force_large_downloads }}
       OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE: "25"
-      OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: "50"
+      OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: "10"
       OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT: "5000"
-      PHASE2_BATCH_SIZE: ${{ inputs.open_data_site_context_batch_size || '500' }}
+      PHASE2_BATCH_SIZE: ${{ inputs.open_data_site_context_batch_size || '25' }}
       PHASE2_RUNTIME_MINUTES: "10"
       PHASE2_DRY_RUN: "false"
       PHASE2_FORCE_REFRESH: "false"

@@ -4456,6 +4456,7 @@ class Phase2SourceRunner:
                           or cardinality(prove_it_drivers) = 0
                           or jsonb_array_length(proof_points) = 0 then 'ignore'
                         when planning_journey_type is distinct from 'no_clear_journey'
+                         and ldn_candidate_status = 'true_ldn_candidate'
                          and market_position = any(array['strong', 'credible']::text[])
                          and control_position <> all(array['known_blocked', 'likely_controlled_by_housebuilder_promoter']::text[])
                          and coalesce(area_acres, 0) >= 4
@@ -4487,6 +4488,7 @@ class Phase2SourceRunner:
                           or constraint_position = 'terminal'
                           or (planning_journey_type = 'no_clear_journey' and market_position = 'weak') then 'do_not_order'
                         when verdict = 'pursue'
+                         and ldn_candidate_status = 'true_ldn_candidate'
                          and coalesce(title_review_status, 'not_reviewed') is distinct from 'reviewed'
                          and control_position = 'unknown_but_worth_title_spend'
                          and (
@@ -4494,6 +4496,7 @@ class Phase2SourceRunner:
                             or coalesce(register_corroboration_status, '') = 'register_corroborated'
                          ) then 'order_title_urgently'
                         when verdict = any(array['review', 'pursue']::text[])
+                         and ldn_candidate_status = 'true_ldn_candidate'
                          and coalesce(title_review_status, 'not_reviewed') is distinct from 'reviewed'
                          and evidence_confidence = any(array['high', 'medium']::text[])
                          and constraint_position <> 'major_review' then 'order_title'

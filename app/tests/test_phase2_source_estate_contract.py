@@ -285,6 +285,7 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("commercial_weight', 'low_to_medium'", RUNNER)
         self.assertIn("corroboration_required', true", RUNNER)
         self.assertIn("coalesce(area_acres, 0) >= 4", RUNNER)
+        self.assertIn("ldn_candidate_status = 'true_ldn_candidate'", RUNNER)
 
     def test_ldn_candidate_screen_targets_private_no_builder_without_title_certainty(self) -> None:
         self.assertIn("source_key: ldn_candidate_screen", MANIFEST)

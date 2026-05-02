@@ -658,7 +658,9 @@ class SourceExpansionRunner:
                     when 'not_started' then 2
                     when 'registered_no_rows' then 3
                     when 'landing_in_progress' then 4
+                    when 'landing_in_progress_with_failed_slices' then 5
                     when 'source_exhausted' then 5
+                    when 'source_exhausted_with_failed_slices' then 6
                     else 6
                 end,
                 source_family,
@@ -3276,10 +3278,16 @@ class SourceExpansionRunner:
             [str(source["source_key"])],
             max(self._env_int("OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE", 250), 1),
         )
+        existing_counts = self._open_location_spine_existing_counts(source)
+        corpus_feature_rows = max(int(existing_counts.get("raw_rows") or 0), inserted_rows)
+        linked_rows = max(int(context.get("linked_rows") or 0), int(existing_counts.get("linked_rows") or 0))
+        measured_rows = max(int(context.get("measured_rows") or 0), int(existing_counts.get("measured_rows") or 0))
+        evidence_rows = max(int(context.get("evidence_rows") or 0), int(existing_counts.get("evidence_rows") or 0))
+        signal_rows = max(int(context.get("signal_rows") or 0), int(existing_counts.get("signal_rows") or 0))
         progress_statuses = {str(update.get("completion_status") or "") for update in progress_updates}
         source_status = (
             "raw_data_landed"
-            if inserted_rows
+            if corpus_feature_rows
             else "corpus_exhausted"
             if progress_updates and progress_statuses <= {"exhausted"}
             else "reachable_no_supported_features"
@@ -3289,14 +3297,16 @@ class SourceExpansionRunner:
             "source_family": source["source_family"],
             "status": source_status,
             "summary": (
-                f"{source['source_name']} landed {inserted_rows} open-location feature row(s) "
-                f"from {selected_download.get('format')} {selected_download.get('fileName')}."
+                f"{source['source_name']} landed {inserted_rows} new open-location feature row(s); "
+                f"live corpus now has {corpus_feature_rows} feature row(s) from "
+                f"{selected_download.get('format')} {selected_download.get('fileName')}."
             ),
-            "raw_rows": inserted_rows,
-            "linked_rows": int(context.get("linked_rows") or 0),
-            "measured_rows": int(context.get("measured_rows") or 0),
-            "evidence_rows": int(context.get("evidence_rows") or 0),
-            "signal_rows": int(context.get("signal_rows") or 0),
+            "raw_rows": corpus_feature_rows,
+            "new_raw_rows": inserted_rows,
+            "linked_rows": linked_rows,
+            "measured_rows": measured_rows,
+            "evidence_rows": evidence_rows,
+            "signal_rows": signal_rows,
             "selected_download": {
                 "fileName": selected_download.get("fileName"),
                 "format": selected_download.get("format"),
@@ -3306,19 +3316,26 @@ class SourceExpansionRunner:
             },
             "progress_updates": progress_updates,
             "context": context,
+            "existing_counts": existing_counts,
         }
-        self._record_source_freshness(source, "current" if inserted_rows else "empty", "reachable", inserted_rows, result)
+        self._record_source_freshness(
+            source,
+            "current" if corpus_feature_rows else "empty",
+            "reachable",
+            corpus_feature_rows,
+            result,
+        )
         self._update_open_location_lifecycle(source, result)
         self._record_expansion_event(
             command_name=f"ingest-{source['source_family'].replace('_', '-')}",
             source_key=source["source_key"],
             source_family=source["source_family"],
             status=str(result["status"]),
-            raw_rows=inserted_rows,
-            linked_rows=int(result["linked_rows"]),
-            measured_rows=int(result["measured_rows"]),
-            evidence_rows=int(result["evidence_rows"]),
-            signal_rows=int(result["signal_rows"]),
+            raw_rows=corpus_feature_rows,
+            linked_rows=linked_rows,
+            measured_rows=measured_rows,
+            evidence_rows=evidence_rows,
+            signal_rows=signal_rows,
             summary=str(result["summary"]),
             metadata=result,
         )
@@ -4393,6 +4410,51 @@ class SourceExpansionRunner:
             """,
             {"source_keys": source_keys, "site_batch_size": site_batch_size},
         ) or {"linked_rows": 0, "measured_rows": 0, "evidence_rows": 0, "signal_rows": 0}
+
+    def _open_location_spine_existing_counts(self, source: dict[str, Any]) -> dict[str, int]:
+        row = self.database.fetch_one(
+            """
+            select
+                (
+                    select count(*)::integer
+                    from landintel.open_location_spine_features as feature
+                    where feature.source_key = :source_key
+                ) as raw_rows,
+                (
+                    select count(distinct context.canonical_site_id)::integer
+                    from landintel.site_open_location_spine_context as context
+                    where context.source_key = :source_key
+                ) as linked_rows,
+                (
+                    select count(*)::integer
+                    from landintel.site_open_location_spine_context as context
+                    where context.source_key = :source_key
+                ) as measured_rows,
+                (
+                    select count(*)::integer
+                    from landintel.evidence_references as evidence
+                    where evidence.source_family = :source_family
+                      and evidence.metadata ->> 'source_key' = :source_key
+                ) as evidence_rows,
+                (
+                    select count(*)::integer
+                    from landintel.site_signals as signal
+                    where signal.source_family = :source_family
+                      and signal.metadata ->> 'source_key' = :source_key
+                ) as signal_rows
+            """,
+            {
+                "source_key": source["source_key"],
+                "source_family": source["source_family"],
+            },
+        ) or {}
+        return {
+            "raw_rows": int(row.get("raw_rows") or 0),
+            "linked_rows": int(row.get("linked_rows") or 0),
+            "measured_rows": int(row.get("measured_rows") or 0),
+            "evidence_rows": int(row.get("evidence_rows") or 0),
+            "signal_rows": int(row.get("signal_rows") or 0),
+        }
 
     def _update_open_location_lifecycle(self, source: dict[str, Any], result: dict[str, Any]) -> None:
         raw_rows = int(result.get("raw_rows") or 0)

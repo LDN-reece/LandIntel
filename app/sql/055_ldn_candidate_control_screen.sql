@@ -13,6 +13,11 @@ create table if not exists landintel.site_register_status_facts (
     source_key text not null default 'ldn_candidate_screen',
     source_family text not null default 'site_conviction',
     register_family text not null,
+    source_role text,
+    evidence_role text,
+    commercial_weight text,
+    corroboration_required boolean not null default true,
+    limitation_text text,
     source_record_id text not null,
     authority_name text,
     site_reference text,
@@ -55,6 +60,10 @@ create table if not exists landintel.site_ldn_candidate_screen (
     ldp_record_count integer not null default 0,
     inside_settlement_signal boolean not null default false,
     unregistered_opportunity_signal boolean not null default false,
+    register_origin_site boolean not null default false,
+    register_origin_needs_corroboration boolean not null default false,
+    independent_corroboration_count integer not null default 0,
+    register_corroboration_status text not null default 'not_register_origin',
     ownership_classification text not null default 'ownership_not_confirmed',
     owner_name_signal text,
     control_blocker_type text,
@@ -85,6 +94,19 @@ create table if not exists landintel.site_ldn_candidate_screen (
 );
 
 alter table landintel.site_register_status_facts
+    add column if not exists source_role text,
+    add column if not exists evidence_role text,
+    add column if not exists commercial_weight text,
+    add column if not exists corroboration_required boolean not null default true,
+    add column if not exists limitation_text text;
+
+alter table landintel.site_ldn_candidate_screen
+    add column if not exists register_origin_site boolean not null default false,
+    add column if not exists register_origin_needs_corroboration boolean not null default false,
+    add column if not exists independent_corroboration_count integer not null default 0,
+    add column if not exists register_corroboration_status text not null default 'not_register_origin';
+
+alter table landintel.site_register_status_facts
     drop constraint if exists site_register_status_facts_family_check;
 
 alter table landintel.site_register_status_facts
@@ -96,7 +118,21 @@ alter table landintel.site_register_status_facts
 
 alter table landintel.site_register_status_facts
     add constraint site_register_status_facts_progress_check
-    check (development_progress_status = any (array['started', 'stalled', 'not_started', 'unknown']::text[]));
+    check (development_progress_status = any (array['started', 'stalled', 'not_started', 'uneconomic', 'incomplete', 'unknown']::text[]));
+
+alter table landintel.site_ldn_candidate_screen
+    drop constraint if exists site_ldn_candidate_screen_corroboration_status_check;
+
+alter table landintel.site_ldn_candidate_screen
+    add constraint site_ldn_candidate_screen_corroboration_status_check
+    check (
+        register_corroboration_status = any (array[
+            'not_register_origin',
+            'register_context_only',
+            'register_needs_corroboration',
+            'register_corroborated'
+        ]::text[])
+    );
 
 alter table landintel.site_ldn_candidate_screen
     drop constraint if exists site_ldn_candidate_screen_status_check;
@@ -238,17 +274,24 @@ begin
         nullif(btrim(hla.developer_name), ''),
         concat_ws(' ', hla.effectiveness_status, hla.programming_horizon),
         case
+            when concat_ws(' ', hla.effectiveness_status, hla.programming_horizon, hla.raw_payload::text) ilike any (array['%%uneconomic%%']) then 'uneconomic'
+            when coalesce(hla.completions, 0) > 0 and coalesce(hla.remaining_capacity, 0) > 0 then 'incomplete'
+            when concat_ws(' ', hla.effectiveness_status, hla.programming_horizon, hla.raw_payload::text) ilike any (array['%%incomplete%%', '%%part complete%%', '%%part-built%%', '%%part built%%']) then 'incomplete'
+            when concat_ws(' ', hla.effectiveness_status, hla.programming_horizon, hla.raw_payload::text) ilike any (array['%%stall%%', '%%delay%%', '%%inactive%%', '%%constrained%%', '%%ineffective%%']) then 'stalled'
             when coalesce(hla.completions, 0) > 0
               or concat_ws(' ', hla.effectiveness_status, hla.programming_horizon, hla.raw_payload::text) ilike any (array['%%under construction%%', '%%construction started%%', '%%built%%', '%%complete%%']) then 'started'
-            when concat_ws(' ', hla.effectiveness_status, hla.programming_horizon, hla.raw_payload::text) ilike any (array['%%stall%%', '%%delay%%', '%%inactive%%', '%%constrained%%', '%%ineffective%%']) then 'stalled'
             when coalesce(hla.remaining_capacity, 0) > 0 then 'not_started'
             else 'unknown'
         end,
         (
             coalesce(hla.completions, 0) > 0
-            or concat_ws(' ', hla.effectiveness_status, hla.programming_horizon, hla.raw_payload::text) ilike any (array['%%under construction%%', '%%construction started%%', '%%built%%', '%%complete%%'])
+            and coalesce(hla.remaining_capacity, 0) = 0
+        )
+        or (
+            concat_ws(' ', hla.effectiveness_status, hla.programming_horizon, hla.raw_payload::text) ilike any (array['%%under construction%%', '%%construction started%%', '%%built%%', '%%complete%%'])
+            and concat_ws(' ', hla.effectiveness_status, hla.programming_horizon, hla.raw_payload::text) not ilike any (array['%%incomplete%%', '%%part complete%%', '%%part-built%%', '%%part built%%'])
         ),
-        concat_ws(' ', hla.effectiveness_status, hla.programming_horizon, hla.raw_payload::text) ilike any (array['%%stall%%', '%%delay%%', '%%inactive%%', '%%constrained%%', '%%ineffective%%']),
+        concat_ws(' ', hla.effectiveness_status, hla.programming_horizon, hla.raw_payload::text) ilike any (array['%%stall%%', '%%delay%%', '%%inactive%%', '%%constrained%%', '%%ineffective%%', '%%uneconomic%%', '%%incomplete%%', '%%part complete%%', '%%part-built%%', '%%part built%%']),
         hla.remaining_capacity,
         hla.completions,
         hla.brownfield_indicator,
@@ -285,12 +328,16 @@ begin
         )), ''),
         ela.status_text,
         case
-            when concat_ws(' ', ela.status_text, ela.raw_payload::text) ilike any (array['%%under construction%%', '%%construction started%%', '%%built%%', '%%complete%%']) then 'started'
+            when concat_ws(' ', ela.status_text, ela.raw_payload::text) ilike any (array['%%uneconomic%%']) then 'uneconomic'
+            when concat_ws(' ', ela.status_text, ela.raw_payload::text) ilike any (array['%%incomplete%%', '%%part complete%%', '%%part-built%%', '%%part built%%']) then 'incomplete'
             when concat_ws(' ', ela.status_text, ela.raw_payload::text) ilike any (array['%%stall%%', '%%delay%%', '%%inactive%%', '%%constrained%%', '%%vacant%%', '%%derelict%%', '%%dormant%%']) then 'stalled'
+            when concat_ws(' ', ela.status_text, ela.raw_payload::text) ilike any (array['%%not started%%', '%%no development%%', '%%available%%']) then 'not_started'
+            when concat_ws(' ', ela.status_text, ela.raw_payload::text) ilike any (array['%%under construction%%', '%%construction started%%', '%%built%%', '%%complete%%']) then 'started'
             else 'unknown'
         end,
-        concat_ws(' ', ela.status_text, ela.raw_payload::text) ilike any (array['%%under construction%%', '%%construction started%%', '%%built%%', '%%complete%%']),
-        concat_ws(' ', ela.status_text, ela.raw_payload::text) ilike any (array['%%stall%%', '%%delay%%', '%%inactive%%', '%%constrained%%', '%%vacant%%', '%%derelict%%', '%%dormant%%']),
+        concat_ws(' ', ela.status_text, ela.raw_payload::text) ilike any (array['%%under construction%%', '%%construction started%%', '%%built%%', '%%complete%%'])
+            and concat_ws(' ', ela.status_text, ela.raw_payload::text) not ilike any (array['%%incomplete%%', '%%part complete%%', '%%part-built%%', '%%part built%%']),
+        concat_ws(' ', ela.status_text, ela.raw_payload::text) ilike any (array['%%stall%%', '%%delay%%', '%%inactive%%', '%%constrained%%', '%%vacant%%', '%%derelict%%', '%%dormant%%', '%%uneconomic%%', '%%incomplete%%', '%%part complete%%', '%%part-built%%', '%%part built%%']),
         null::integer,
         null::integer,
         null::boolean,
@@ -327,12 +374,16 @@ begin
         )), ''),
         vdl.status_text,
         case
-            when concat_ws(' ', vdl.status_text, vdl.raw_payload::text) ilike any (array['%%under construction%%', '%%construction started%%', '%%built%%', '%%complete%%']) then 'started'
+            when concat_ws(' ', vdl.status_text, vdl.raw_payload::text) ilike any (array['%%uneconomic%%']) then 'uneconomic'
+            when concat_ws(' ', vdl.status_text, vdl.raw_payload::text) ilike any (array['%%incomplete%%', '%%part complete%%', '%%part-built%%', '%%part built%%']) then 'incomplete'
             when concat_ws(' ', vdl.status_text, vdl.raw_payload::text) ilike any (array['%%stall%%', '%%delay%%', '%%inactive%%', '%%constrained%%', '%%vacant%%', '%%derelict%%', '%%dormant%%']) then 'stalled'
+            when concat_ws(' ', vdl.status_text, vdl.raw_payload::text) ilike any (array['%%not started%%', '%%no development%%', '%%available%%']) then 'not_started'
+            when concat_ws(' ', vdl.status_text, vdl.raw_payload::text) ilike any (array['%%under construction%%', '%%construction started%%', '%%built%%', '%%complete%%']) then 'started'
             else 'unknown'
         end,
-        concat_ws(' ', vdl.status_text, vdl.raw_payload::text) ilike any (array['%%under construction%%', '%%construction started%%', '%%built%%', '%%complete%%']),
-        concat_ws(' ', vdl.status_text, vdl.raw_payload::text) ilike any (array['%%stall%%', '%%delay%%', '%%inactive%%', '%%constrained%%', '%%vacant%%', '%%derelict%%', '%%dormant%%']),
+        concat_ws(' ', vdl.status_text, vdl.raw_payload::text) ilike any (array['%%under construction%%', '%%construction started%%', '%%built%%', '%%complete%%'])
+            and concat_ws(' ', vdl.status_text, vdl.raw_payload::text) not ilike any (array['%%incomplete%%', '%%part complete%%', '%%part-built%%', '%%part built%%']),
+        concat_ws(' ', vdl.status_text, vdl.raw_payload::text) ilike any (array['%%stall%%', '%%delay%%', '%%inactive%%', '%%constrained%%', '%%vacant%%', '%%derelict%%', '%%dormant%%', '%%uneconomic%%', '%%incomplete%%', '%%part complete%%', '%%part-built%%', '%%part built%%']),
         null::integer,
         null::integer,
         true,
@@ -350,6 +401,11 @@ begin
     insert into landintel.site_register_status_facts (
         canonical_site_id,
         register_family,
+        source_role,
+        evidence_role,
+        commercial_weight,
+        corroboration_required,
+        limitation_text,
         source_record_id,
         authority_name,
         site_reference,
@@ -375,6 +431,21 @@ begin
     select
         register_row.canonical_site_id,
         register_row.register_family,
+        case register_row.register_family
+            when 'ela' then 'emerging_land_context'
+            when 'hla' then 'housing_land_supply_context'
+            when 'vdl' then 'vacant_derelict_land_context'
+            else 'register_origin_context'
+        end,
+        case register_row.register_family
+            when 'ela' then 'policy_or_candidate_visibility'
+            when 'hla' then 'planning_supply_visibility'
+            when 'vdl' then 'regeneration_or_underuse_visibility'
+            else 'context_visibility'
+        end,
+        'low_to_medium',
+        true,
+        'Register/context evidence can identify a site and explain visibility, but it does not prove availability, deliverability, clean ownership, buyer depth or commercial viability. Independent corroboration is required before treating it as a strong sourcing opportunity.',
         register_row.source_record_id,
         register_row.authority_name,
         register_row.site_reference,
@@ -412,6 +483,20 @@ begin
         jsonb_build_object(
             'source_key', 'ldn_candidate_screen',
             'register_family', register_row.register_family,
+            'source_role', case register_row.register_family
+                when 'ela' then 'emerging_land_context'
+                when 'hla' then 'housing_land_supply_context'
+                when 'vdl' then 'vacant_derelict_land_context'
+                else 'register_origin_context'
+            end,
+            'evidence_role', case register_row.register_family
+                when 'ela' then 'policy_or_candidate_visibility'
+                when 'hla' then 'planning_supply_visibility'
+                when 'vdl' then 'regeneration_or_underuse_visibility'
+                else 'context_visibility'
+            end,
+            'commercial_weight', 'low_to_medium',
+            'corroboration_required', true,
             'raw_payload', register_row.raw_payload,
             'ownership_limitation', 'register_owner_or_developer_signal_not_legal_title'
         ),
@@ -453,9 +538,9 @@ begin
             selected.area_acres,
             case
                 when selected.area_acres is null then 'unknown'
-                when selected.area_acres < 2 then 'under_2_acres'
-                when selected.area_acres < 5 then '2_to_5_acres'
-                when selected.area_acres <= 30 then '5_to_30_acres'
+                when selected.area_acres < 4 then 'under_4_acres'
+                when selected.area_acres < 10 then '4_to_10_acres'
+                when selected.area_acres <= 30 then '10_to_30_acres'
                 else '30_plus_acres'
             end as size_band,
             coalesce(registers.hla_record_count, 0) as hla_record_count,
@@ -463,6 +548,19 @@ begin
             coalesce(registers.vdl_record_count, 0) as vdl_record_count,
             coalesce(ldp.ldp_record_count, 0) as ldp_record_count,
             coalesce(settlement.inside_settlement_signal, false) as inside_settlement_signal,
+            (
+                coalesce(registers.hla_record_count, 0)
+                + coalesce(registers.ela_record_count, 0)
+                + coalesce(registers.vdl_record_count, 0)
+            ) > 0 as register_origin_site,
+            (
+                case when coalesce(ldp.ldp_record_count, 0) > 0 then 1 else 0 end
+                + case when coalesce(settlement.inside_settlement_signal, false) then 1 else 0 end
+                + case when coalesce(planning.approved_count, 0) + coalesce(planning.live_count, 0) + coalesce(planning.refused_count, 0) > 0 then 1 else 0 end
+                + case when coalesce(constraints.measured_constraint_count, 0) > 0 then 1 else 0 end
+                + case when coalesce(market.market_confidence_tier, 'unknown') ilike any(array['%%high%%', '%%strong%%']) then 1 else 0 end
+                + case when title.title_number is not null or title.normalized_title_number is not null then 1 else 0 end
+            )::integer as independent_corroboration_count,
             registers.owner_name_signal,
             registers.developer_name_signal,
             coalesce(registers.build_started_indicator, false) as build_started_indicator,
@@ -656,7 +754,7 @@ begin
             end as planning_position,
             case
                 when coalesce(market_confidence_tier, 'unknown') ilike any(array['%%high%%', '%%strong%%']) then 'credible'
-                when coalesce(approved_count, 0) > 0 or coalesce(hla_record_count, 0) > 0 then 'context_present'
+                when coalesce(approved_count, 0) > 0 then 'context_present'
                 else 'unproven'
             end as market_position,
             (
@@ -679,30 +777,58 @@ begin
                 case when ldp_record_count > 0 then 'LDP' end,
                 case when unregistered_opportunity_signal then 'unregistered_inside_settlement' end
             ) as register_profile,
+            (
+                register_origin_site
+                and independent_corroboration_count = 0
+            ) as register_origin_needs_corroboration,
+            case
+                when not register_origin_site then 'not_register_origin'
+                when independent_corroboration_count = 0 then 'register_needs_corroboration'
+                when not ldn_target_private_no_builder
+                  or build_started_indicator
+                  or coalesce(area_acres, 0) < 4
+                  or development_progress_status not in ('not_started', 'stalled', 'uneconomic', 'incomplete') then 'register_context_only'
+                else 'register_corroborated'
+            end as register_corroboration_status,
             case
                 when control_blocker_type is not null then 'control_profile_not_ldn'
                 when build_started_indicator then 'build_work_started'
-                when coalesce(area_acres, 0) > 0 and area_acres < 2 then 'size_below_initial_screen'
+                when coalesce(area_acres, 0) > 0 and area_acres < 4 then 'size_below_initial_screen'
                 when constraint_position = 'major_review' then 'constraint_review_required'
-                when ldn_target_private_no_builder and (
-                    hla_record_count > 0
-                    or ela_record_count > 0
-                    or vdl_record_count > 0
+                when ldn_target_private_no_builder
+                  and coalesce(area_acres, 0) >= 4
+                  and not build_started_indicator
+                  and (
+                    (
+                        register_origin_site
+                        and development_progress_status in ('not_started', 'stalled', 'uneconomic', 'incomplete')
+                        and independent_corroboration_count > 0
+                    )
                     or ldp_record_count > 0
                     or approved_count > 0
                     or unregistered_opportunity_signal
-                ) then 'true_ldn_candidate'
+                  ) then 'true_ldn_candidate'
                 when unregistered_opportunity_signal
                   and no_housebuilder_developer_signal
+                  and coalesce(area_acres, 0) >= 4
                   and constraint_position = any(array['priceable_design_led', 'context_only']::text[]) then 'review_forgotten_soul'
                 when no_housebuilder_developer_signal
+                  and coalesce(area_acres, 0) >= 4
                   and (owner_name_signal is not null or approved_count > 0 or live_count > 0 or inside_settlement_signal) then 'review_private_candidate'
                 else 'not_enough_evidence'
             end as candidate_status,
             case
-                when control_blocker_type is not null or build_started_indicator or (coalesce(area_acres, 0) > 0 and area_acres < 2) then 'do_not_order_title'
+                when control_blocker_type is not null or build_started_indicator or (coalesce(area_acres, 0) > 0 and area_acres < 4) then 'do_not_order_title'
                 when constraint_position = 'major_review' then 'manual_review_before_title'
-                when ldn_target_private_no_builder and planning_position <> 'no_clear_planning_route' then 'title_may_be_justified_after_dd'
+                when ldn_target_private_no_builder
+                  and planning_position <> 'no_clear_planning_route'
+                  and (
+                    not register_origin_site
+                    or (
+                        development_progress_status in ('not_started', 'stalled', 'uneconomic', 'incomplete')
+                        and independent_corroboration_count > 0
+                    )
+                  ) then 'title_may_be_justified_after_dd'
                 else 'manual_review_before_title'
             end as title_spend_position
         from classified
@@ -711,7 +837,7 @@ begin
         select
             actioned.*,
             case
-                when candidate_status = 'true_ldn_candidate' then 'This is an LDN target because it has a private/no-builder control signal with a planning, register or settlement reason to review it.'
+                when candidate_status = 'true_ldn_candidate' then 'This is an LDN target because it has a private/no-builder control signal, is 4+ acres, is not public/RSL/charity/housebuilder/developer controlled on current evidence, and has a register, planning or settlement thread with independent corroboration where register-origin evidence is present.'
                 when candidate_status = 'review_forgotten_soul' then 'This is a forgotten-soul lead: inside settlement, not on the main registers, and not showing a builder/public-sector blocker.'
                 when candidate_status = 'review_private_candidate' then 'This is a private/no-obvious-builder review candidate, but the evidence is not yet strong enough for title spend.'
                 when candidate_status = 'control_profile_not_ldn' then 'This is not an LDN control target because the current evidence points to public, institutional, charity/RSL or housebuilder/developer control.'
@@ -723,6 +849,7 @@ begin
                 case when ldn_target_private_no_builder then 'Private/no-builder signal present' end,
                 case when inside_settlement_signal then 'Inside settlement signal present' end,
                 case when unregistered_opportunity_signal then 'Unregistered inside-settlement opportunity signal' end,
+                case when register_corroboration_status = 'register_corroborated' then 'Register/context source is independently corroborated' end,
                 case when approved_count > 0 then 'Planning approval context present' end,
                 case when stalled_indicator then 'Stalled register signal present' end,
                 case when constraint_position = 'priceable_design_led' then 'Constraints appear layout or pricing led' end
@@ -730,6 +857,8 @@ begin
             array_remove(array[
                 case when control_blocker_type is not null then concat('Control blocker signal: ', control_blocker_type) end,
                 case when build_started_indicator then 'Build work started signal present' end,
+                case when register_origin_needs_corroboration then 'Register/context source requires independent corroboration' end,
+                case when register_corroboration_status = 'register_context_only' then 'Register/context source is not enough to treat this as a strong sourcing opportunity' end,
                 case when constraint_position = 'major_review' then 'Constraint review required before spend' end,
                 case when ownership_classification = 'ownership_not_confirmed' then 'Ownership not confirmed until title review' end,
                 case when planning_position = 'no_clear_planning_route' then 'No clear planning route evidenced yet' end
@@ -737,6 +866,7 @@ begin
             array_remove(array[
                 case when coalesce(title_review_status, 'not_reviewed') <> 'reviewed' then 'Title not reviewed' end,
                 case when measured_constraint_count = 0 then 'Constraint measurement not yet available' end,
+                case when register_origin_needs_corroboration then 'Independent corroboration required beyond HLA/ELA/VDL register presence' end,
                 case when market_position = 'unproven' then 'Buyer/market evidence not yet proven' end,
                 case when planning_position = 'no_clear_planning_route' then 'Planning route needs evidence' end
             ], null) as missing_critical_evidence,
@@ -744,6 +874,7 @@ begin
                 when candidate_status = 'true_ldn_candidate' then 'Run DD screen, then decide whether title spend is justified.'
                 when candidate_status = 'review_forgotten_soul' then 'Review planning and constraint context before title spend.'
                 when candidate_status = 'review_private_candidate' then 'Manual review before title spend.'
+                when register_origin_needs_corroboration then 'Do not promote from register presence alone; find independent planning, settlement, constraint, title or market corroboration first.'
                 when candidate_status = 'constraint_review_required' then 'Run constraint review before title spend.'
                 when candidate_status = 'control_profile_not_ldn' then 'Do not spend title money unless the control signal is disproven.'
                 when candidate_status = 'build_work_started' then 'Do not prioritise unless a stalled delivery angle is proven.'
@@ -759,6 +890,10 @@ begin
                 ldp_record_count::text,
                 inside_settlement_signal::text,
                 unregistered_opportunity_signal::text,
+                register_origin_site::text,
+                register_origin_needs_corroboration::text,
+                independent_corroboration_count::text,
+                register_corroboration_status,
                 ownership_classification,
                 coalesce(owner_name_signal, ''),
                 coalesce(control_blocker_type, ''),
@@ -815,6 +950,10 @@ begin
             ldp_record_count,
             inside_settlement_signal,
             unregistered_opportunity_signal,
+            register_origin_site,
+            register_origin_needs_corroboration,
+            independent_corroboration_count,
+            register_corroboration_status,
             ownership_classification,
             owner_name_signal,
             control_blocker_type,
@@ -855,6 +994,10 @@ begin
             coalesce((prepared.payload ->> 'ldp_record_count')::integer, 0),
             coalesce((prepared.payload ->> 'inside_settlement_signal')::boolean, false),
             coalesce((prepared.payload ->> 'unregistered_opportunity_signal')::boolean, false),
+            coalesce((prepared.payload ->> 'register_origin_site')::boolean, false),
+            coalesce((prepared.payload ->> 'register_origin_needs_corroboration')::boolean, false),
+            coalesce((prepared.payload ->> 'independent_corroboration_count')::integer, 0),
+            coalesce(prepared.payload ->> 'register_corroboration_status', 'not_register_origin'),
             prepared.payload ->> 'ownership_classification',
             nullif(prepared.payload ->> 'owner_name_signal', ''),
             nullif(prepared.payload ->> 'control_blocker_type', ''),
@@ -898,6 +1041,10 @@ begin
             ldp_record_count = excluded.ldp_record_count,
             inside_settlement_signal = excluded.inside_settlement_signal,
             unregistered_opportunity_signal = excluded.unregistered_opportunity_signal,
+            register_origin_site = excluded.register_origin_site,
+            register_origin_needs_corroboration = excluded.register_origin_needs_corroboration,
+            independent_corroboration_count = excluded.independent_corroboration_count,
+            register_corroboration_status = excluded.register_corroboration_status,
             ownership_classification = excluded.ownership_classification,
             owner_name_signal = excluded.owner_name_signal,
             control_blocker_type = excluded.control_blocker_type,
@@ -1090,6 +1237,9 @@ end;
 $$;
 
 drop view if exists analytics.v_ldn_candidate_screen_coverage;
+drop view if exists analytics.v_register_origin_overconfidence;
+drop view if exists analytics.v_register_sourced_sites_needing_corroboration;
+drop view if exists analytics.v_site_register_evidence_balance;
 drop view if exists analytics.v_true_ldn_sites;
 drop view if exists analytics.v_ldn_review_candidates;
 drop view if exists analytics.v_ldn_candidate_screen;
@@ -1102,6 +1252,11 @@ select
     site.site_name_primary,
     site.authority_name,
     facts.register_family,
+    facts.source_role,
+    facts.evidence_role,
+    facts.commercial_weight,
+    facts.corroboration_required,
+    facts.limitation_text,
     facts.site_reference,
     facts.site_name as register_site_name,
     facts.owner_name_signal,
@@ -1138,6 +1293,10 @@ select
     screen.ldp_record_count,
     screen.inside_settlement_signal,
     screen.unregistered_opportunity_signal,
+    screen.register_origin_site,
+    screen.register_origin_needs_corroboration,
+    screen.independent_corroboration_count,
+    screen.register_corroboration_status,
     screen.ownership_classification,
     screen.owner_name_signal,
     screen.control_blocker_type,
@@ -1170,13 +1329,77 @@ from analytics.v_ldn_candidate_screen
 where candidate_status = 'true_ldn_candidate'
   and ldn_target_private_no_builder = true
   and control_blocker_type is null
-  and build_started_indicator = false;
+  and build_started_indicator = false
+  and coalesce(area_acres, 0) >= 4
+  and (
+    register_origin_site = false
+    or register_corroboration_status = 'register_corroborated'
+  );
 
 create or replace view analytics.v_ldn_review_candidates
 with (security_invoker = true) as
 select *
 from analytics.v_ldn_candidate_screen
 where candidate_status in ('review_private_candidate', 'review_forgotten_soul', 'constraint_review_required');
+
+create or replace view analytics.v_site_register_evidence_balance
+with (security_invoker = true) as
+select
+    screen.canonical_site_id,
+    screen.site_name,
+    screen.authority_name,
+    screen.area_acres,
+    screen.register_profile,
+    screen.hla_record_count,
+    screen.ela_record_count,
+    screen.vdl_record_count,
+    screen.register_origin_site,
+    screen.register_origin_needs_corroboration,
+    screen.independent_corroboration_count,
+    screen.register_corroboration_status,
+    screen.ownership_classification,
+    screen.owner_name_signal,
+    screen.control_blocker_type,
+    screen.development_progress_status,
+    screen.build_started_indicator,
+    screen.stalled_indicator,
+    screen.constraint_position,
+    screen.planning_position,
+    screen.market_position,
+    screen.candidate_status,
+    case
+        when screen.register_origin_site = false then 'not_register_origin'
+        when screen.register_origin_needs_corroboration then 'register_presence_only'
+        when screen.register_corroboration_status = 'register_context_only' then 'register_context_not_commercial_proof'
+        else 'register_context_with_independent_corroboration'
+    end as register_evidence_balance,
+    'HLA, ELA and VDL are discovery/context layers. They do not prove availability, deliverability, clean ownership, buyer depth or commercial viability without corroboration.'::text as limitation_text,
+    screen.updated_at
+from analytics.v_ldn_candidate_screen as screen;
+
+create or replace view analytics.v_register_origin_overconfidence
+with (security_invoker = true) as
+select *
+from analytics.v_site_register_evidence_balance
+where register_origin_site
+  and candidate_status = 'true_ldn_candidate'
+  and (
+        register_corroboration_status <> 'register_corroborated'
+        or independent_corroboration_count = 0
+        or coalesce(area_acres, 0) < 4
+        or control_blocker_type is not null
+        or build_started_indicator
+      );
+
+create or replace view analytics.v_register_sourced_sites_needing_corroboration
+with (security_invoker = true) as
+select *
+from analytics.v_site_register_evidence_balance
+where register_origin_site
+  and (
+        register_origin_needs_corroboration
+        or register_corroboration_status in ('register_needs_corroboration', 'register_context_only')
+      );
 
 create or replace view analytics.v_ldn_candidate_screen_coverage
 with (security_invoker = true) as
@@ -1190,6 +1413,10 @@ select
     count(*) filter (where control_blocker_type = 'rsl_lha_charity')::bigint as rsl_lha_charity_blocker_count,
     count(*) filter (where build_started_indicator)::bigint as build_started_signal_count,
     count(*) filter (where stalled_indicator)::bigint as stalled_signal_count,
+    count(*) filter (where register_origin_site)::bigint as register_origin_site_count,
+    count(*) filter (where register_origin_needs_corroboration)::bigint as register_origin_needs_corroboration_count,
+    count(*) filter (where register_corroboration_status = 'register_corroborated')::bigint as register_origin_corroborated_count,
+    count(*) filter (where candidate_status = 'true_ldn_candidate' and register_origin_site and register_corroboration_status <> 'register_corroborated')::bigint as register_origin_overconfidence_count,
     count(*) filter (where unregistered_opportunity_signal)::bigint as unregistered_inside_settlement_count,
     count(*) filter (where measured_constraint_count > 0)::bigint as screened_sites_with_measured_constraints,
     max(updated_at) as latest_updated_at
@@ -1502,9 +1729,15 @@ grant select on analytics.v_ldn_candidate_screen to authenticated;
 grant select on analytics.v_true_ldn_sites to authenticated;
 grant select on analytics.v_ldn_review_candidates to authenticated;
 grant select on analytics.v_ldn_candidate_screen_coverage to authenticated;
+grant select on analytics.v_site_register_evidence_balance to authenticated;
+grant select on analytics.v_register_origin_overconfidence to authenticated;
+grant select on analytics.v_register_sourced_sites_needing_corroboration to authenticated;
 
 comment on table landintel.site_ldn_candidate_screen
-    is 'LDN control-fit screen for private/no-builder targets and public, RSL/charity or housebuilder/developer blockers. It does not confirm legal ownership before title review.';
+    is 'LDN control-fit screen for private/no-builder targets and public, RSL/charity or housebuilder/developer blockers. HLA, ELA and VDL are interpreted as register/context discovery layers requiring corroboration, not as commercial proof. It does not confirm legal ownership before title review.';
 
 comment on function landintel.refresh_ldn_candidate_screen(integer, text)
-    is 'Batch refresh for the LDN private/no-builder candidate screen. It derives control-fit evidence from HLA, ELA, VDL, LDP, settlement, planning, constraints and title-readiness signals without asserting ownership certainty.';
+    is 'Batch refresh for the LDN private/no-builder candidate screen. HLA, ELA and VDL can surface sites, but true LDN candidate status requires 4+ acres, attractive private/non-builder control, no public/RSL/charity/housebuilder/developer blocker, delivery not started/stalled/uneconomic/incomplete evidence, and independent corroboration where register-origin evidence is present.';
+
+comment on view analytics.v_register_origin_overconfidence
+    is 'Diagnostic view for register-origin sites that would be over-promoted by HLA, ELA or VDL presence without 4+ acres, attractive private/no-builder control, delivery-not-started/stalled/uneconomic/incomplete state and independent corroboration.';

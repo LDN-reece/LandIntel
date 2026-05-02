@@ -3771,6 +3771,7 @@ class Phase2SourceRunner:
                     site.id as canonical_site_id,
                     site.site_name_primary,
                     site.authority_name,
+                    site.area_acres,
                     site.surfaced_reason,
                     title.title_required_flag,
                     title.title_review_status,
@@ -4123,6 +4124,50 @@ class Phase2SourceRunner:
                     planning.withdrawn_count,
                     planning.live_count,
                     planning.decision_record_count,
+                    ldn_screen.candidate_status as ldn_candidate_status,
+                    coalesce(ldn_screen.ldn_target_private_no_builder, false) as ldn_target_private_no_builder,
+                    ldn_screen.control_blocker_type as ldn_control_blocker_type,
+                    coalesce(
+                        ldn_screen.register_origin_site,
+                        (coalesce(hla.hla_count, 0) + coalesce(ela.ela_count, 0) + coalesce(vdl.vdl_count, 0)) > 0
+                    ) as register_origin_site,
+                    coalesce(
+                        ldn_screen.independent_corroboration_count,
+                        (
+                            case when coalesce(ldp.ldp_count, 0) > 0 then 1 else 0 end
+                            + case when coalesce(planning.approved_count, 0) + coalesce(planning.live_count, 0) + coalesce(planning.refused_count, 0) > 0 then 1 else 0 end
+                            + case when coalesce(constraints.constraint_count, 0) > 0 then 1 else 0 end
+                            + case when market.id is not null then 1 else 0 end
+                            + case when title.title_number is not null or title.normalized_title_number is not null then 1 else 0 end
+                        )::integer
+                    ) as independent_corroboration_count,
+                    coalesce(
+                        ldn_screen.register_origin_needs_corroboration,
+                        (coalesce(hla.hla_count, 0) + coalesce(ela.ela_count, 0) + coalesce(vdl.vdl_count, 0)) > 0
+                        and (
+                            case when coalesce(ldp.ldp_count, 0) > 0 then 1 else 0 end
+                            + case when coalesce(planning.approved_count, 0) + coalesce(planning.live_count, 0) + coalesce(planning.refused_count, 0) > 0 then 1 else 0 end
+                            + case when coalesce(constraints.constraint_count, 0) > 0 then 1 else 0 end
+                            + case when market.id is not null then 1 else 0 end
+                            + case when title.title_number is not null or title.normalized_title_number is not null then 1 else 0 end
+                        ) = 0
+                    ) as register_origin_needs_corroboration,
+                    coalesce(
+                        ldn_screen.register_corroboration_status,
+                        case
+                            when (coalesce(hla.hla_count, 0) + coalesce(ela.ela_count, 0) + coalesce(vdl.vdl_count, 0)) = 0 then 'not_register_origin'
+                            when (
+                                case when coalesce(ldp.ldp_count, 0) > 0 then 1 else 0 end
+                                + case when coalesce(planning.approved_count, 0) + coalesce(planning.live_count, 0) + coalesce(planning.refused_count, 0) > 0 then 1 else 0 end
+                                + case when coalesce(constraints.constraint_count, 0) > 0 then 1 else 0 end
+                                + case when market.id is not null then 1 else 0 end
+                                + case when title.title_number is not null or title.normalized_title_number is not null then 1 else 0 end
+                            ) = 0 then 'register_needs_corroboration'
+                            else 'register_corroborated'
+                        end
+                    ) as register_corroboration_status,
+                    coalesce(ldn_screen.build_started_indicator, false) as register_build_started_indicator,
+                    coalesce(ldn_screen.development_progress_status, 'unknown') as register_development_progress_status,
                     hla.hla_count,
                     hla.remaining_capacity,
                     ldp.ldp_count,
@@ -4158,6 +4203,7 @@ class Phase2SourceRunner:
                     limit 1
                 ) as review_row on true
                 left join landintel.site_planning_decision_context as planning on planning.canonical_site_id = site.id
+                left join landintel.site_ldn_candidate_screen as ldn_screen on ldn_screen.canonical_site_id = site.id
                 left join lateral (
                     select
                         count(*)::integer as hla_count,
@@ -4239,10 +4285,14 @@ class Phase2SourceRunner:
                 select
                     selected_sites.*,
                     case
-                        when coalesce(hla_count, 0) > 0 or coalesce(ldp_count, 0) > 0 then 'allocated_or_recognised'
+                        when coalesce(ldp_count, 0) > 0 then 'allocated_or_recognised'
                         when coalesce(approved_count, 0) > 0 then 'adjacent_precedent'
                         when coalesce(refused_count, 0) > 0 then 'refusal_repair'
-                        when coalesce(vdl_count, 0) > 0 then 'brownfield_regeneration'
+                        when coalesce(vdl_count, 0) > 0
+                         and coalesce(register_corroboration_status, '') = 'register_corroborated'
+                         and coalesce(ldn_target_private_no_builder, false)
+                         and coalesce(register_development_progress_status, 'unknown') = any(array['not_started', 'stalled', 'uneconomic', 'incomplete']::text[])
+                            then 'brownfield_regeneration'
                         when coalesce(live_count, 0) > 0 then 'policy_momentum'
                         else 'no_clear_journey'
                     end as planning_journey_type,
@@ -4261,8 +4311,7 @@ class Phase2SourceRunner:
                     case
                         when market_context_present and coalesce(market_confidence_tier, '') ilike '%high%' then 'strong'
                         when market_context_present
-                          or coalesce(approved_count, 0) > 0
-                          or coalesce(hla_count, 0) > 0 then 'credible'
+                          or coalesce(approved_count, 0) > 0 then 'credible'
                         when coalesce(approved_count, 0) = 0
                          and coalesce(live_count, 0) = 0
                          and not market_context_present then 'weak'
@@ -4274,10 +4323,16 @@ class Phase2SourceRunner:
                         when coalesce(builder_control_signal_present, false) then 'likely_controlled_by_housebuilder_promoter'
                         when title_review_status = 'reviewed' then 'known_and_attractive'
                         when coalesce(local_control_signal_present, false) then 'likely_local_trading_company'
-                        when coalesce(hla_count, 0) > 0
-                          or coalesce(ldp_count, 0) > 0
+                        when coalesce(ldn_target_private_no_builder, false)
+                         and coalesce(ldn_control_blocker_type, '') = ''
+                         and coalesce(register_build_started_indicator, false) = false
+                         and coalesce(area_acres, 0) >= 4
+                         and (
+                            coalesce(ldp_count, 0) > 0
+                          or coalesce(register_corroboration_status, '') = 'register_corroborated'
                           or coalesce(approved_count, 0) > 0
-                          or market_context_present then 'unknown_but_worth_title_spend'
+                          or market_context_present
+                         ) then 'unknown_but_worth_title_spend'
                         when coalesce(title_required_flag, true) then 'unknown_not_worth_title_spend'
                         else 'ownership_not_confirmed'
                     end as control_position
@@ -4288,7 +4343,9 @@ class Phase2SourceRunner:
                     classified.*,
                     array_remove(array[
                         case when planning_journey_type is distinct from 'no_clear_journey' then 'planning_angle' end,
-                        case when coalesce(vdl_count, 0) > 0 or coalesce(ela_count, 0) > 0 then 'mispricing_or_overlooked_angle' end,
+                        case when (coalesce(vdl_count, 0) > 0 or coalesce(ela_count, 0) > 0)
+                           and coalesce(register_corroboration_status, '') = 'register_corroborated'
+                           and coalesce(ldn_target_private_no_builder, false) then 'mispricing_or_overlooked_angle' end,
                         case when control_position = any(array['likely_local_trading_company', 'likely_controlled_by_small_private_company', 'unknown_but_worth_title_spend']::text[]) then 'control_opportunity' end,
                         case when market_position = any(array['strong', 'credible']::text[]) then 'buyer_angle' end,
                         case when coalesce(live_count, 0) > 0 or coalesce(approved_count, 0) > 0 then 'timing_angle' end
@@ -4302,10 +4359,10 @@ class Phase2SourceRunner:
                         select jsonb_agg(point order by ord)
                         from (
                             values
-                                (1, case when coalesce(hla_count, 0) > 0 then jsonb_build_object('fact', 'Site has HLA evidence', 'source', 'HLA', 'confidence', 'high', 'evidence_type', 'direct') end),
+                                (1, case when coalesce(hla_count, 0) > 0 then jsonb_build_object('fact', 'Site appears in HLA register/context evidence', 'source', 'HLA', 'confidence', 'medium', 'evidence_type', 'contextual', 'source_role', 'housing_land_supply_context', 'evidence_role', 'planning_supply_visibility', 'commercial_weight', 'low_to_medium', 'corroboration_required', true) end),
                                 (2, case when coalesce(ldp_count, 0) > 0 then jsonb_build_object('fact', 'Site has LDP allocation or policy evidence', 'source', 'LDP', 'confidence', 'high', 'evidence_type', 'direct') end),
-                                (3, case when coalesce(vdl_count, 0) > 0 then jsonb_build_object('fact', 'Vacant or derelict land evidence exists', 'source', 'VDL', 'confidence', 'medium', 'evidence_type', 'direct') end),
-                                (4, case when coalesce(ela_count, 0) > 0 then jsonb_build_object('fact', 'Employment land evidence exists', 'source', 'ELA', 'confidence', 'medium', 'evidence_type', 'direct') end),
+                                (3, case when coalesce(vdl_count, 0) > 0 then jsonb_build_object('fact', 'Vacant or derelict land register/context evidence exists', 'source', 'VDL', 'confidence', 'medium', 'evidence_type', 'contextual', 'source_role', 'vacant_derelict_land_context', 'evidence_role', 'regeneration_or_underuse_visibility', 'commercial_weight', 'low_to_medium', 'corroboration_required', true) end),
+                                (4, case when coalesce(ela_count, 0) > 0 then jsonb_build_object('fact', 'Employment land register/context evidence exists', 'source', 'ELA', 'confidence', 'medium', 'evidence_type', 'contextual', 'source_role', 'emerging_land_context', 'evidence_role', 'policy_or_candidate_visibility', 'commercial_weight', 'low_to_medium', 'corroboration_required', true) end),
                                 (5, case when coalesce(approved_count, 0) > 0 then jsonb_build_object('fact', coalesce(approved_count, 0)::text || ' approval record(s) linked to this site context', 'source', 'Planning records', 'confidence', 'medium', 'evidence_type', 'direct') end),
                                 (6, case when coalesce(refused_count, 0) > 0 then jsonb_build_object('fact', coalesce(refused_count, 0)::text || ' refusal record(s) linked to this site context', 'source', 'Planning records', 'confidence', 'medium', 'evidence_type', 'direct') end),
                                 (7, case when coalesce(live_count, 0) > 0 then jsonb_build_object('fact', coalesce(live_count, 0)::text || ' live planning record(s) linked to this site context', 'source', 'Planning records', 'confidence', 'medium', 'evidence_type', 'direct') end),
@@ -4316,7 +4373,8 @@ class Phase2SourceRunner:
                                 (12, case when coalesce(amenity_context_count, 0) + coalesce(open_location_context_count, 0) > 0 then jsonb_build_object('fact', 'Location and amenity context exists', 'source', 'Amenities / open location spine', 'confidence', 'medium', 'evidence_type', 'contextual') end),
                                 (13, case when demographic_context_present then jsonb_build_object('fact', 'Demographic context exists', 'source', 'Demographics engine', 'confidence', 'medium', 'evidence_type', 'contextual') end),
                                 (14, case when coalesce(title_required_flag, true) then jsonb_build_object('fact', 'Ownership is not confirmed before title review', 'source', 'Title readiness workflow', 'confidence', 'high', 'evidence_type', 'direct') end),
-                                (15, case when coalesce(ownership_control_signal_count, 0) > 0 then jsonb_build_object('fact', coalesce(ownership_control_signal_count, 0)::text || ' ownership/control signal(s) exist', 'source', 'Title/control workflow', 'confidence', 'medium', 'evidence_type', 'inferred') end)
+                                (15, case when coalesce(ownership_control_signal_count, 0) > 0 then jsonb_build_object('fact', coalesce(ownership_control_signal_count, 0)::text || ' ownership/control signal(s) exist', 'source', 'Title/control workflow', 'confidence', 'medium', 'evidence_type', 'inferred') end),
+                                (16, case when coalesce(register_origin_site, false) then jsonb_build_object('fact', 'Register/context source requires independent corroboration before strong sourcing treatment', 'source', 'Register-origin diagnostics', 'confidence', 'high', 'evidence_type', 'limitation', 'corroboration_status', register_corroboration_status, 'independent_corroboration_count', independent_corroboration_count) end)
                         ) as proof(ord, point)
                         where point is not null
                     ), '[]'::jsonb) as proof_points
@@ -4326,6 +4384,9 @@ class Phase2SourceRunner:
                 select
                     proofed.*,
                     case
+                        when coalesce(area_acres, 0) > 0 and coalesce(area_acres, 0) < 4 then 'insufficient'
+                        when coalesce(register_origin_site, false)
+                         and coalesce(register_corroboration_status, '') <> 'register_corroborated' then 'low'
                         when jsonb_array_length(proof_points) >= 6
                          and planning_journey_type is distinct from 'no_clear_journey'
                          and market_position = any(array['strong', 'credible']::text[])
@@ -4344,21 +4405,27 @@ class Phase2SourceRunner:
                     || array_remove(array[
                         case when coalesce(title_required_flag, true) then 'Ownership not confirmed' end,
                         case when control_position = 'likely_controlled_by_housebuilder_promoter' then 'Likely housebuilder/promoter control signal' end,
+                        case when coalesce(ldn_control_blocker_type, '') <> '' then 'Public/RSL/charity/housebuilder/developer blocker signal present' end,
+                        case when coalesce(register_build_started_indicator, false) then 'Register evidence suggests build work has started' end,
+                        case when coalesce(register_origin_site, false) and coalesce(register_corroboration_status, '') <> 'register_corroborated' then 'Register/context evidence is not enough without independent corroboration' end,
+                        case when coalesce(area_acres, 0) > 0 and coalesce(area_acres, 0) < 4 then 'Site is below the 4 acre LDN sourcing threshold' end,
                         case when constraint_position = 'major_review' then 'Major constraint review required' end,
                         case when planning_journey_type = 'no_clear_journey' then 'Planning journey is not clear' end,
                         case when market_position = any(array['weak', 'unproven']::text[]) then 'Buyer or market evidence is not proven' end
                     ]::text[], null) as warning_candidates,
                     array_remove(array[
                         case when coalesce(title_review_status, 'not_reviewed') is distinct from 'reviewed' then 'Title not reviewed' end,
+                        case when coalesce(register_origin_site, false) and coalesce(register_corroboration_status, '') <> 'register_corroborated' then 'Independent corroboration required beyond HLA/ELA/VDL register presence' end,
                         case when coalesce(decision_record_count, 0) = 0 then 'Planning decision evidence not reviewed' end,
                         case when coalesce(constraint_count, 0) = 0 then 'Measured constraints missing' end,
                         case when not market_context_present then 'Buyer or market appetite evidence missing' end,
                         case when not demographic_context_present then 'Demographic context missing' end
                     ]::text[], null) as gap_candidates,
                     array_remove(array[
-                        case when planning_journey_type = 'allocated_or_recognised' then 'Planning journey exists through allocation or HLA/LDP recognition' end,
+                        case when planning_journey_type = 'allocated_or_recognised' then 'Planning journey exists through LDP allocation or policy recognition' end,
                         case when planning_journey_type = 'adjacent_precedent' then 'Residential precedent or planning approval evidence exists' end,
-                        case when planning_journey_type = 'brownfield_regeneration' then 'Brownfield or vacant-land angle exists' end,
+                        case when planning_journey_type = 'brownfield_regeneration' then 'Brownfield or vacant-land angle is register-backed and corroborated' end,
+                        case when coalesce(ldn_target_private_no_builder, false) and coalesce(register_development_progress_status, '') = any(array['not_started', 'stalled', 'uneconomic', 'incomplete']::text[]) then 'Private/no-builder register site has not clearly started delivery' end,
                         case when market_position = any(array['strong', 'credible']::text[]) then 'Buyer or market context exists' end,
                         case when control_position = any(array['likely_local_trading_company', 'unknown_but_worth_title_spend']::text[]) then 'Control route may justify title spend' end,
                         case when constraint_position = 'priceable_design_led' then 'Measured constraint appears design-led rather than central' end
@@ -4382,16 +4449,31 @@ class Phase2SourceRunner:
                     end as missing_critical_evidence,
                     case
                         when constraint_position = 'terminal'
+                          or (coalesce(area_acres, 0) > 0 and coalesce(area_acres, 0) < 4)
+                          or coalesce(ldn_control_blocker_type, '') <> ''
+                          or coalesce(register_build_started_indicator, false)
                           or cardinality(prove_it_drivers) = 0
                           or jsonb_array_length(proof_points) = 0 then 'ignore'
                         when planning_journey_type is distinct from 'no_clear_journey'
                          and market_position = any(array['strong', 'credible']::text[])
                          and control_position <> all(array['known_blocked', 'likely_controlled_by_housebuilder_promoter']::text[])
+                         and coalesce(area_acres, 0) >= 4
+                         and (
+                            coalesce(register_origin_site, false) = false
+                            or coalesce(register_corroboration_status, '') = 'register_corroborated'
+                         )
+                         and coalesce(ldn_control_blocker_type, '') = ''
+                         and coalesce(register_build_started_indicator, false) = false
                          and constraint_position = any(array['priceable_design_led', 'context_only']::text[])
                          and evidence_confidence = any(array['high', 'medium']::text[]) then 'pursue'
                         when planning_journey_type is distinct from 'no_clear_journey'
                           or market_position = 'credible'
-                          or control_position = 'unknown_but_worth_title_spend' then 'review'
+                          or control_position = 'unknown_but_worth_title_spend' then
+                            case
+                                when coalesce(register_origin_site, false)
+                                 and coalesce(register_corroboration_status, '') <> 'register_corroborated' then 'monitor'
+                                else 'review'
+                            end
                         else 'monitor'
                     end as verdict
                 from narrated
@@ -4405,7 +4487,11 @@ class Phase2SourceRunner:
                           or (planning_journey_type = 'no_clear_journey' and market_position = 'weak') then 'do_not_order'
                         when verdict = 'pursue'
                          and coalesce(title_review_status, 'not_reviewed') is distinct from 'reviewed'
-                         and control_position = 'unknown_but_worth_title_spend' then 'order_title_urgently'
+                         and control_position = 'unknown_but_worth_title_spend'
+                         and (
+                            coalesce(register_origin_site, false) = false
+                            or coalesce(register_corroboration_status, '') = 'register_corroborated'
+                         ) then 'order_title_urgently'
                         when verdict = any(array['review', 'pursue']::text[])
                          and coalesce(title_review_status, 'not_reviewed') is distinct from 'reviewed'
                          and evidence_confidence = any(array['high', 'medium']::text[])
@@ -4415,6 +4501,7 @@ class Phase2SourceRunner:
                     case
                         when verdict = 'ignore' then 'Do not spend title money until a planning, control, timing or buyer angle appears.'
                         when constraint_position = 'major_review' then 'Constraint interpretation should happen before title spend.'
+                        when coalesce(register_origin_site, false) and coalesce(register_corroboration_status, '') <> 'register_corroborated' then 'Register/context evidence should be corroborated before title spend.'
                         when coalesce(title_review_status, 'not_reviewed') = 'reviewed' then 'Title has already been reviewed; use reviewed ownership evidence.'
                         when control_position = 'unknown_but_worth_title_spend' then 'Ownership is unknown and would materially affect the next commercial decision.'
                         else 'Manual review should confirm whether title spend is justified.'
@@ -4428,6 +4515,7 @@ class Phase2SourceRunner:
                         when verdict = 'pursue' and title_spend_recommendation = 'order_title_urgently' then 'Order title urgently.'
                         when title_spend_recommendation = 'order_title' then 'Order title.'
                         when constraint_position = 'major_review' then 'Run constraint review before title spend.'
+                        when coalesce(register_origin_site, false) and coalesce(register_corroboration_status, '') <> 'register_corroborated' then 'Do not promote from HLA, ELA or VDL presence alone; find independent corroboration first.'
                         when planning_journey_type is distinct from 'no_clear_journey' then 'Review planning documents before title spend.'
                         when verdict = 'review' then 'Manual review before title spend.'
                         when verdict = 'monitor' then 'Monitor only. Do not spend time or title money yet.'
@@ -4451,7 +4539,10 @@ class Phase2SourceRunner:
                     concat_ws(
                         ' ',
                         case
-                            when planning_journey_type = 'allocated_or_recognised' then 'Planning evidence suggests the site is already recognised in policy or supply data.'
+                            when coalesce(register_origin_site, false) then 'This site has been identified through a register/context source. That makes it visible and potentially relevant, but it does not prove availability, deliverability, clean ownership, buyer depth or commercial viability. Independent corroboration is required before treating this as a strong sourcing opportunity.'
+                        end,
+                        case
+                            when planning_journey_type = 'allocated_or_recognised' then 'Planning evidence suggests the site is already recognised in LDP policy data.'
                             when planning_journey_type = 'adjacent_precedent' then 'Planning evidence suggests residential development is not alien to this location.'
                             when planning_journey_type = 'refusal_repair' then 'Planning evidence is mixed; refusal reasons need review before spend.'
                             when planning_journey_type = 'brownfield_regeneration' then 'The site may be an overlooked regeneration lead rather than a standard greenfield search result.'
@@ -4482,6 +4573,11 @@ class Phase2SourceRunner:
                         and jsonb_array_length(proof_points) > 0
                         and title_spend_recommendation is not null
                         and review_next_action is not null
+                        and (
+                            coalesce(register_origin_site, false) = false
+                            or coalesce(register_corroboration_status, '') = 'register_corroborated'
+                            or verdict = 'review'
+                        )
                     ) as review_ready_flag,
                     md5(concat_ws(
                         '|',
@@ -4492,6 +4588,11 @@ class Phase2SourceRunner:
                         constraint_position,
                         market_position,
                         control_position,
+                        register_origin_site::text,
+                        register_corroboration_status,
+                        independent_corroboration_count::text,
+                        ldn_target_private_no_builder::text,
+                        register_development_progress_status,
                         evidence_confidence,
                         prove_it_drivers::text,
                         proof_points::text,
@@ -4555,6 +4656,9 @@ class Phase2SourceRunner:
                         'source_key', 'prove_it_conviction_layer',
                         'evidence_standard', 'next_pound_or_hour',
                         'title_ownership_limitation', 'ownership_not_confirmed_until_title_review',
+                        'register_origin_limitation', 'hla_ela_vdl_are_discovery_context_not_commercial_proof',
+                        'register_corroboration_status', register_corroboration_status,
+                        'independent_corroboration_count', independent_corroboration_count,
                         'site_name', site_name_primary,
                         'authority_name', authority_name
                     ),

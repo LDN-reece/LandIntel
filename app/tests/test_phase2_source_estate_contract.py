@@ -207,6 +207,9 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "analytics.v_true_ldn_sites",
             "analytics.v_ldn_review_candidates",
             "analytics.v_ldn_candidate_screen_coverage",
+            "analytics.v_site_register_evidence_balance",
+            "analytics.v_register_origin_overconfidence",
+            "analytics.v_register_sourced_sites_needing_corroboration",
             "analytics.v_landintel_source_estate_matrix",
             "analytics.v_landintel_source_lifecycle_stage_counts",
         ):
@@ -277,6 +280,11 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("def refresh_site_prove_it_assessments", RUNNER)
         self.assertIn("def audit_site_prove_it_assessments", RUNNER)
         self.assertIn("analytics.v_site_prove_it_coverage", RUNNER)
+        self.assertIn("hla_ela_vdl_are_discovery_context_not_commercial_proof", RUNNER)
+        self.assertIn("Register/context source requires independent corroboration", RUNNER)
+        self.assertIn("commercial_weight', 'low_to_medium'", RUNNER)
+        self.assertIn("corroboration_required', true", RUNNER)
+        self.assertIn("coalesce(area_acres, 0) >= 4", RUNNER)
 
     def test_ldn_candidate_screen_targets_private_no_builder_without_title_certainty(self) -> None:
         self.assertIn("source_key: ldn_candidate_screen", MANIFEST)
@@ -285,6 +293,21 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("ownership_not_confirmed_until_title_review", MIGRATION)
         self.assertIn("register_owner_or_developer_signal_not_legal_title", MIGRATION)
         self.assertIn("ldn_target_private_no_builder", MIGRATION)
+        self.assertIn("source_role text", MIGRATION)
+        self.assertIn("evidence_role text", MIGRATION)
+        self.assertIn("commercial_weight text", MIGRATION)
+        self.assertIn("corroboration_required boolean", MIGRATION)
+        self.assertIn("register_origin_site", MIGRATION)
+        self.assertIn("independent_corroboration_count", MIGRATION)
+        self.assertIn("register_corroboration_status", MIGRATION)
+        self.assertIn("register_origin_overconfidence_count", MIGRATION)
+        self.assertIn("analytics.v_site_register_evidence_balance", MIGRATION)
+        self.assertIn("analytics.v_register_origin_overconfidence", MIGRATION)
+        self.assertIn("analytics.v_register_sourced_sites_needing_corroboration", MIGRATION)
+        self.assertIn("HLA, ELA and VDL are discovery/context layers", MIGRATION)
+        self.assertIn("Register/context source requires independent corroboration", MIGRATION)
+        self.assertIn("area_acres < 4", MIGRATION)
+        self.assertIn("development_progress_status in ('not_started', 'stalled', 'uneconomic', 'incomplete')", MIGRATION)
         self.assertIn("public_sector_signal", MIGRATION)
         self.assertIn("rsl_lha_charity_signal", MIGRATION)
         self.assertIn("housebuilder_developer_signal", MIGRATION)

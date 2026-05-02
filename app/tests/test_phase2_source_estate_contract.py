@@ -21,6 +21,7 @@ MIGRATION = "\n".join(
         "055_ldn_candidate_control_screen.sql",
         "056_urgent_site_address_title_pack.sql",
         "060_scotland_parcel_use_spine.sql",
+        "061_ldn_sourced_site_briefs.sql",
     )
 )
 MANIFEST = (APP_DIR / "config" / "phase2_source_estate.yaml").read_text(encoding="utf-8")
@@ -241,6 +242,8 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "analytics.v_true_ldn_sites",
             "analytics.v_ldn_review_candidates",
             "analytics.v_ldn_candidate_screen_coverage",
+            "analytics.v_ldn_sourced_site_briefs",
+            "analytics.v_ldn_sourced_site_brief_coverage",
             "analytics.v_site_register_evidence_balance",
             "analytics.v_register_origin_overconfidence",
             "analytics.v_register_sourced_sites_needing_corroboration",
@@ -355,10 +358,34 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("def audit_ldn_candidate_screen", RUNNER)
         self.assertIn("landintel.refresh_ldn_candidate_screen", RUNNER)
         self.assertIn("analytics.v_ldn_candidate_screen_coverage", RUNNER)
+        self.assertIn("analytics.v_ldn_sourced_site_briefs", RUNNER)
+        self.assertIn("sourced_site_briefs", RUNNER)
         self.assertIn("prove_it_coverage", RUNNER)
         self.assertIn("claim_statement", RUNNER)
         self.assertIn("jsonb_array_length(proof_points) as proof_point_count", RUNNER)
         self.assertIn("missing_critical_evidence", RUNNER)
+
+    def test_sourced_site_briefs_show_location_title_status_and_no_sct_title_inference(self) -> None:
+        self.assertIn("create or replace view analytics.v_ldn_sourced_site_briefs", MIGRATION)
+        self.assertIn("create or replace view analytics.v_ldn_sourced_site_brief_coverage", MIGRATION)
+        self.assertIn("public.is_scottish_title_number_candidate", MIGRATION)
+        self.assertIn("title_number !~ '^SCT[0-9]+$'", MIGRATION)
+        self.assertIn("SCT is retained as the RoS cadastral parcel reference", MIGRATION)
+        self.assertIn("ros_attribute_title_number_only", MIGRATION)
+        self.assertIn("google_maps_url", MIGRATION)
+        self.assertIn("what_the_site_is", MIGRATION)
+        self.assertIn("why_ldn_should_look", MIGRATION)
+        self.assertIn("what_ldn_should_do_next", MIGRATION)
+        self.assertIn("title_bridge_explanation", MIGRATION)
+        self.assertIn("ownership_not_confirmed_until_title_review", MIGRATION)
+        self.assertIn("title_number_candidate_identified", MIGRATION)
+        self.assertIn("ros_parcel_candidate_title_required", MIGRATION)
+        self.assertIn("title_number_candidate_not_ownership_confirmation", MIGRATION)
+        self.assertIn("with_title_number_candidate_count", MIGRATION)
+        self.assertIn("with_map_link_count", MIGRATION)
+        self.assertIn("sourced_site_brief_coverage", RUNNER)
+        self.assertIn("site_brief_title", RUNNER)
+        self.assertIn("title_bridge_explanation", RUNNER)
 
     def test_urgent_address_title_pack_links_addresses_and_title_candidates_without_ownership_certainty(self) -> None:
         self.assertIn("source_key: urgent_address_title_pack", MANIFEST)

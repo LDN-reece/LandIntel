@@ -5078,12 +5078,51 @@ class Phase2SourceRunner:
             limit 20
             """
         )
+        sourced_site_briefs = self.database.fetch_all(
+            """
+            select
+                canonical_site_id::text,
+                site_brief_title,
+                what_the_site_is,
+                authority_name,
+                area_acres,
+                google_maps_url,
+                title_number,
+                title_status,
+                ros_inspire_id,
+                primary_address_text,
+                candidate_status,
+                verdict,
+                why_ldn_should_look,
+                top_warnings,
+                missing_critical_evidence,
+                what_ldn_should_do_next,
+                title_bridge_explanation,
+                ownership_limitation
+            from analytics.v_ldn_sourced_site_briefs
+            order by
+                case
+                    when candidate_status = 'true_ldn_candidate' then 1
+                    when title_status = 'title_number_candidate_identified' then 2
+                    when review_ready_flag then 3
+                    else 4
+                end,
+                area_acres desc nulls last,
+                site_brief_title
+            limit 20
+            """
+        )
+        sourced_site_brief_coverage = self.database.fetch_one(
+            "select * from analytics.v_ldn_sourced_site_brief_coverage"
+        ) or {}
         result = {
             "coverage": coverage,
             "status_mix": status_mix,
             "control_blockers": blockers,
             "true_ldn_candidates": true_candidates,
             "review_candidates": review_candidates,
+            "sourced_site_brief_coverage": sourced_site_brief_coverage,
+            "sourced_site_briefs": sourced_site_briefs,
         }
         if log_event and not self.dry_run and not self.audit_only:
             self._record_expansion_event(
@@ -5273,10 +5312,50 @@ class Phase2SourceRunner:
             limit 20
             """
         )
+        sourced_site_briefs = self.database.fetch_all(
+            """
+            select
+                canonical_site_id::text,
+                site_brief_title,
+                what_the_site_is,
+                authority_name,
+                area_acres,
+                google_maps_url,
+                title_number,
+                title_status,
+                ros_inspire_id,
+                primary_address_text,
+                title_spend_recommendation,
+                why_ldn_should_look,
+                what_ldn_should_do_next,
+                title_bridge_explanation,
+                ownership_limitation
+            from analytics.v_ldn_sourced_site_briefs
+            where urgency_status is not null
+               or title_status <> 'title_required'
+               or address_link_status = 'address_linked'
+            order by
+                case
+                    when title_status = 'title_number_candidate_identified'
+                     and address_link_status = 'address_linked' then 1
+                    when title_status = 'title_number_candidate_identified' then 2
+                    when address_link_status = 'address_linked' then 3
+                    else 4
+                end,
+                area_acres desc nulls last,
+                site_brief_title
+            limit 20
+            """
+        )
+        sourced_site_brief_coverage = self.database.fetch_one(
+            "select * from analytics.v_ldn_sourced_site_brief_coverage"
+        ) or {}
         result = {
             "coverage": coverage,
             "missing_address_or_title": missing,
             "dd_pack_ready": ready,
+            "sourced_site_brief_coverage": sourced_site_brief_coverage,
+            "sourced_site_briefs": sourced_site_briefs,
         }
         if log_event and not self.dry_run and not self.audit_only:
             self._record_expansion_event(

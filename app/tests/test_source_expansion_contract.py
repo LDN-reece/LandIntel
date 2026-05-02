@@ -19,7 +19,13 @@ MIGRATION = (APP_DIR / "sql" / "044_phase_one_source_expansion.sql").read_text(e
 OPEN_LOCATION_COMPLETION_MIGRATION = (
     APP_DIR / "sql" / "057_open_location_spine_completion.sql"
 ).read_text(encoding="utf-8")
-TITLE_BRIDGE_MIGRATION = (APP_DIR / "sql" / "047_title_resolution_bridge.sql").read_text(encoding="utf-8")
+TITLE_BRIDGE_MIGRATION = "\n".join(
+    (APP_DIR / "sql" / filename).read_text(encoding="utf-8")
+    for filename in (
+        "047_title_resolution_bridge.sql",
+        "061_ldn_sourced_site_briefs.sql",
+    )
+)
 SITE_PARCEL_LINK_MIGRATION = (APP_DIR / "sql" / "048_site_ros_parcel_linking.sql").read_text(encoding="utf-8")
 CONSTRAINT_ENGINE_MIGRATION = (APP_DIR / "sql" / "049_constraint_measurement_engine.sql").read_text(encoding="utf-8")
 MANIFEST = (APP_DIR / "config" / "phase_one_source_estate.yaml").read_text(encoding="utf-8")
@@ -403,7 +409,10 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("set_config('statement_timeout', '15min', true)", TITLE_BRIDGE_MIGRATION)
         self.assertIn("parcel.authority_name = anchor.authority_name", TITLE_BRIDGE_MIGRATION)
         self.assertIn("parcel.geometry OPERATOR(extensions.&&) anchor.geometry", TITLE_BRIDGE_MIGRATION)
-        self.assertIn("'^[A-Z]{3}[0-9]{1,10}$'", TITLE_BRIDGE_MIGRATION)
+        self.assertIn("'^[A-Z]{2,5}[0-9]{1,10}$'", TITLE_BRIDGE_MIGRATION)
+        self.assertIn("title_number !~ '^SCT[0-9]+$'", TITLE_BRIDGE_MIGRATION)
+        self.assertIn("SCT is retained as the RoS cadastral parcel reference", TITLE_BRIDGE_MIGRATION)
+        self.assertIn("ros_attribute_title_number_only", TITLE_BRIDGE_MIGRATION)
         self.assertIn("'site_geometry_to_ros_cadastral'::text as match_method", TITLE_BRIDGE_MIGRATION)
         self.assertIn("site.primary_ros_parcel_id", TITLE_BRIDGE_MIGRATION)
         self.assertIn("primary_ros_parcel_candidate", TITLE_BRIDGE_MIGRATION)

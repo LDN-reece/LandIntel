@@ -54,6 +54,8 @@ This runs the normal sourcing/DD preparation sequence without spending OS Places
 
 The open-data location spine intentionally uses a smaller internal context batch than the main sourcing batch. That stops heavy OS boundary/amenity geometry refreshes from blocking the whole run.
 
+If the open-data stage reaches its time budget, the workflow records that honestly and keeps the data already landed. Run the same stage again to continue the corpus.
+
 ## Rules
 
 - Run one workflow at a time.

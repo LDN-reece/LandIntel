@@ -115,8 +115,8 @@ jobs:
       RECONCILE_REFRESH_LEASE_SECONDS: "1200"
       RECONCILE_MAX_ATTEMPTS: "3"
       OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: "2500000000"
-      OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: "25000"
-      OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS: "500000"
+      OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: "5000"
+      OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS: "150000"
       OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: "10"
       OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE: "5"
       OPEN_LOCATION_SPINE_CONTEXT_REFRESH_MODE: "light"
@@ -179,6 +179,33 @@ jobs:
             echo "::endgroup::"
           }
 
+          run_bounded_step() {
+            local label="$1"
+            shift
+            echo "::group::${label}"
+            echo "### ${label}" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "timeout ${SOURCE_EXPANSION_COMMAND_TIMEOUT} $*" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            set +e
+            timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" "$@"
+            local status=$?
+            set -e
+            if [ "$status" -eq 124 ]; then
+              echo "- reached time budget; landed data is retained and the same stage can be rerun to continue" >> "$GITHUB_STEP_SUMMARY"
+              echo "::warning::${label} reached the configured time budget; rerun this stage to continue the corpus landing."
+              echo "::endgroup::"
+              return 0
+            fi
+            if [ "$status" -ne 0 ]; then
+              echo "- failed with exit code ${status}" >> "$GITHUB_STEP_SUMMARY"
+              echo "::endgroup::"
+              return "$status"
+            fi
+            echo "- completed" >> "$GITHUB_STEP_SUMMARY"
+            echo "::endgroup::"
+          }
+
           phase2() {
             run_step "Phase 2: $1" python -m src.phase2_source_runner "$1"
           }
@@ -192,7 +219,7 @@ jobs:
           }
 
           open_data() {
-            run_step "Open-data location spine" python -m src.source_expansion_runner_wfs_paging ingest-bulk-download-universe
+            run_bounded_step "Open-data location spine" python -m src.source_expansion_runner_wfs_paging ingest-bulk-download-universe
             phase2 ingest-amenities
             phase2 ingest-demographics
             phase2 ingest-market-context

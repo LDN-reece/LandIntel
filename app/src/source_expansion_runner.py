@@ -17,7 +17,8 @@ import re
 import tempfile
 import traceback
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlencode, urljoin, urlparse
+import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -6076,11 +6077,6 @@ class SourceExpansionRunner:
             params = {"data": "[out:json][timeout:5];node(55.85,-4.26,55.86,-4.25);out 1;"}
             headers["Accept"] = "application/json,text/plain,*/*"
         elif source["source_family"] == "statistics_gov_scot":
-            endpoint = (
-                "https://statistics.gov.scot/sparql"
-                "?query=select%20%2A%20where%20%7B%20%3Fs%20%3Fp%20%3Fo%20%7D%20limit%201"
-                "&format=json"
-            )
             headers["Accept"] = "application/sparql-results+json, application/json"
         elif source["source_family"] == "opentopography_srtm":
             params = {
@@ -6094,31 +6090,67 @@ class SourceExpansionRunner:
             }
         try:
             if source["source_family"] == "statistics_gov_scot":
-                response = self.client.get(endpoint, params=params, headers=headers)
-                if response.status_code >= 400:
-                    response = self.client.post(
-                        "https://statistics.gov.scot/sparql",
-                        data={"query": "select * where { ?s ?p ?o } limit 1", "format": "json"},
-                        headers=headers,
-                    )
-                status = "reachable" if response.status_code < 400 else "failed"
-                return status, f"HTTP {response.status_code} from {source['source_name']}"
+                return self._probe_statistics_gov_scot(source, headers)
             response = self.client.get(endpoint, params=params, headers=headers)
             status = "reachable" if response.status_code < 400 else "failed"
             return status, f"HTTP {response.status_code} from {source['source_name']}"
         except Exception as exc:
             if source["source_family"] == "statistics_gov_scot":
-                try:
-                    response = self.client.post(
-                        "https://statistics.gov.scot/sparql",
-                        data={"query": "select * where { ?s ?p ?o } limit 1", "format": "json"},
+                return self._probe_statistics_gov_scot(source, headers, first_error=exc)
+            return "failed", str(exc)
+
+    def _probe_statistics_gov_scot(
+        self,
+        source: dict[str, Any],
+        headers: dict[str, str],
+        first_error: Exception | None = None,
+    ) -> tuple[str, str]:
+        query = "select * where { ?s ?p ?o } limit 1"
+        errors: list[str] = []
+        if first_error is not None:
+            errors.append(str(first_error))
+        endpoint = "https://statistics.gov.scot/sparql"
+        for method in ("GET", "POST"):
+            try:
+                if method == "GET":
+                    response = self.client.get(
+                        endpoint,
+                        params={"query": query, "format": "json"},
                         headers=headers,
                     )
-                    status = "reachable" if response.status_code < 400 else "failed"
-                    return status, f"HTTP {response.status_code} from {source['source_name']} via POST fallback"
-                except Exception as fallback_exc:
-                    return "failed", f"{exc}; POST fallback failed: {fallback_exc}"
-            return "failed", str(exc)
+                else:
+                    response = self.client.post(
+                        endpoint,
+                        data={"query": query, "format": "json"},
+                        headers=headers,
+                    )
+                status = "reachable" if response.status_code < 400 else "failed"
+                if status == "reachable":
+                    return status, f"HTTP {response.status_code} from {source['source_name']} via httpx {method}"
+                errors.append(f"httpx {method} HTTP {response.status_code}: {response.text[:160]}")
+            except Exception as exc:
+                errors.append(f"httpx {method}: {exc}")
+
+        # GitHub-hosted runners have intermittently disconnected on this endpoint
+        # through httpx. urllib gives the probe an independent transport path.
+        encoded = urlencode({"query": query, "format": "json"})
+        for base_url in ("https://statistics.gov.scot/sparql", "http://statistics.gov.scot/sparql"):
+            try:
+                request = urllib.request.Request(
+                    f"{base_url}?{encoded}",
+                    headers=headers,
+                    method="GET",
+                )
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    status_code = int(response.getcode())
+                    response.read(256)
+                status = "reachable" if status_code < 400 else "failed"
+                if status == "reachable":
+                    return status, f"HTTP {status_code} from {source['source_name']} via urllib GET"
+                errors.append(f"urllib GET HTTP {status_code}")
+            except Exception as exc:
+                errors.append(f"urllib GET {base_url}: {exc}")
+        return "failed", "; ".join(errors[-4:])
 
     def _probe_os_download_product(self, source: dict[str, Any]) -> tuple[str, str]:
         endpoint = self._os_downloads_product_endpoint(source)

@@ -14,6 +14,7 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 import httpx
 import yaml
@@ -5168,7 +5169,6 @@ class Phase2SourceRunner:
         return result
 
     def _fetch_os_places_for_urgent_sites(self) -> dict[str, Any]:
-        api_key = self._os_places_key_value()
         selected = self.database.fetch_all(
             """
             select
@@ -5213,11 +5213,11 @@ class Phase2SourceRunner:
         )
         if not selected:
             return {"selected_site_count": 0, "inserted_address_count": 0, "status": "no_urgent_sites_requiring_os_places"}
-        if not api_key:
+        if not self._os_places_access_configured():
             return {
                 "selected_site_count": len(selected),
                 "inserted_address_count": 0,
-                "status": "os_places_key_missing",
+                "status": "os_places_access_missing",
             }
 
         inserted: list[dict[str, Any]] = []
@@ -5227,7 +5227,7 @@ class Phase2SourceRunner:
             for site in selected:
                 point = f"{site['x_coordinate']},{site['y_coordinate']}"
                 try:
-                    payload = self._fetch_os_places_payload(client, point, api_key)
+                    payload = self._fetch_os_places_payload(client, point)
                 except Exception as exc:
                     failed_count += 1
                     if len(failure_reasons) < 5:
@@ -5339,13 +5339,24 @@ class Phase2SourceRunner:
             "status": "success",
         }
 
-    def _fetch_os_places_payload(self, client: httpx.Client, point: str, api_key: str) -> dict[str, Any]:
-        auth_modes: list[tuple[str, dict[str, str], dict[str, str]]] = [
-            ("api_key", {"key": api_key}, {}),
-        ]
-        bearer_token = self._os_places_oauth_token(client)
-        if bearer_token:
-            auth_modes.append(("oauth2", {}, {"Authorization": f"Bearer {bearer_token}"}))
+    def _fetch_os_places_payload(self, client: httpx.Client, point: str) -> dict[str, Any]:
+        endpoint_query_params = self._os_places_endpoint_query_params()
+        auth_modes: list[tuple[str, dict[str, str], dict[str, str]]] = []
+        if endpoint_query_params.get("key"):
+            auth_modes.append(("endpoint_url", {}, {}))
+        else:
+            api_key = self._os_places_key_value()
+            if api_key:
+                auth_modes.append(("api_key", {"key": api_key}, {}))
+            bearer_token = self._os_places_oauth_token(client)
+            if bearer_token:
+                auth_modes.append(("oauth2", {}, {"Authorization": f"Bearer {bearer_token}"}))
+        if not auth_modes:
+            raise RuntimeError(
+                "OS Places access is not configured. Set OS_PLACES_API as a Places endpoint URL "
+                "with key query parameter, or set OS_PLACES_API_KEY, or configure OS_PROJECT_API "
+                "and OS_PROJECT_API_SECRET for OAuth."
+            )
         attempts = []
         for auth_mode, auth_params, auth_headers in auth_modes:
             attempts.extend(
@@ -5379,10 +5390,10 @@ class Phase2SourceRunner:
             )
         errors: list[str] = []
         for auth_mode, path, params, auth_headers in attempts:
-            endpoint = self._os_places_endpoint(path)
+            endpoint, endpoint_params = self._os_places_endpoint(path)
             response = client.get(
                 endpoint,
-                params=params,
+                params={**endpoint_params, **params},
                 headers={
                     "User-Agent": "LandIntel/1.0 (+https://github.com/LDN-reece/LandIntel)",
                     **auth_headers,
@@ -5393,16 +5404,41 @@ class Phase2SourceRunner:
             errors.append(f"{auth_mode} {path} HTTP {response.status_code}: {response.text[:160]}")
         raise RuntimeError("; ".join(errors))
 
-    def _os_places_endpoint(self, path: str) -> str:
+    def _os_places_endpoint(self, path: str) -> tuple[str, dict[str, str]]:
         base = (os.getenv("OS_PLACES_API") or "https://api.os.uk/search/places/v1").strip().rstrip("/")
+        if not base.lower().startswith(("http://", "https://")):
+            base = "https://api.os.uk/search/places/v1"
+        parsed = urlsplit(base)
+        endpoint_path = parsed.path.rstrip("/")
         for suffix in ("/find", "/nearest", "/bbox", "/radius", "/polygon", "/postcode", "/uprn"):
-            if base.endswith(suffix):
-                base = base[: -len(suffix)]
+            if endpoint_path.endswith(suffix):
+                endpoint_path = endpoint_path[: -len(suffix)]
                 break
-        return f"{base}{path}"
+        endpoint = urlunsplit((parsed.scheme, parsed.netloc, f"{endpoint_path}{path}", "", ""))
+        return endpoint, dict(parse_qsl(parsed.query, keep_blank_values=True))
+
+    def _os_places_endpoint_query_params(self) -> dict[str, str]:
+        raw_endpoint = (os.getenv("OS_PLACES_API") or "").strip()
+        if not raw_endpoint.lower().startswith(("http://", "https://")):
+            return {}
+        return dict(parse_qsl(urlsplit(raw_endpoint).query, keep_blank_values=True))
+
+    def _os_places_access_configured(self) -> bool:
+        if self._os_places_endpoint_query_params().get("key"):
+            return True
+        if self._os_places_key_value():
+            return True
+        project_key = (os.getenv("OS_PROJECT_API") or "").strip()
+        project_secret = (os.getenv("OS_PROJECT_API_SECRET") or "").strip()
+        return bool(
+            project_key
+            and project_secret
+            and not project_key.lower().startswith(("http://", "https://"))
+            and not project_secret.lower().startswith(("http://", "https://"))
+        )
 
     def _os_places_key_value(self) -> str | None:
-        for env_name in ("OS_PROJECT_API", "OS_PLACES_API_KEY", "OS_API_KEY"):
+        for env_name in ("OS_PLACES_API_KEY", "OS_PROJECT_API", "OS_API_KEY"):
             value = (os.getenv(env_name) or "").strip()
             if value and not value.lower().startswith(("http://", "https://")):
                 return value

@@ -374,6 +374,8 @@ select
     coalesce(base.address_candidate_count, 0) as address_candidate_count,
     coalesce(base.address_link_status, 'address_missing') as address_link_status,
     base.address_source,
+    base.urgency_status,
+    base.urgency_source,
     base.candidate_status,
     base.verdict,
     base.review_ready_flag,

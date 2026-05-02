@@ -376,6 +376,8 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("what_the_site_is", MIGRATION)
         self.assertIn("why_ldn_should_look", MIGRATION)
         self.assertIn("what_ldn_should_do_next", MIGRATION)
+        self.assertIn("base.urgency_status", MIGRATION)
+        self.assertIn("base.urgency_source", MIGRATION)
         self.assertIn("title_bridge_explanation", MIGRATION)
         self.assertIn("ownership_not_confirmed_until_title_review", MIGRATION)
         self.assertIn("title_number_candidate_identified", MIGRATION)

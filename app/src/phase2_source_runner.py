@@ -5491,13 +5491,12 @@ class Phase2SourceRunner:
         auth_modes: list[tuple[str, dict[str, str], dict[str, str]]] = []
         if endpoint_query_params.get("key"):
             auth_modes.append(("endpoint_url", {}, {}))
-        else:
-            api_key = self._os_places_key_value()
-            if api_key:
-                auth_modes.append(("api_key", {"key": api_key}, {}))
-            bearer_token = self._os_places_oauth_token(client)
-            if bearer_token:
-                auth_modes.append(("oauth2", {}, {"Authorization": f"Bearer {bearer_token}"}))
+        api_key = self._os_places_key_value()
+        if api_key and api_key != endpoint_query_params.get("key"):
+            auth_modes.append(("api_key", {"key": api_key}, {}))
+        bearer_token = self._os_places_oauth_token(client)
+        if bearer_token:
+            auth_modes.append(("oauth2", {}, {"Authorization": f"Bearer {bearer_token}"}))
         if not auth_modes:
             raise RuntimeError(
                 "OS Places access is not configured. Set OS_PLACES_API as a Places endpoint URL "
@@ -5538,6 +5537,10 @@ class Phase2SourceRunner:
         errors: list[str] = []
         for auth_mode, path, params, auth_headers in attempts:
             endpoint, endpoint_params = self._os_places_endpoint(path)
+            if auth_mode in {"api_key", "oauth2"}:
+                endpoint_params = {
+                    key: value for key, value in endpoint_params.items() if key.lower() != "key"
+                }
             response = client.get(
                 endpoint,
                 params={**endpoint_params, **params},

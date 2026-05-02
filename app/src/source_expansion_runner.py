@@ -4185,14 +4185,26 @@ class SourceExpansionRunner:
                         "fallback_site_batch_size": fallback_batch_size,
                     }
                 except Exception as fallback_exc:  # noqa: BLE001
+                    try:
+                        result = self._refresh_open_location_spine_context_light(source_keys, fallback_batch_size)
+                        return {
+                            **result,
+                            "context_status": "refreshed_with_light_fallback",
+                            "primary_context_error": str(exc)[:500],
+                            "fallback_context_error": str(fallback_exc)[:500],
+                            "fallback_site_batch_size": fallback_batch_size,
+                        }
+                    except Exception as light_exc:  # noqa: BLE001
+                        pass
                     self.logger.warning(
                         "open_location_spine_context_refresh_deferred",
                         extra={
                             "source_keys": source_keys,
                             "site_batch_size": site_batch_size,
                             "fallback_site_batch_size": fallback_batch_size,
-                            "error": str(fallback_exc),
+                            "error": str(light_exc),
                             "primary_error": str(exc),
+                            "fallback_error": str(fallback_exc),
                         },
                     )
                     return {
@@ -4201,8 +4213,9 @@ class SourceExpansionRunner:
                         "evidence_rows": 0,
                         "signal_rows": 0,
                         "context_status": "deferred_after_fallback_failure",
-                        "context_error": str(fallback_exc)[:500],
+                        "context_error": str(light_exc)[:500],
                         "primary_context_error": str(exc)[:500],
+                        "fallback_context_error": str(fallback_exc)[:500],
                         "fallback_site_batch_size": fallback_batch_size,
                     }
             self.logger.warning(
@@ -4409,6 +4422,209 @@ class SourceExpansionRunner:
                 (select count(*)::integer from inserted_signals) as signal_rows
             """,
             {"source_keys": source_keys, "site_batch_size": site_batch_size},
+        ) or {"linked_rows": 0, "measured_rows": 0, "evidence_rows": 0, "signal_rows": 0}
+
+    def _refresh_open_location_spine_context_light(
+        self,
+        source_keys: list[str],
+        site_batch_size: int,
+    ) -> dict[str, Any]:
+        if not source_keys:
+            return {"linked_rows": 0, "measured_rows": 0, "evidence_rows": 0, "signal_rows": 0}
+        max_feature_types = max(self._env_int("OPEN_LOCATION_SPINE_MAX_CONTEXT_FEATURE_TYPES", 8), 1)
+        return self.database.fetch_one(
+            """
+            with selected_sites as (
+                select site.id, site.geometry
+                from landintel.canonical_sites as site
+                where site.geometry is not null
+                order by site.updated_at desc nulls last, site.id
+                limit :site_batch_size
+            ),
+            feature_types as (
+                select source_key, source_family, feature_type
+                from (
+                    select distinct source_key, source_family, feature_type
+                    from landintel.open_location_spine_features
+                    where geometry is not null
+                      and source_key = any(cast(:source_keys as text[]))
+                ) as distinct_feature_types
+                order by source_key, feature_type
+                limit :max_feature_types
+            ),
+            nearest_features as (
+                select
+                    site.id as canonical_site_id,
+                    feature_types.source_key,
+                    feature_types.source_family,
+                    feature_types.feature_type,
+                    nearest.id as nearest_feature_id,
+                    nearest.feature_name as nearest_feature_name,
+                    nearest.nearest_distance_m
+                from selected_sites as site
+                join feature_types on true
+                join lateral (
+                    select
+                        feature.id,
+                        feature.feature_name,
+                        st_distance(site.geometry, feature.geometry) as nearest_distance_m
+                    from landintel.open_location_spine_features as feature
+                    where feature.geometry is not null
+                      and feature.source_key = feature_types.source_key
+                      and feature.feature_type = feature_types.feature_type
+                    order by site.geometry OPERATOR(extensions.<->) feature.geometry, feature.id
+                    limit 1
+                ) as nearest on true
+            ),
+            upserted_context as (
+                insert into landintel.site_open_location_spine_context (
+                    canonical_site_id,
+                    source_key,
+                    source_family,
+                    feature_type,
+                    nearest_feature_id,
+                    nearest_feature_name,
+                    nearest_distance_m,
+                    count_within_400m,
+                    count_within_800m,
+                    count_within_1600m,
+                    source_record_signature,
+                    metadata,
+                    measured_at,
+                    updated_at
+                )
+                select
+                    nearest_features.canonical_site_id,
+                    nearest_features.source_key,
+                    nearest_features.source_family,
+                    nearest_features.feature_type,
+                    nearest_features.nearest_feature_id,
+                    nearest_features.nearest_feature_name,
+                    round(nearest_features.nearest_distance_m::numeric, 2),
+                    0,
+                    0,
+                    0,
+                    md5(concat_ws('|', nearest_features.canonical_site_id::text, nearest_features.source_key, nearest_features.feature_type, nearest_features.nearest_feature_id::text, round(nearest_features.nearest_distance_m::numeric, 2)::text, 'light')),
+                    jsonb_build_object(
+                        'source_key', nearest_features.source_key,
+                        'feature_type', nearest_features.feature_type,
+                        'source_limitation', 'open_location_context_not_legal_or_engineering_evidence',
+                        'context_measurement_mode', 'nearest_only_light_fallback'
+                    ),
+                    now(),
+                    now()
+                from nearest_features
+                on conflict (canonical_site_id, source_key, feature_type) do update set
+                    source_family = excluded.source_family,
+                    nearest_feature_id = excluded.nearest_feature_id,
+                    nearest_feature_name = excluded.nearest_feature_name,
+                    nearest_distance_m = excluded.nearest_distance_m,
+                    count_within_400m = excluded.count_within_400m,
+                    count_within_800m = excluded.count_within_800m,
+                    count_within_1600m = excluded.count_within_1600m,
+                    source_record_signature = excluded.source_record_signature,
+                    metadata = excluded.metadata,
+                    measured_at = now(),
+                    updated_at = now()
+                returning *
+            ),
+            deleted_evidence as (
+                delete from landintel.evidence_references as evidence
+                using upserted_context
+                where evidence.canonical_site_id = upserted_context.canonical_site_id
+                  and evidence.source_family = upserted_context.source_family
+                  and evidence.metadata ->> 'source_key' = upserted_context.source_key
+                  and evidence.metadata ->> 'feature_type' = upserted_context.feature_type
+                returning evidence.id
+            ),
+            deleted_signals as (
+                delete from landintel.site_signals as signal
+                using upserted_context
+                where signal.canonical_site_id = upserted_context.canonical_site_id
+                  and signal.source_family = upserted_context.source_family
+                  and signal.signal_family = 'location_context'
+                  and signal.signal_name = 'open_location_spine_proximity'
+                  and signal.metadata ->> 'source_key' = upserted_context.source_key
+                  and signal.metadata ->> 'feature_type' = upserted_context.feature_type
+                returning signal.id
+            ),
+            inserted_evidence as (
+                insert into landintel.evidence_references (
+                    canonical_site_id,
+                    source_family,
+                    source_dataset,
+                    source_record_id,
+                    source_reference,
+                    confidence,
+                    metadata
+                )
+                select
+                    upserted_context.canonical_site_id,
+                    upserted_context.source_family,
+                    'Open location spine context',
+                    upserted_context.id::text,
+                    coalesce(upserted_context.nearest_feature_name, upserted_context.feature_type),
+                    'medium',
+                    jsonb_build_object(
+                        'source_key', upserted_context.source_key,
+                        'feature_type', upserted_context.feature_type,
+                        'nearest_distance_m', upserted_context.nearest_distance_m,
+                        'source_limitation', 'open_location_context_not_legal_or_engineering_evidence',
+                        'context_measurement_mode', 'nearest_only_light_fallback'
+                    )
+                from upserted_context
+                returning id
+            ),
+            inserted_signals as (
+                insert into landintel.site_signals (
+                    canonical_site_id,
+                    signal_family,
+                    signal_name,
+                    signal_value_text,
+                    signal_value_numeric,
+                    confidence,
+                    source_family,
+                    source_record_id,
+                    fact_label,
+                    evidence_metadata,
+                    metadata,
+                    current_flag
+                )
+                select
+                    upserted_context.canonical_site_id,
+                    'location_context',
+                    'open_location_spine_proximity',
+                    upserted_context.feature_type,
+                    upserted_context.nearest_distance_m,
+                    0.5,
+                    upserted_context.source_family,
+                    upserted_context.id::text,
+                    'open_location_context_evidence',
+                    jsonb_build_object(
+                        'source_key', upserted_context.source_key,
+                        'feature_type', upserted_context.feature_type,
+                        'context_measurement_mode', 'nearest_only_light_fallback'
+                    ),
+                    jsonb_build_object(
+                        'source_key', upserted_context.source_key,
+                        'feature_type', upserted_context.feature_type,
+                        'context_measurement_mode', 'nearest_only_light_fallback'
+                    ),
+                    true
+                from upserted_context
+                returning id
+            )
+            select
+                (select count(distinct canonical_site_id)::integer from upserted_context) as linked_rows,
+                (select count(distinct canonical_site_id)::integer from upserted_context) as measured_rows,
+                (select count(*)::integer from inserted_evidence) as evidence_rows,
+                (select count(*)::integer from inserted_signals) as signal_rows
+            """,
+            {
+                "source_keys": source_keys,
+                "site_batch_size": site_batch_size,
+                "max_feature_types": max_feature_types,
+            },
         ) or {"linked_rows": 0, "measured_rows": 0, "evidence_rows": 0, "signal_rows": 0}
 
     def _open_location_spine_existing_counts(self, source: dict[str, Any]) -> dict[str, int]:

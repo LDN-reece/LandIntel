@@ -5364,15 +5364,22 @@ class Phase2SourceRunner:
         inserted: list[dict[str, Any]] = []
         failure_reasons: list[str] = []
         failed_count = 0
+        attempted_site_count = 0
+        auth_failed = False
         with httpx.Client(timeout=20, follow_redirects=True) as client:
             for site in selected:
                 point = f"{site['x_coordinate']},{site['y_coordinate']}"
+                attempted_site_count += 1
                 try:
                     payload = self._fetch_os_places_payload(client, point)
                 except Exception as exc:
                     failed_count += 1
+                    reason = str(exc)
                     if len(failure_reasons) < 5:
-                        failure_reasons.append(str(exc)[:240])
+                        failure_reasons.append(reason[:240])
+                    if self._is_os_places_auth_failure(reason):
+                        auth_failed = True
+                        break
                     continue
 
                 for rank, result in enumerate(payload.get("results") or [], start=1):
@@ -5474,17 +5481,31 @@ class Phase2SourceRunner:
             )
         if inserted:
             status = "partial_success" if failed_count else "success"
+        elif auth_failed:
+            status = "os_places_access_unauthorised"
         elif failed_count:
             status = "os_places_address_fetch_failed"
         else:
             status = "success"
         return {
             "selected_site_count": len(selected),
+            "attempted_site_count": attempted_site_count,
             "inserted_address_count": len(inserted),
             "failed_site_count": failed_count,
             "failure_reasons": failure_reasons,
             "status": status,
         }
+
+    @staticmethod
+    def _is_os_places_auth_failure(error_message: str) -> bool:
+        lowered = error_message.lower()
+        return (
+            "invalid apikey" in lowered
+            or "invalidapikeyforgivenresource" in lowered
+            or "unauthorized" in lowered
+            or "http 401" in lowered
+            or "http 403" in lowered
+        )
 
     def _fetch_os_places_payload(self, client: httpx.Client, point: str) -> dict[str, Any]:
         endpoint_query_params = self._os_places_endpoint_query_params()

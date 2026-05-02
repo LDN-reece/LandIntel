@@ -258,9 +258,11 @@ jobs:
 
           if [ "$SOURCING_INCLUDE_ADDRESS_PACK" = "true" ]; then
             run_phase2 refresh-urgent-address-title-pack
+            run_phase2 refresh-scotland-parcel-use-context
           else
             echo "Skipping optional OS Places address/title pack." >> "$GITHUB_STEP_SUMMARY"
             run_phase2 audit-urgent-address-title-pack
+            run_phase2 audit-scotland-parcel-use-context
           fi
 
           run_step "Audit source expansion" python -m src.source_expansion_runner_wfs_paging audit-source-expansion

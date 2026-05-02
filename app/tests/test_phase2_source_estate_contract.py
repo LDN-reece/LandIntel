@@ -20,6 +20,7 @@ MIGRATION = "\n".join(
         "054z_urgent_site_address_title_tables.sql",
         "055_ldn_candidate_control_screen.sql",
         "056_urgent_site_address_title_pack.sql",
+        "060_scotland_parcel_use_spine.sql",
     )
 )
 MANIFEST = (APP_DIR / "config" / "phase2_source_estate.yaml").read_text(encoding="utf-8")
@@ -45,6 +46,7 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("refresh-title-readiness", SOURCING_WORKFLOW)
         self.assertIn("refresh-site-prove-it-assessments", SOURCING_WORKFLOW)
         self.assertIn("refresh-ldn-candidate-screen", SOURCING_WORKFLOW)
+        self.assertIn("refresh-scotland-parcel-use-context", SOURCING_WORKFLOW)
         self.assertIn("audit-full-source-estate", SOURCING_WORKFLOW)
         self.assertIn("Skipping optional OS Places address/title pack", SOURCING_WORKFLOW)
 
@@ -76,6 +78,8 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "audit-ldn-candidate-screen",
             "refresh-urgent-address-title-pack",
             "audit-urgent-address-title-pack",
+            "refresh-scotland-parcel-use-context",
+            "audit-scotland-parcel-use-context",
             "audit-full-source-estate",
         ):
             self.assertIn(f"- {command}", WORKFLOW)
@@ -199,6 +203,9 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "landintel.site_prove_it_assessments",
             "landintel.site_urgent_address_candidates",
             "landintel.site_urgent_address_title_pack",
+            "landintel.os_addressbase_classification_codes",
+            "landintel.scotland_addressbase_arbitrage_rules",
+            "landintel.site_scotland_parcel_use_context",
             "landintel.site_register_status_facts",
             "landintel.site_ldn_candidate_screen",
         ):
@@ -225,6 +232,10 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
             "analytics.v_urgent_site_address_title_pack",
             "analytics.v_urgent_site_address_candidates",
             "analytics.v_urgent_address_title_coverage",
+            "analytics.v_scotland_addressbase_trigger_dictionary",
+            "analytics.v_scotland_parcel_use_context",
+            "analytics.v_scotland_land_opportunity_insight",
+            "analytics.v_scotland_parcel_use_coverage",
             "analytics.v_register_site_development_status",
             "analytics.v_ldn_candidate_screen",
             "analytics.v_true_ldn_sites",
@@ -386,6 +397,33 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("coalesce(site.area_acres, 0) desc", MIGRATION)
         self.assertIn("refresh-urgent-address-title-pack", WORKFLOW)
         self.assertIn("audit-urgent-address-title-pack", WORKFLOW)
+
+    def test_scotland_parcel_use_spine_links_os_classifications_to_ros_context(self) -> None:
+        self.assertIn("source_key: scotland_parcel_use_spine", MANIFEST)
+        self.assertIn("create table if not exists landintel.os_addressbase_classification_codes", MIGRATION)
+        self.assertIn("create table if not exists landintel.scotland_addressbase_arbitrage_rules", MIGRATION)
+        self.assertIn("create table if not exists landintel.site_scotland_parcel_use_context", MIGRATION)
+        self.assertIn("landintel.refresh_scotland_parcel_use_context", MIGRATION)
+        self.assertIn("analytics.v_scotland_land_opportunity_insight", MIGRATION)
+        self.assertIn("analytics.v_scotland_parcel_use_coverage", MIGRATION)
+        self.assertIn("OS Places or AddressBase classification code", MIGRATION)
+        self.assertIn("RoS parcel and title-number candidate", MIGRATION)
+        self.assertIn("ownership_not_confirmed_until_title_review", MIGRATION)
+        self.assertIn("title_number_candidate_not_ownership_confirmation", MIGRATION)
+        self.assertIn("agricultural_conversion_review", MIGRATION)
+        self.assertIn("not_english_class_q_logic", MIGRATION)
+        self.assertIn("vacant_land_priority_review", MIGRATION)
+        self.assertIn("industrial_yard_depot_review", MIGRATION)
+        self.assertIn("service_anchor_within_1600m", MIGRATION)
+        self.assertIn("what_this_changes_for_ldn", MIGRATION)
+        self.assertIn("source_key <> 'scotland_parcel_use_spine'", MIGRATION)
+        self.assertIn("def refresh_scotland_parcel_use_context", RUNNER)
+        self.assertIn("def audit_scotland_parcel_use_context", RUNNER)
+        self.assertIn("refresh-scotland-parcel-use-context", WORKFLOW)
+        self.assertIn("audit-scotland-parcel-use-context", WORKFLOW)
+        self.assertIn("refresh-scotland-parcel-use-context", SOURCING_WORKFLOW)
+        self.assertIn("audit-scotland-parcel-use-context", SOURCING_WORKFLOW)
+        self.assertNotIn("Class Q", MIGRATION)
 
     def test_source_catalog_sync_uses_upserts_without_reload_deletes(self) -> None:
         self.assertNotIn("delete from landintel.source_endpoint_catalog", CATALOG_SYNC)

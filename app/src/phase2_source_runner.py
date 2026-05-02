@@ -66,6 +66,8 @@ PHASE2_COMMANDS = (
     "audit-ldn-candidate-screen",
     "refresh-urgent-address-title-pack",
     "audit-urgent-address-title-pack",
+    "refresh-scotland-parcel-use-context",
+    "audit-scotland-parcel-use-context",
     "audit-full-source-estate",
 )
 
@@ -90,6 +92,7 @@ REFRESH_COMMAND_FAMILIES = {
     "refresh-site-prove-it-assessments": "site_conviction",
     "refresh-ldn-candidate-screen": "site_conviction",
     "refresh-urgent-address-title-pack": "title_control",
+    "refresh-scotland-parcel-use-context": "address_property_base",
 }
 
 LIFECYCLE_STAGES = (
@@ -243,6 +246,10 @@ class Phase2SourceRunner:
             result = self.refresh_urgent_address_title_pack()
         elif command == "audit-urgent-address-title-pack":
             result = self.audit_urgent_address_title_pack()
+        elif command == "refresh-scotland-parcel-use-context":
+            result = self.refresh_scotland_parcel_use_context()
+        elif command == "audit-scotland-parcel-use-context":
+            result = self.audit_scotland_parcel_use_context()
         elif command == "refresh-site-market-context":
             result = self.ingest_market_context()
         elif command == "refresh-site-amenity-context":
@@ -5284,6 +5291,178 @@ class Phase2SourceRunner:
                 metadata=result,
             )
         self.logger.info("urgent_address_title_pack_audit", extra=result)
+        return result
+
+    def refresh_scotland_parcel_use_context(self) -> dict[str, Any]:
+        selected_sources = [
+            source
+            for source in self.sources
+            if source.get("source_key") == "scotland_parcel_use_spine"
+        ]
+        if not self.dry_run and not self.audit_only:
+            for source in selected_sources:
+                self._upsert_source(source)
+
+        if self.audit_only:
+            return self.audit_scotland_parcel_use_context(log_event=False)
+
+        if self.dry_run:
+            candidate_count = self.database.scalar(
+                """
+                select count(*)::bigint
+                from landintel.canonical_sites as site
+                left join landintel.site_urgent_address_title_pack as pack
+                  on pack.canonical_site_id = site.id
+                left join lateral (
+                    select true as has_address_candidate
+                    from landintel.site_urgent_address_candidates as candidate
+                    where candidate.canonical_site_id = site.id
+                    limit 1
+                ) as address_presence on true
+                where site.geometry is not null
+                  and (:authority_name = '' or site.authority_name ilike :authority_name_like)
+                  and (
+                        address_presence.has_address_candidate is true
+                     or pack.canonical_site_id is not null
+                     or site.primary_ros_parcel_id is not null
+                  )
+                """,
+                {
+                    "authority_name": self.authority_filter,
+                    "authority_name_like": f"%{self.authority_filter}%",
+                },
+            )
+            return {
+                "source_family": "address_property_base",
+                "source_key": "scotland_parcel_use_spine",
+                "candidate_site_count": int(candidate_count or 0),
+                "dry_run": True,
+            }
+
+        proof = self.database.fetch_one(
+            """
+            select *
+            from landintel.refresh_scotland_parcel_use_context(:batch_size, :authority_name)
+            """,
+            {
+                "batch_size": min(self.batch_size, 500),
+                "authority_name": self.authority_filter,
+            },
+        ) or {}
+        coverage = self.database.fetch_one("select * from analytics.v_scotland_parcel_use_coverage") or {}
+        context_row_count = int(coverage.get("context_row_count") or proof.get("context_row_count") or 0)
+        linked_site_count = int(coverage.get("linked_site_count") or 0)
+        measured_site_count = linked_site_count
+        evidence_count = int(proof.get("evidence_row_count") or 0)
+        signal_count = int(proof.get("signal_row_count") or 0)
+
+        self._update_family_lifecycle(
+            source_family="address_property_base",
+            source_key="scotland_parcel_use_spine",
+            row_count=context_row_count,
+            linked_count=linked_site_count,
+            measured_count=measured_site_count,
+            evidence_count=evidence_count,
+            signal_count=signal_count,
+        )
+        self._record_expansion_event(
+            command_name="refresh-scotland-parcel-use-context",
+            source_key="scotland_parcel_use_spine",
+            source_family="address_property_base",
+            status="success",
+            raw_rows=context_row_count,
+            linked_rows=linked_site_count,
+            measured_rows=measured_site_count,
+            evidence_rows=evidence_count,
+            signal_rows=signal_count,
+            summary="Scotland parcel/use context refreshed from OS address classifications and RoS parcel/title candidates without confirming ownership.",
+            metadata={**proof, "coverage": coverage},
+        )
+        self._record_family_freshness(
+            "address_property_base",
+            "Scotland parcel use and address classification spine",
+            context_row_count,
+        )
+        audit = self.audit_scotland_parcel_use_context(log_event=False)
+        return {
+            "source_family": "address_property_base",
+            "source_key": "scotland_parcel_use_spine",
+            **proof,
+            "coverage": coverage,
+            "audit": audit,
+        }
+
+    def audit_scotland_parcel_use_context(self, log_event: bool = True) -> dict[str, Any]:
+        coverage = self.database.fetch_one("select * from analytics.v_scotland_parcel_use_coverage") or {}
+        insight_rows = self.database.fetch_all(
+            """
+            select
+                canonical_site_id::text,
+                site_name,
+                authority_name,
+                area_acres,
+                primary_classification_code,
+                primary_classification_label,
+                land_use_position,
+                ldn_interest_signal,
+                title_candidate_status,
+                ownership_limitation,
+                material_impact_on_land_opportunity,
+                what_this_changes_for_ldn,
+                review_next_action
+            from analytics.v_scotland_land_opportunity_insight
+            order by
+                case ldn_interest_signal
+                    when 'interesting_with_corroboration' then 1
+                    when 'context_only' then 2
+                    when 'needs_address_classification' then 3
+                    else 4
+                end,
+                coalesce(area_acres, 0) desc
+            limit 20
+            """
+        )
+        dictionary_rows = self.database.fetch_all(
+            """
+            select
+                classification_code,
+                classification_label,
+                scotland_use_group,
+                ldn_trigger_family,
+                commercial_weight,
+                corroboration_required,
+                limitation_text
+            from analytics.v_scotland_addressbase_trigger_dictionary
+            where commercial_weight in ('medium', 'low_to_medium')
+               or ldn_trigger_family in (
+                    'raw_land_review',
+                    'vacant_land_priority_review',
+                    'agricultural_conversion_review',
+                    'industrial_yard_depot_review',
+                    'institutional_reuse_review'
+               )
+            order by classification_code
+            limit 40
+            """
+        )
+        result = {
+            "coverage": coverage,
+            "sample_site_insights": insight_rows,
+            "trigger_dictionary_sample": dictionary_rows,
+        }
+        if log_event and not self.dry_run and not self.audit_only:
+            self._record_expansion_event(
+                command_name="audit-scotland-parcel-use-context",
+                source_key="scotland_parcel_use_spine",
+                source_family="address_property_base",
+                status="success",
+                raw_rows=int(coverage.get("context_row_count") or 0),
+                linked_rows=int(coverage.get("linked_site_count") or 0),
+                measured_rows=int(coverage.get("linked_site_count") or 0),
+                summary="Scotland parcel/use context audited.",
+                metadata=result,
+            )
+        self.logger.info("scotland_parcel_use_context_audit", extra=result)
         return result
 
     def _fetch_os_places_for_urgent_sites(self) -> dict[str, Any]:

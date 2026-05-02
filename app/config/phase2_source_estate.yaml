@@ -202,6 +202,27 @@ sources:
     limitation_notes: Links urgent sites to address and RoS/ScotLIS title-number candidates only; legal ownership is not confirmed until manual title review.
     next_action: Refresh whenever a site is marked order-title-urgent or true LDN candidate.
 
+  - source_key: scotland_parcel_use_spine
+    module_key: address_property_base
+    source_family: address_property_base
+    source_name: Scotland parcel use and address classification spine
+    source_group: address_property_base
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: normalised
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.site_scotland_parcel_use_context
+    orchestration_mode: derived_from_os_places_address_classification_and_ros_parcel_candidates
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: OS address classification is use context only. RoS parcel and title-number candidates do not confirm ownership before manual title review.
+    next_action: Refresh Scotland parcel use context from OS Places/address classifications, RoS parcel candidates and service-anchor evidence.
+
   - source_key: title_review_manual
     module_key: title_control
     source_family: title_control

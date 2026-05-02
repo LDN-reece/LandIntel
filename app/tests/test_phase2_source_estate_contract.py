@@ -320,6 +320,7 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("def _fetch_os_places_for_urgent_sites", RUNNER)
         self.assertIn("def _os_places_endpoint_query_params", RUNNER)
         self.assertIn("endpoint_url", RUNNER)
+        self.assertIn("os_places_address_fetch_failed", RUNNER)
         self.assertIn("parse_qsl", RUNNER)
         self.assertIn("OS_PLACES_API", RUNNER)
         self.assertIn("OS_PROJECT_API", RUNNER)

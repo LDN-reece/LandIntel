@@ -5331,12 +5331,18 @@ class Phase2SourceRunner:
                 """,
                 inserted,
             )
+        if inserted:
+            status = "partial_success" if failed_count else "success"
+        elif failed_count:
+            status = "os_places_address_fetch_failed"
+        else:
+            status = "success"
         return {
             "selected_site_count": len(selected),
             "inserted_address_count": len(inserted),
             "failed_site_count": failed_count,
             "failure_reasons": failure_reasons,
-            "status": "success",
+            "status": status,
         }
 
     def _fetch_os_places_payload(self, client: httpx.Client, point: str) -> dict[str, Any]:

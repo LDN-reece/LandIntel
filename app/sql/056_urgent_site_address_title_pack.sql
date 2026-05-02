@@ -272,65 +272,85 @@ begin
         ))
     from tmp_urgent_sites as selected
     left join lateral (
-        select *
+        select
+            source_rank,
+            case when valid_title_number then coalesce(title_number, candidate_normalized_title_number) else null end as title_number,
+            case when valid_title_number then candidate_normalized_title_number else null end as normalized_title_number,
+            title_candidate_source,
+            title_confidence,
+            ros_parcel_id,
+            ros_inspire_id
         from (
             select
-                1 as source_rank,
-                workflow.title_number,
-                workflow.normalized_title_number,
-                'title_order_workflow'::text as title_candidate_source,
-                workflow.title_confidence_level as title_confidence,
-                nullif(workflow.metadata ->> 'ros_parcel_id', '')::uuid as ros_parcel_id,
-                workflow.metadata ->> 'ros_inspire_id' as ros_inspire_id
-            from landintel.title_order_workflow as workflow
-            where workflow.canonical_site_id = selected.canonical_site_id
-              and (workflow.normalized_title_number is not null or workflow.metadata ? 'ros_parcel_id')
+                raw_candidates.*,
+                public.normalize_site_title_number(coalesce(raw_candidates.normalized_title_number, raw_candidates.title_number)) as candidate_normalized_title_number,
+                (
+                    public.normalize_site_title_number(coalesce(raw_candidates.normalized_title_number, raw_candidates.title_number)) ~ '^[A-Z]{2,5}[0-9]{1,10}$'
+                    and public.normalize_site_title_number(coalesce(raw_candidates.normalized_title_number, raw_candidates.title_number)) !~ '^SCT[0-9]+$'
+                ) as valid_title_number
+            from (
+                select
+                    1 as source_rank,
+                    workflow.title_number,
+                    workflow.normalized_title_number,
+                    'title_order_workflow'::text as title_candidate_source,
+                    workflow.title_confidence_level as title_confidence,
+                    nullif(workflow.metadata ->> 'ros_parcel_id', '')::uuid as ros_parcel_id,
+                    workflow.metadata ->> 'ros_inspire_id' as ros_inspire_id
+                from landintel.title_order_workflow as workflow
+                where workflow.canonical_site_id = selected.canonical_site_id
+                  and (workflow.normalized_title_number is not null or workflow.metadata ? 'ros_parcel_id')
 
-            union all
+                union all
 
-            select
-                2,
-                validation.title_number,
-                validation.normalized_title_number,
-                coalesce(validation.title_source, 'site_title_validation'),
-                validation.confidence,
-                nullif(validation.metadata ->> 'ros_parcel_id', '')::uuid,
-                validation.metadata ->> 'ros_inspire_id'
-            from public.site_title_validation as validation
-            where validation.site_id = selected.canonical_site_id::text
+                select
+                    2,
+                    validation.title_number,
+                    validation.normalized_title_number,
+                    coalesce(validation.title_source, 'site_title_validation'),
+                    validation.confidence,
+                    nullif(validation.metadata ->> 'ros_parcel_id', '')::uuid,
+                    validation.metadata ->> 'ros_inspire_id'
+                from public.site_title_validation as validation
+                where validation.site_id = selected.canonical_site_id::text
+                  and validation.validation_status is distinct from 'rejected'
 
-            union all
+                union all
 
-            select
-                3,
-                candidate.candidate_title_number,
-                candidate.normalized_title_number,
-                candidate.candidate_source,
-                candidate.confidence,
-                candidate.ros_parcel_id,
-                candidate.ros_inspire_id
-            from public.site_title_resolution_candidates as candidate
-            where candidate.site_id = selected.canonical_site_id::text
+                select
+                    3,
+                    candidate.candidate_title_number,
+                    candidate.normalized_title_number,
+                    candidate.candidate_source,
+                    candidate.confidence,
+                    candidate.ros_parcel_id,
+                    candidate.ros_inspire_id
+                from public.site_title_resolution_candidates as candidate
+                where candidate.site_id = selected.canonical_site_id::text
 
-            union all
+                union all
 
-            select
-                4,
-                parcel.title_number,
-                parcel.normalized_title_number,
-                'primary_ros_cadastral_parcel',
-                0.6::numeric,
-                parcel.id,
-                parcel.ros_inspire_id
-            from landintel.canonical_sites as site
-            join public.ros_cadastral_parcels as parcel
-              on parcel.id = site.primary_ros_parcel_id
-            where site.id = selected.canonical_site_id
+                select
+                    4,
+                    parcel.title_number,
+                    parcel.normalized_title_number,
+                    'primary_ros_cadastral_parcel',
+                    0.6::numeric,
+                    parcel.id,
+                    parcel.ros_inspire_id
+                from landintel.canonical_sites as site
+                join public.ros_cadastral_parcels as parcel
+                  on parcel.id = site.primary_ros_parcel_id
+                where site.id = selected.canonical_site_id
+            ) as raw_candidates
         ) as title_candidates
-        where title_number is not null
-           or normalized_title_number is not null
+        where valid_title_number
            or ros_parcel_id is not null
-        order by source_rank, title_confidence desc nulls last
+           or ros_inspire_id is not null
+        order by
+            valid_title_number desc,
+            source_rank,
+            title_confidence desc nulls last
         limit 1
     ) as title_candidate on true
     left join lateral (

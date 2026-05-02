@@ -1,0 +1,305 @@
+name: LDN - Simple Sourcing Control
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: Pick the plain-English stage to run
+        required: true
+        type: choice
+        default: SAFE - Run 01 to 07 without OS Places spend
+        options:
+          - SAFE - Run 01 to 07 without OS Places spend
+          - 01 - Open data location spine
+          - 02 - Flood constraints
+          - 03 - Core constraints
+          - 04 - Constraint audit
+          - 05 - Refresh sourcing intelligence
+          - 06 - Audit sourcing outputs without address spend
+          - 07 - Final proof audit
+          - 08 - Small OS Places urgent address test
+      authority_filter:
+        description: Optional council/authority filter. Leave blank for Scotland-wide.
+        required: false
+        default: ""
+      batch_size:
+        description: Safe batch size. Leave at 250 unless you know you want more.
+        required: false
+        default: "250"
+      runtime_minutes:
+        description: Safe runtime per stage. Leave at 15 unless you know you want more.
+        required: false
+        default: "15"
+
+concurrency:
+  group: "ldn-simple-sourcing-control-${{ github.ref }}"
+  cancel-in-progress: false
+
+jobs:
+  run-simple-stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: app
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}/app
+      SUPABASE_URL: https://icmgcxujqoiyzxqonwca.supabase.co
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}
+      IMPROVEMENT_SERVICE_AUTHKEY: ${{ secrets.IMPROVEMENT_SERVICE_AUTHKEY }}
+      BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
+      OS_PROJECT_API: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
+      OS_PROJECT_API_SECRET: ${{ secrets.OS_PROJECT_API_SECRET }}
+      OS_API_KEY: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
+      OS_PLACES_API: ${{ secrets.OS_PLACES_API }}
+      OS_PLACES_API_KEY: ${{ secrets.OS_PLACES_API_KEY }}
+      OS_DOWNLOADS_API: ${{ secrets.OS_DOWNLOADS_API }}
+      OS_FEATURES_API: ${{ secrets.OS_FEATURES_API }}
+      OS_LINKED_IDENTIFIERS_API: ${{ secrets.OS_LINKED_IDENTIFIERS_API }}
+      OS_LINKED_IDENTIFIERS_API_KEY: ${{ secrets.OS_LINKED_IDENTIFIERS_API_KEY }}
+      OPENTOPOGRAPHY_API_KEY: ${{ secrets.OPENTOPOGRAPHY_API_KEY }}
+      COMPANIES_HOUSE_API: ${{ secrets.COMPANIES_HOUSE_API }}
+      COMPANIES_HOUSE_API_KEY: ${{ secrets.COMPANIES_HOUSE_API_KEY }}
+      FCA_API: ${{ secrets.FCA_API }}
+      FCA_API_KEY: ${{ secrets.FCA_API_KEY }}
+      ROS_CLIENT_ID: ${{ secrets.ROS_CLIENT_ID }}
+      ROS_CLIENT_SECRET: ${{ secrets.ROS_CLIENT_SECRET }}
+      AUDIT_ARTIFACT_BACKEND: none
+      PERSIST_STAGING_ROWS: "false"
+      MIN_OPERATIONAL_AREA_ACRES: "4"
+      PLANNING_NEW_SITE_MIN_AREA_ACRES: "4"
+      SOURCE_EXPANSION_COMMAND_TIMEOUT: ${{ inputs.runtime_minutes || '15' }}m
+      SOURCE_EXPANSION_PAGE_SIZE: "2000"
+      SOURCE_EXPANSION_MAX_FEATURES: "0"
+      SOURCE_EXPANSION_ARCGIS_MAX_TILES: "75"
+      SOURCE_EXPANSION_ARCGIS_MAX_FEATURES_PER_LAYER: "10000"
+      SOURCE_EXPANSION_CONSTRAINT_MEASURE_MODE: "auto"
+      SOURCE_EXPANSION_MAX_MEASURE_FEATURES: "2500"
+      SOURCE_EXPANSION_MAX_MEASURE_LAYERS: "1"
+      CONSTRAINT_MEASURE_SITE_BATCH_SIZE: ${{ inputs.batch_size || '250' }}
+      CONSTRAINT_MEASURE_MAX_BATCHES: "1"
+      CONSTRAINT_MEASURE_MAX_BATCHES_PER_LAYER: "1"
+      CONSTRAINT_MEASURE_MAX_LAYERS_PER_RUN: "1"
+      CONSTRAINT_MEASURE_RUNTIME_MINUTES: ${{ inputs.runtime_minutes || '15' }}
+      CONSTRAINT_MEASURE_MIN_AREA_ACRES: "0"
+      CONSTRAINT_MEASURE_LAYER_KEY: ""
+      CONSTRAINT_MEASURE_AUTHORITY: ${{ inputs.authority_filter || '' }}
+      CONSTRAINT_DUCKDB_MAX_FEATURES_PER_BATCH: "10000"
+      CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT: "1"
+      CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"
+      PHASE2_SOURCE_FAMILY: ""
+      PHASE2_AUTHORITY: ${{ inputs.authority_filter || '' }}
+      PHASE2_BATCH_SIZE: ${{ inputs.batch_size || '250' }}
+      PHASE2_RUNTIME_MINUTES: ${{ inputs.runtime_minutes || '15' }}
+      PHASE2_DRY_RUN: "false"
+      PHASE2_FORCE_REFRESH: "false"
+      PHASE2_AUDIT_ONLY: "false"
+      TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE: "10"
+      TITLE_RESOLUTION_MIN_OVERLAP_SQM: "1"
+      TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE: "0"
+      TITLE_RESOLUTION_SITE_BATCH_SIZE: ${{ inputs.batch_size || '250' }}
+      SITE_PARCEL_LINK_MAX_CANDIDATES_PER_SITE: "10"
+      SITE_PARCEL_LINK_MAX_DISTANCE_M: "250"
+      SITE_PARCEL_LINK_MIN_OVERLAP_SQM: "1"
+      SITE_PARCEL_LINK_SITE_BATCH_SIZE: ${{ inputs.batch_size || '250' }}
+      RECONCILE_QUEUE_BATCH_LIMIT: ${{ inputs.batch_size || '250' }}
+      RECONCILE_REFRESH_BATCH_LIMIT: ${{ inputs.batch_size || '250' }}
+      RECONCILE_RUNTIME_MINUTES: ${{ inputs.runtime_minutes || '15' }}
+      RECONCILE_LEASE_SECONDS: "1800"
+      RECONCILE_REFRESH_LEASE_SECONDS: "1200"
+      RECONCILE_MAX_ATTEMPTS: "3"
+      OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: "2500000000"
+      OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: "25000"
+      OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS: "500000"
+      OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: ${{ inputs.batch_size || '250' }}
+      OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE: "50"
+      OPEN_LOCATION_SPINE_FORCE_LARGE_DOWNLOADS: "true"
+      OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE: "25"
+      OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: "50"
+      OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT: "5000"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || { echo "Missing GitHub secret: SUPABASE_DB_URL"; exit 1; }
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing GitHub secret: SUPABASE_SERVICE_ROLE_KEY"; exit 1; }
+          test -n "$BOUNDARY_AUTHKEY" || { echo "Missing GitHub secret: BOUNDARY_AUTHKEY"; exit 1; }
+
+      - name: Install geospatial system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev proj-bin postgresql-client
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile critical runners
+        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py src/phase2_source_runner.py src/main.py
+
+      - name: Run selected plain-English stage
+        env:
+          SELECTED_STAGE: ${{ inputs.stage }}
+          SIMPLE_AUTHORITY: ${{ inputs.authority_filter || '' }}
+          SIMPLE_BATCH_SIZE: ${{ inputs.batch_size || '250' }}
+          SIMPLE_RUNTIME_MINUTES: ${{ inputs.runtime_minutes || '15' }}
+        run: |
+          set -euo pipefail
+
+          run_step() {
+            local label="$1"
+            shift
+            echo "::group::${label}"
+            echo "### ${label}" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "$*" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            "$@"
+            echo "- completed" >> "$GITHUB_STEP_SUMMARY"
+            echo "::endgroup::"
+          }
+
+          phase2() {
+            run_step "Phase 2: $1" python -m src.phase2_source_runner "$1"
+          }
+
+          preflight() {
+            run_step "Run migrations" python -m src.source_phase_runner run-migrations
+            run_step "Sync source catalogue" python -m src.source_catalog_sync sync-source-catalog
+            run_step "Register source estate" python -m src.source_estate_registry register-source-estate
+            run_step "Register supplemental sources" python -m src.source_policy_discovery register-supplemental-sources
+            phase2 discover-phase2-sources
+          }
+
+          open_data() {
+            run_step "Open-data location spine" python -m src.source_expansion_runner_wfs_paging ingest-bulk-download-universe
+            phase2 ingest-amenities
+            phase2 ingest-demographics
+            phase2 ingest-market-context
+            phase2 ingest-power-infrastructure
+          }
+
+          flood_constraints() {
+            run_step "Measure SEPA flood constraints" env CONSTRAINT_MEASURE_SOURCE_FAMILY=sepa_flood python -m src.source_expansion_runner_wfs_paging measure-constraints-duckdb
+          }
+
+          core_constraints() {
+            run_step "Measure Coal Authority constraints" env CONSTRAINT_MEASURE_SOURCE_FAMILY=coal_authority python -m src.source_expansion_runner_wfs_paging measure-constraints-duckdb
+            run_step "Measure HES constraints" env CONSTRAINT_MEASURE_SOURCE_FAMILY=hes python -m src.source_expansion_runner_wfs_paging measure-constraints-duckdb
+            run_step "Measure NatureScot constraints" env CONSTRAINT_MEASURE_SOURCE_FAMILY=naturescot python -m src.source_expansion_runner_wfs_paging measure-constraints-duckdb
+          }
+
+          constraint_audit() {
+            run_step "Audit constraint measurements" python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
+          }
+
+          refresh_sourcing() {
+            run_step "Reconcile catchup scan" python -m src.source_reconcile_catchup reconcile-catchup-scan --runtime-minutes "$SIMPLE_RUNTIME_MINUTES" --batch-limit "$SIMPLE_BATCH_SIZE"
+            run_step "Process reconcile queue" python -m src.source_reconcile_incremental process-reconcile-queue --limit "$SIMPLE_BATCH_SIZE" --runtime-minutes "$SIMPLE_RUNTIME_MINUTES"
+            run_step "Refresh affected sites" python -m src.source_reconcile_incremental refresh-affected-sites --limit "$SIMPLE_BATCH_SIZE" --runtime-minutes "$SIMPLE_RUNTIME_MINUTES"
+            phase2 refresh-planning-decisions
+            phase2 refresh-title-readiness
+            phase2 refresh-site-market-context
+            phase2 refresh-site-amenity-context
+            phase2 refresh-site-demographic-context
+            phase2 refresh-site-power-context
+            phase2 refresh-site-abnormal-risk
+            phase2 refresh-site-assessments
+            phase2 refresh-site-prove-it-assessments
+            phase2 refresh-ldn-candidate-screen
+          }
+
+          audit_sourcing_outputs_without_address_spend() {
+            run_step "Audit source expansion" python -m src.source_expansion_runner_wfs_paging audit-source-expansion
+            phase2 audit-planning-decisions
+            phase2 audit-site-prove-it-assessments
+            phase2 audit-ldn-candidate-screen
+            phase2 audit-urgent-address-title-pack
+            phase2 audit-scotland-parcel-use-context
+          }
+
+          final_audit() {
+            run_step "Audit constraint measurements" python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
+            run_step "Audit open location spine" python -m src.source_expansion_runner_wfs_paging audit-open-location-spine-completion
+            run_step "Audit source expansion" python -m src.source_expansion_runner_wfs_paging audit-source-expansion
+            phase2 audit-full-source-estate
+            phase2 audit-site-prove-it-assessments
+            phase2 audit-ldn-candidate-screen
+            phase2 audit-urgent-address-title-pack
+          }
+
+          small_os_places_test() {
+            PHASE2_BATCH_SIZE=5 phase2 refresh-urgent-address-title-pack
+            phase2 audit-urgent-address-title-pack
+          }
+
+          echo "# LDN Simple Sourcing Control" >> "$GITHUB_STEP_SUMMARY"
+          echo "- selected stage: ${SELECTED_STAGE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- authority filter: ${SIMPLE_AUTHORITY:-all}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- batch size: ${SIMPLE_BATCH_SIZE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- runtime minutes: ${SIMPLE_RUNTIME_MINUTES}" >> "$GITHUB_STEP_SUMMARY"
+
+          preflight
+
+          case "$SELECTED_STAGE" in
+            "SAFE - Run 01 to 07 without OS Places spend")
+              open_data
+              flood_constraints
+              core_constraints
+              constraint_audit
+              refresh_sourcing
+              audit_sourcing_outputs_without_address_spend
+              final_audit
+              ;;
+            "01 - Open data location spine")
+              open_data
+              ;;
+            "02 - Flood constraints")
+              flood_constraints
+              ;;
+            "03 - Core constraints")
+              core_constraints
+              ;;
+            "04 - Constraint audit")
+              constraint_audit
+              ;;
+            "05 - Refresh sourcing intelligence")
+              refresh_sourcing
+              ;;
+            "06 - Audit sourcing outputs without address spend")
+              audit_sourcing_outputs_without_address_spend
+              ;;
+            "07 - Final proof audit")
+              final_audit
+              ;;
+            "08 - Small OS Places urgent address test")
+              small_os_places_test
+              ;;
+            *)
+              echo "Unknown stage: $SELECTED_STAGE" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "## What to check" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Open the completed run summary first." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Then check Supabase analytics views if needed." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Do not run the OS Places address test repeatedly; it spends trial calls." >> "$GITHUB_STEP_SUMMARY"

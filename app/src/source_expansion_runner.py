@@ -132,6 +132,8 @@ COMMAND_TO_FAMILIES: dict[str, tuple[str, ...]] = {
     "ingest-statistics-gov-scot": ("statistics_gov_scot",),
     "ingest-opentopography-srtm": ("opentopography_srtm",),
     "ingest-open-location-spine": tuple(sorted(OPEN_LOCATION_SPINE_BULK_FAMILIES)),
+    "complete-open-data-universe": tuple(sorted(OPEN_LOCATION_SPINE_BULK_FAMILIES))
+    + ("naptan", "statistics_gov_scot", "opentopography_srtm"),
     "ingest-bulk-download-universe": tuple(sorted(OPEN_LOCATION_SPINE_BULK_FAMILIES))
     + ("naptan", "statistics_gov_scot", "opentopography_srtm"),
     "probe-open-location-spine": (
@@ -591,6 +593,8 @@ class SourceExpansionRunner:
             return self.measure_constraints_debug_all_layers()
         if command == "audit-constraint-measurements":
             return self.audit_constraint_measurements()
+        if command == "audit-open-location-spine-completion":
+            return self.audit_open_location_spine_completion()
         if command == "promote-ldp-authority-source":
             return self._record_policy_promotion_placeholder("ldp", command)
         if command not in COMMAND_TO_FAMILIES:
@@ -641,6 +645,63 @@ class SourceExpansionRunner:
             "matrix": rows,
         }
         self.logger.info("source_expansion_audit", extra=payload)
+        return payload
+
+    def audit_open_location_spine_completion(self) -> dict[str, Any]:
+        rows = self.database.fetch_all(
+            """
+            select *
+            from analytics.v_open_location_spine_completion
+            order by
+                case corpus_completion_status
+                    when 'failed' then 1
+                    when 'not_started' then 2
+                    when 'registered_no_rows' then 3
+                    when 'landing_in_progress' then 4
+                    when 'source_exhausted' then 5
+                    else 6
+                end,
+                source_family,
+                source_key
+            """
+        )
+        status_counts: dict[str, int] = {}
+        for row in rows:
+            status = str(row.get("corpus_completion_status") or "unknown")
+            status_counts[status] = status_counts.get(status, 0) + 1
+        payload = {
+            "command": "audit-open-location-spine-completion",
+            "source_count": len(rows),
+            "status_counts": status_counts,
+            "total_feature_count": sum(int(row.get("feature_count") or 0) for row in rows),
+            "total_context_row_count": sum(int(row.get("context_row_count") or 0) for row in rows),
+            "total_linked_site_count": sum(int(row.get("linked_site_count") or 0) for row in rows),
+            "not_started_sources": [
+                row.get("source_key")
+                for row in rows
+                if row.get("corpus_completion_status") in {"not_started", "registered_no_rows"}
+            ],
+            "failed_sources": [
+                row.get("source_key")
+                for row in rows
+                if row.get("corpus_completion_status") == "failed"
+            ],
+            "matrix": rows,
+        }
+        self._record_expansion_event(
+            command_name="audit-open-location-spine-completion",
+            source_key=None,
+            source_family="open_location_spine",
+            status="open_location_spine_completion_audited",
+            raw_rows=int(payload["total_feature_count"]),
+            linked_rows=int(payload["total_linked_site_count"]),
+            measured_rows=int(payload["total_context_row_count"]),
+            evidence_rows=int(payload["total_context_row_count"]),
+            signal_rows=int(payload["total_context_row_count"]),
+            summary="Open-data corpus completion audited from progress and context proof views.",
+            metadata=payload,
+        )
+        self.logger.info("open_location_spine_completion_audit", extra=payload)
         return payload
 
     def link_sites_to_ros_parcels(self) -> dict[str, Any]:
@@ -3196,21 +3257,37 @@ class SourceExpansionRunner:
 
         max_bytes = max(self._env_int("OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES", 90_000_000), 1)
         max_features = max(self._env_int("OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE", 2500), 1)
+        download_signature = self._open_location_download_signature(source, selected_download)
         with tempfile.TemporaryDirectory(prefix="landintel-open-spine-") as tmp_dir:
             archive_path = Path(tmp_dir) / str(selected_download.get("fileName") or "download.zip")
             self._download_budgeted_file(str(selected_download["url"]), archive_path, max_bytes)
             extracted_paths = self._extract_open_location_archive(archive_path, Path(tmp_dir) / "extract")
-            rows = self._open_location_rows_from_paths(source, selected_download, extracted_paths, max_features)
+            rows, progress_updates = self._open_location_rows_from_paths(
+                source,
+                selected_download,
+                download_signature,
+                extracted_paths,
+                max_features,
+            )
 
         inserted_rows = self._upsert_open_location_spine_rows(rows)
+        self._record_open_location_progress_updates(progress_updates)
         context = self._safe_refresh_open_location_spine_context(
             [str(source["source_key"])],
             max(self._env_int("OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE", 250), 1),
         )
+        progress_statuses = {str(update.get("completion_status") or "") for update in progress_updates}
+        source_status = (
+            "raw_data_landed"
+            if inserted_rows
+            else "corpus_exhausted"
+            if progress_updates and progress_statuses <= {"exhausted"}
+            else "reachable_no_supported_features"
+        )
         result = {
             "source_key": source["source_key"],
             "source_family": source["source_family"],
-            "status": "raw_data_landed" if inserted_rows else "reachable_no_supported_features",
+            "status": source_status,
             "summary": (
                 f"{source['source_name']} landed {inserted_rows} open-location feature row(s) "
                 f"from {selected_download.get('format')} {selected_download.get('fileName')}."
@@ -3225,7 +3302,9 @@ class SourceExpansionRunner:
                 "format": selected_download.get("format"),
                 "subformat": selected_download.get("subformat"),
                 "size": selected_download.get("size"),
+                "download_signature": download_signature,
             },
+            "progress_updates": progress_updates,
             "context": context,
         }
         self._record_source_freshness(source, "current" if inserted_rows else "empty", "reachable", inserted_rows, result)
@@ -3381,48 +3460,80 @@ class SourceExpansionRunner:
         self,
         source: dict[str, Any],
         selected_download: dict[str, Any],
+        download_signature: str,
         paths: list[Path],
         max_features: int,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         rows: list[dict[str, Any]] = []
-        for path in paths:
+        progress_updates: list[dict[str, Any]] = []
+        for path in sorted(paths, key=lambda item: str(item)):
             if len(rows) >= max_features:
                 break
             if path.suffix.lower() == ".csv":
-                rows.extend(
-                    self._open_location_rows_from_csv(
-                        source,
-                        selected_download,
-                        path,
-                        max_features - len(rows),
-                    )
+                csv_rows, csv_progress = self._open_location_rows_from_csv(
+                    source,
+                    selected_download,
+                    download_signature,
+                    path,
+                    max_features - len(rows),
                 )
+                rows.extend(csv_rows)
+                progress_updates.append(csv_progress)
             elif path.suffix.lower() in {".gpkg", ".shp", ".gml", ".geojson", ".json"}:
-                rows.extend(
-                    self._open_location_rows_from_vector(
-                        source,
-                        selected_download,
-                        path,
-                        max_features - len(rows),
-                    )
+                vector_rows, vector_progress = self._open_location_rows_from_vector(
+                    source,
+                    selected_download,
+                    download_signature,
+                    path,
+                    max_features - len(rows),
                 )
-        return rows[:max_features]
+                rows.extend(vector_rows)
+                progress_updates.extend(vector_progress)
+        return rows[:max_features], progress_updates
 
     def _open_location_rows_from_vector(
         self,
         source: dict[str, Any],
         selected_download: dict[str, Any],
+        download_signature: str,
         path: Path,
         max_features: int,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         layer_names = self._vector_layer_names(path)
         rows: list[dict[str, Any]] = []
+        progress_updates: list[dict[str, Any]] = []
+        source_path = self._open_location_source_path_key(path)
         for layer_name in layer_names:
             if len(rows) >= max_features:
                 break
+            layer_label = str(layer_name or path.stem)
+            progress = self._open_location_progress(
+                source,
+                selected_download,
+                download_signature,
+                source_path,
+                layer_label,
+            )
+            if progress.get("completion_status") == "exhausted":
+                progress_updates.append(
+                    self._open_location_progress_payload(
+                        source,
+                        selected_download,
+                        download_signature,
+                        source_path,
+                        layer_label,
+                        int(progress.get("next_row_offset") or 0),
+                        0,
+                        0,
+                        "exhausted",
+                    )
+                )
+                continue
+            row_offset = int(progress.get("next_row_offset") or 0)
+            read_limit = max_features - len(rows)
             try:
                 read_kwargs: dict[str, Any] = {
-                    "rows": max_features - len(rows),
+                    "rows": slice(row_offset, row_offset + read_limit),
                     "bbox": SCOTLAND_BBOX_27700,
                 }
                 if layer_name is not None:
@@ -3437,8 +3548,36 @@ class SourceExpansionRunner:
                     "open_location_spine_vector_layer_skipped",
                     extra={"path": str(path), "layer_name": layer_name, "error": str(exc)},
                 )
+                progress_updates.append(
+                    self._open_location_progress_payload(
+                        source,
+                        selected_download,
+                        download_signature,
+                        source_path,
+                        layer_label,
+                        row_offset,
+                        0,
+                        0,
+                        "failed",
+                        error=str(exc),
+                    )
+                )
                 continue
+            read_row_count = len(frame.index)
             if frame.empty or "geometry" not in frame:
+                progress_updates.append(
+                    self._open_location_progress_payload(
+                        source,
+                        selected_download,
+                        download_signature,
+                        source_path,
+                        layer_label,
+                        row_offset,
+                        0,
+                        0,
+                        "exhausted",
+                    )
+                )
                 continue
             if frame.crs is None:
                 frame = frame.set_crs(27700, allow_override=True)
@@ -3446,6 +3585,7 @@ class SourceExpansionRunner:
                 frame = frame.to_crs(27700)
             frame = frame[frame.geometry.notna()]
             frame = frame[frame.geometry.apply(self._geometry_intersects_scotland_bbox)]
+            layer_rows_landed = 0
             for index, row in frame.iterrows():
                 geometry = force_2d(row.geometry) if row.geometry is not None else None
                 if geometry is None or geometry.is_empty:
@@ -3461,23 +3601,68 @@ class SourceExpansionRunner:
                         index,
                     )
                 )
+                layer_rows_landed += 1
                 if len(rows) >= max_features:
                     break
-        return rows
+            next_offset = row_offset + read_row_count
+            status = "exhausted" if read_row_count < read_limit else "in_progress"
+            progress_updates.append(
+                self._open_location_progress_payload(
+                    source,
+                    selected_download,
+                    download_signature,
+                    source_path,
+                    layer_label,
+                    next_offset,
+                    layer_rows_landed,
+                    read_row_count,
+                    status,
+                )
+            )
+        return rows, progress_updates
 
     def _open_location_rows_from_csv(
         self,
         source: dict[str, Any],
         selected_download: dict[str, Any],
+        download_signature: str,
         path: Path,
         max_features: int,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         rows: list[dict[str, Any]] = []
+        source_path = self._open_location_source_path_key(path)
+        layer_label = path.stem
+        progress = self._open_location_progress(
+            source,
+            selected_download,
+            download_signature,
+            source_path,
+            layer_label,
+        )
+        if progress.get("completion_status") == "exhausted":
+            return rows, self._open_location_progress_payload(
+                source,
+                selected_download,
+                download_signature,
+                source_path,
+                layer_label,
+                int(progress.get("next_row_offset") or 0),
+                0,
+                0,
+                "exhausted",
+            )
+        row_offset = int(progress.get("next_row_offset") or 0)
+        attempted_rows = 0
         try:
-            for chunk in pd.read_csv(path, chunksize=2000, low_memory=False):
+            skiprows = range(1, row_offset + 1) if row_offset > 0 else None
+            for chunk in pd.read_csv(path, chunksize=2000, low_memory=False, skiprows=skiprows):
                 for index, row in chunk.iterrows():
+                    attempted_rows += 1
+                    source_row_index = row_offset + attempted_rows - 1
                     geometry = self._point_from_open_location_csv_row(row.to_dict())
                     if geometry is None or not self._geometry_intersects_scotland_bbox(geometry):
+                        if attempted_rows >= max_features:
+                            break
                         continue
                     rows.append(
                         self._open_location_row_payload(
@@ -3486,14 +3671,186 @@ class SourceExpansionRunner:
                             path.stem,
                             _raw_payload(row.to_dict()),
                             geometry,
-                            index,
+                            source_row_index,
                         )
                     )
-                    if len(rows) >= max_features:
-                        return rows
+                    if len(rows) >= max_features or attempted_rows >= max_features:
+                        break
+                if len(rows) >= max_features or attempted_rows >= max_features:
+                    break
         except Exception as exc:
             self.logger.warning("open_location_spine_csv_skipped", extra={"path": str(path), "error": str(exc)})
-        return rows
+            return rows, self._open_location_progress_payload(
+                source,
+                selected_download,
+                download_signature,
+                source_path,
+                layer_label,
+                row_offset,
+                len(rows),
+                attempted_rows,
+                "failed",
+                error=str(exc),
+            )
+        next_offset = row_offset + attempted_rows
+        status = "exhausted" if attempted_rows < max_features else "in_progress"
+        return rows, self._open_location_progress_payload(
+            source,
+            selected_download,
+            download_signature,
+            source_path,
+            layer_label,
+            next_offset,
+            len(rows),
+            attempted_rows,
+            status,
+        )
+
+    def _open_location_download_signature(self, source: dict[str, Any], selected_download: dict[str, Any]) -> str:
+        payload = _json_dumps(
+            {
+                "source_key": source.get("source_key"),
+                "url": selected_download.get("url"),
+                "fileName": selected_download.get("fileName"),
+                "format": selected_download.get("format"),
+                "subformat": selected_download.get("subformat"),
+                "size": selected_download.get("size"),
+            }
+        )
+        return hashlib.md5(payload.encode("utf-8")).hexdigest()
+
+    def _open_location_source_path_key(self, path: Path) -> str:
+        parts = list(path.parts)
+        if "extract" in parts:
+            return "/".join(parts[parts.index("extract") + 1 :]) or path.name
+        return path.name
+
+    def _open_location_progress(
+        self,
+        source: dict[str, Any],
+        selected_download: dict[str, Any],
+        download_signature: str,
+        source_path: str,
+        source_layer: str,
+    ) -> dict[str, Any]:
+        if str(os.getenv("OPEN_LOCATION_SPINE_RESET_PROGRESS") or "").strip().lower() in {"1", "true", "yes"}:
+            return {
+                "next_row_offset": 0,
+                "completion_status": "pending",
+                "rows_landed": 0,
+            }
+        return self.database.fetch_one(
+            """
+            select next_row_offset, completion_status, rows_landed
+            from landintel.open_location_spine_ingest_progress
+            where source_key = :source_key
+              and download_signature = :download_signature
+              and source_path = :source_path
+              and source_layer = :source_layer
+            """,
+            {
+                "source_key": source["source_key"],
+                "download_signature": download_signature,
+                "source_path": source_path,
+                "source_layer": source_layer,
+            },
+        ) or {
+            "next_row_offset": 0,
+            "completion_status": "pending",
+            "rows_landed": 0,
+            "download_file_name": selected_download.get("fileName"),
+        }
+
+    def _open_location_progress_payload(
+        self,
+        source: dict[str, Any],
+        selected_download: dict[str, Any],
+        download_signature: str,
+        source_path: str,
+        source_layer: str,
+        next_row_offset: int,
+        rows_landed: int,
+        last_batch_row_count: int,
+        completion_status: str,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "source_key": source["source_key"],
+            "source_family": source["source_family"],
+            "download_signature": download_signature,
+            "download_file_name": selected_download.get("fileName"),
+            "download_format": selected_download.get("format"),
+            "source_path": source_path,
+            "source_layer": source_layer,
+            "next_row_offset": max(int(next_row_offset), 0),
+            "rows_landed": max(int(rows_landed), 0),
+            "last_batch_row_count": max(int(last_batch_row_count), 0),
+            "completion_status": completion_status,
+            "last_error": error,
+            "metadata": _json_dumps(
+                {
+                    "source_expansion_constraint": False,
+                    "open_location_spine_completion": True,
+                    "download_url": selected_download.get("url"),
+                    "download_size": selected_download.get("size"),
+                }
+            ),
+        }
+
+    def _record_open_location_progress_updates(self, updates: list[dict[str, Any]]) -> None:
+        if not updates:
+            return
+        self.database.execute_many(
+            """
+            insert into landintel.open_location_spine_ingest_progress (
+                source_key,
+                source_family,
+                download_signature,
+                download_file_name,
+                download_format,
+                source_path,
+                source_layer,
+                next_row_offset,
+                rows_landed,
+                last_batch_row_count,
+                completion_status,
+                last_error,
+                metadata,
+                updated_at
+            ) values (
+                :source_key,
+                :source_family,
+                :download_signature,
+                :download_file_name,
+                :download_format,
+                :source_path,
+                :source_layer,
+                :next_row_offset,
+                :rows_landed,
+                :last_batch_row_count,
+                :completion_status,
+                :last_error,
+                cast(:metadata as jsonb),
+                now()
+            )
+            on conflict (source_key, download_signature, source_path, source_layer)
+            do update set
+                source_family = excluded.source_family,
+                download_file_name = excluded.download_file_name,
+                download_format = excluded.download_format,
+                next_row_offset = greatest(
+                    landintel.open_location_spine_ingest_progress.next_row_offset,
+                    excluded.next_row_offset
+                ),
+                rows_landed = landintel.open_location_spine_ingest_progress.rows_landed + excluded.rows_landed,
+                last_batch_row_count = excluded.last_batch_row_count,
+                completion_status = excluded.completion_status,
+                last_error = excluded.last_error,
+                metadata = landintel.open_location_spine_ingest_progress.metadata || excluded.metadata,
+                updated_at = now()
+            """,
+            updates,
+        )
 
     def _vector_layer_names(self, path: Path) -> list[str | None]:
         if path.suffix.lower() != ".gpkg":
@@ -6040,6 +6397,7 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         choices=(
             "audit-source-expansion",
+            "audit-open-location-spine-completion",
             "link-sites-to-ros-parcels",
             "audit-site-parcel-links",
             "resolve-title-numbers",
@@ -6078,6 +6436,7 @@ def build_parser() -> argparse.ArgumentParser:
             "ingest-os-open-usrn",
             "ingest-osm-overpass",
             "ingest-open-location-spine",
+            "complete-open-data-universe",
             "ingest-naptan",
             "ingest-statistics-gov-scot",
             "ingest-opentopography-srtm",

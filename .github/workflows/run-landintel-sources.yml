@@ -102,6 +102,8 @@ on:
           - ingest-os-open-usrn
           - ingest-osm-overpass
           - ingest-open-location-spine
+          - complete-open-data-universe
+          - audit-open-location-spine-completion
           - ingest-naptan
           - ingest-statistics-gov-scot
           - ingest-opentopography-srtm
@@ -408,7 +410,7 @@ jobs:
 
           is_source_expansion_ingest() {
             case "$1" in
-              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features|ingest-os-linked-identifiers|ingest-os-openmap-local|ingest-os-open-roads|ingest-os-open-rivers|ingest-os-boundary-line|ingest-os-open-names|ingest-os-open-greenspace|ingest-os-open-zoomstack|ingest-os-open-toid|ingest-os-open-built-up-areas|ingest-os-open-uprn|ingest-os-open-usrn|ingest-osm-overpass|ingest-open-location-spine|ingest-naptan|ingest-statistics-gov-scot|ingest-opentopography-srtm|ingest-bulk-download-universe|probe-open-location-spine)
+              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features|ingest-os-linked-identifiers|ingest-os-openmap-local|ingest-os-open-roads|ingest-os-open-rivers|ingest-os-boundary-line|ingest-os-open-names|ingest-os-open-greenspace|ingest-os-open-zoomstack|ingest-os-open-toid|ingest-os-open-built-up-areas|ingest-os-open-uprn|ingest-os-open-usrn|ingest-osm-overpass|ingest-open-location-spine|complete-open-data-universe|ingest-naptan|ingest-statistics-gov-scot|ingest-opentopography-srtm|ingest-bulk-download-universe|probe-open-location-spine|audit-open-location-spine-completion)
                 return 0
                 ;;
               *)
@@ -511,6 +513,9 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "audit-constraint-measurements" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
+          elif [ "$SELECTED_COMMAND" = "audit-open-location-spine-completion" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_expansion_runner_wfs_paging audit-open-location-spine-completion
           elif [ "$SELECTED_COMMAND" = "ingest-bulk-download-universe" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate
@@ -520,6 +525,14 @@ jobs:
             run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.phase2_source_runner ingest-demographics
             run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.phase2_source_runner ingest-market-context
             run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.phase2_source_runner ingest-power-infrastructure
+            python -m src.source_expansion_runner_wfs_paging audit-source-expansion
+            python -m src.phase2_source_runner audit-full-source-estate
+          elif [ "$SELECTED_COMMAND" = "complete-open-data-universe" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_estate_registry register-source-estate
+            python -m src.source_policy_discovery register-supplemental-sources
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging complete-open-data-universe
+            python -m src.source_expansion_runner_wfs_paging audit-open-location-spine-completion
             python -m src.source_expansion_runner_wfs_paging audit-source-expansion
             python -m src.phase2_source_runner audit-full-source-estate
           elif is_phase2_command "$SELECTED_COMMAND"; then

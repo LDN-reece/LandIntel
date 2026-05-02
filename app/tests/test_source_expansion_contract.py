@@ -6,10 +6,16 @@ import unittest
 
 APP_DIR = Path(__file__).resolve().parents[1]
 WORKFLOW = (APP_DIR.parent / ".github" / "workflows" / "run-landintel-sources.yml").read_text(encoding="utf-8")
+OPEN_DATA_COMPLETION_WORKFLOW = (
+    APP_DIR.parent / ".github" / "workflows" / "run-landintel-open-data-completion.yml"
+).read_text(encoding="utf-8")
 RUNNER = (APP_DIR / "src" / "source_expansion_runner.py").read_text(encoding="utf-8")
 PAGED_RUNNER = (APP_DIR / "src" / "source_expansion_runner_wfs_paging.py").read_text(encoding="utf-8")
 LOADER = (APP_DIR / "src" / "loaders" / "supabase_loader.py").read_text(encoding="utf-8")
 MIGRATION = (APP_DIR / "sql" / "044_phase_one_source_expansion.sql").read_text(encoding="utf-8")
+OPEN_LOCATION_COMPLETION_MIGRATION = (
+    APP_DIR / "sql" / "057_open_location_spine_completion.sql"
+).read_text(encoding="utf-8")
 TITLE_BRIDGE_MIGRATION = (APP_DIR / "sql" / "047_title_resolution_bridge.sql").read_text(encoding="utf-8")
 SITE_PARCEL_LINK_MIGRATION = (APP_DIR / "sql" / "048_site_ros_parcel_linking.sql").read_text(encoding="utf-8")
 CONSTRAINT_ENGINE_MIGRATION = (APP_DIR / "sql" / "049_constraint_measurement_engine.sql").read_text(encoding="utf-8")
@@ -55,6 +61,8 @@ class SourceExpansionContractTests(unittest.TestCase):
             "ingest-os-open-usrn",
             "ingest-osm-overpass",
             "ingest-open-location-spine",
+            "complete-open-data-universe",
+            "audit-open-location-spine-completion",
             "ingest-naptan",
             "ingest-statistics-gov-scot",
             "ingest-opentopography-srtm",
@@ -64,6 +72,26 @@ class SourceExpansionContractTests(unittest.TestCase):
         ):
             self.assertIn(f"- {command}", WORKFLOW)
             self.assertIn(command, RUNNER)
+
+    def test_open_data_completion_tracks_progress_and_has_dedicated_button(self) -> None:
+        self.assertIn("landintel.open_location_spine_ingest_progress", OPEN_LOCATION_COMPLETION_MIGRATION)
+        self.assertIn("analytics.v_open_location_spine_completion", OPEN_LOCATION_COMPLETION_MIGRATION)
+        self.assertIn("next_row_offset", OPEN_LOCATION_COMPLETION_MIGRATION)
+        self.assertIn("completion_status", OPEN_LOCATION_COMPLETION_MIGRATION)
+        self.assertIn("source_exhausted", OPEN_LOCATION_COMPLETION_MIGRATION)
+        self.assertIn("complete-open-data-universe", RUNNER)
+        self.assertIn("audit_open_location_spine_completion", RUNNER)
+        self.assertIn("_open_location_progress", RUNNER)
+        self.assertIn("_record_open_location_progress_updates", RUNNER)
+        self.assertIn("slice(row_offset, row_offset + read_limit)", RUNNER)
+        self.assertIn("OPEN_LOCATION_SPINE_RESET_PROGRESS", RUNNER)
+        self.assertIn("name: Run LandIntel Open Data Completion", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("workflow_dispatch:", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("open_data_cycles", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("open_data_max_features_per_source", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("complete-open-data-universe", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("audit-open-location-spine-completion", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("OPEN_LOCATION_SPINE_FORCE_LARGE_DOWNLOADS", OPEN_DATA_COMPLETION_WORKFLOW)
 
     def test_workflow_routes_expansion_commands_to_paged_expansion_runner(self) -> None:
         self.assertIn("src/source_expansion_runner.py", WORKFLOW)

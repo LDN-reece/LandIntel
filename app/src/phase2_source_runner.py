@@ -4111,6 +4111,7 @@ class Phase2SourceRunner:
                     site.id as canonical_site_id,
                     site.site_name_primary,
                     site.authority_name,
+                    site.area_acres,
                     site.surfaced_reason,
                     title.title_required_flag,
                     title.title_review_status,

@@ -17,7 +17,7 @@ import re
 import tempfile
 import traceback
 from typing import Any
-from urllib.parse import urlencode, urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
@@ -6072,7 +6072,7 @@ class SourceExpansionRunner:
             params = {"service": "WFS", "version": "2.0.0", "request": "GetCapabilities", **self._os_key_params("os_features")}
         elif source["source_family"] == "os_linked_identifiers":
             endpoint = self._os_join_endpoint(endpoint, "/productVersionInfo/BLPU_UPRN_TopographicArea_TOID_5", endpoint)
-            params = self._os_key_params("os_linked_identifiers")
+            params = self._os_key_params("os_linked_identifiers", endpoint)
         elif source["source_family"] == "osm":
             params = {"data": "[out:json][timeout:5];node(55.85,-4.26,55.86,-4.25);out 1;"}
             headers["Accept"] = "application/json,text/plain,*/*"
@@ -6205,7 +6205,9 @@ class SourceExpansionRunner:
             return self._os_key_params(str(source.get("source_family") or ""))
         return {}
 
-    def _os_key_params(self, source_family: str = "") -> dict[str, str]:
+    def _os_key_params(self, source_family: str = "", endpoint_url: str | None = None) -> dict[str, str]:
+        if endpoint_url and self._os_url_has_key(endpoint_url):
+            return {}
         key = self._os_key_value(source_family)
         return {"key": key} if key else {}
 
@@ -6219,7 +6221,7 @@ class SourceExpansionRunner:
         elif source_family == "os_features":
             env_names = ("OS_PROJECT_API", "OS_FEATURES_API_KEY", "OS_API_KEY")
         elif source_family == "os_linked_identifiers":
-            env_names = ("OS_PROJECT_API", "OS_API_KEY")
+            env_names = ("OS_LINKED_IDENTIFIERS_API_KEY", "OS_PROJECT_API", "OS_API_KEY")
         else:
             env_names = ("OS_PROJECT_API", "OS_API_KEY")
         for env_name in env_names:
@@ -6266,13 +6268,32 @@ class SourceExpansionRunner:
     def _os_join_endpoint(self, base_url: str | None, suffix: str, default_endpoint: str) -> str:
         if not base_url:
             return default_endpoint
-        cleaned_url = base_url.rstrip("/")
+        parsed = urlparse(base_url.strip())
+        if not parsed.scheme or not parsed.netloc:
+            return default_endpoint
+        cleaned_url = urlunparse(
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path.rstrip("/"),
+                "",
+                parsed.query,
+                parsed.fragment,
+            )
+        )
         cleaned_suffix_path = "/" + suffix.strip("/")
-        if cleaned_url.endswith(cleaned_suffix_path):
+        if parsed.path.rstrip("/").endswith(cleaned_suffix_path):
             return cleaned_url
-        cleaned_base = base_url.rstrip("/") + "/"
-        cleaned_suffix = suffix.lstrip("/")
-        return urljoin(cleaned_base, cleaned_suffix)
+        cleaned_path = parsed.path.rstrip("/")
+        joined_path = urljoin(cleaned_path.rstrip("/") + "/", suffix.lstrip("/"))
+        return urlunparse((parsed.scheme, parsed.netloc, joined_path, "", parsed.query, parsed.fragment))
+
+    def _os_url_has_key(self, endpoint_url: str) -> bool:
+        try:
+            parsed = urlparse(endpoint_url)
+        except Exception:
+            return False
+        return bool(dict(parse_qsl(parsed.query, keep_blank_values=True)).get("key"))
 
     def _assert_required_secrets(self, sources: list[dict[str, Any]]) -> None:
         missing = sorted(

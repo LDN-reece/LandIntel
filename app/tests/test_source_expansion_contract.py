@@ -279,9 +279,13 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("OS_PLACES_API", WORKFLOW)
         self.assertIn("OS_FEATURES_API", WORKFLOW)
         self.assertIn("OS_LINKED_IDENTIFIERS_API", WORKFLOW)
+        self.assertIn("OS_LINKED_IDENTIFIERS_API_KEY", WORKFLOW)
         self.assertIn("OS_PROJECT_API", WORKFLOW)
         self.assertIn("OPENTOPOGRAPHY_API_KEY", WORKFLOW)
         self.assertIn("secrets.OS_PLACES_API_KEY", WORKFLOW)
+        self.assertIn("OS_LINKED_IDENTIFIERS_API_KEY", RUNNER)
+        self.assertIn("_os_url_has_key", RUNNER)
+        self.assertIn('self._os_key_params("os_linked_identifiers", endpoint)', RUNNER)
         self.assertIn('os.getenv("OS_PLACES_API")', RUNNER)
         self.assertIn("OPEN_LOCATION_SPINE_FAMILIES", RUNNER)
         self.assertIn("probe-open-location-spine", RUNNER)
@@ -318,7 +322,7 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("SRTMGL1", RUNNER)
         self.assertIn("_secret_value_is_api_key", RUNNER)
         self.assertIn("_os_downloads_product_endpoint", RUNNER)
-        self.assertIn("cleaned_url.endswith(cleaned_suffix_path)", RUNNER)
+        self.assertIn("parsed.path.rstrip(\"/\").endswith(cleaned_suffix_path)", RUNNER)
         self.assertNotIn("TEMP_STORAGE_PATH", RUNNER)
 
     def test_bulk_download_universe_orchestrates_bounded_location_sources(self) -> None:

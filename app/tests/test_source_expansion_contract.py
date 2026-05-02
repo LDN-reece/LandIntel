@@ -6,10 +6,16 @@ import unittest
 
 APP_DIR = Path(__file__).resolve().parents[1]
 WORKFLOW = (APP_DIR.parent / ".github" / "workflows" / "run-landintel-sources.yml").read_text(encoding="utf-8")
+OPEN_DATA_COMPLETION_WORKFLOW = (
+    APP_DIR.parent / ".github" / "workflows" / "run-landintel-open-data-completion.yml"
+).read_text(encoding="utf-8")
 RUNNER = (APP_DIR / "src" / "source_expansion_runner.py").read_text(encoding="utf-8")
 PAGED_RUNNER = (APP_DIR / "src" / "source_expansion_runner_wfs_paging.py").read_text(encoding="utf-8")
 LOADER = (APP_DIR / "src" / "loaders" / "supabase_loader.py").read_text(encoding="utf-8")
 MIGRATION = (APP_DIR / "sql" / "044_phase_one_source_expansion.sql").read_text(encoding="utf-8")
+OPEN_LOCATION_COMPLETION_MIGRATION = (
+    APP_DIR / "sql" / "057_open_location_spine_completion.sql"
+).read_text(encoding="utf-8")
 TITLE_BRIDGE_MIGRATION = (APP_DIR / "sql" / "047_title_resolution_bridge.sql").read_text(encoding="utf-8")
 SITE_PARCEL_LINK_MIGRATION = (APP_DIR / "sql" / "048_site_ros_parcel_linking.sql").read_text(encoding="utf-8")
 CONSTRAINT_ENGINE_MIGRATION = (APP_DIR / "sql" / "049_constraint_measurement_engine.sql").read_text(encoding="utf-8")
@@ -41,10 +47,53 @@ class SourceExpansionContractTests(unittest.TestCase):
             "ingest-os-topography",
             "ingest-os-places",
             "ingest-os-features",
+            "ingest-os-linked-identifiers",
+            "ingest-os-openmap-local",
+            "ingest-os-open-roads",
+            "ingest-os-open-rivers",
+            "ingest-os-boundary-line",
+            "ingest-os-open-names",
+            "ingest-os-open-greenspace",
+            "ingest-os-open-zoomstack",
+            "ingest-os-open-toid",
+            "ingest-os-open-built-up-areas",
+            "ingest-os-open-uprn",
+            "ingest-os-open-usrn",
+            "ingest-osm-overpass",
+            "ingest-open-location-spine",
+            "complete-open-data-universe",
+            "audit-open-location-spine-completion",
+            "ingest-naptan",
+            "ingest-statistics-gov-scot",
+            "ingest-opentopography-srtm",
+            "ingest-bulk-download-universe",
+            "probe-open-location-spine",
             "ingest-settlement-boundaries",
         ):
             self.assertIn(f"- {command}", WORKFLOW)
             self.assertIn(command, RUNNER)
+
+    def test_open_data_completion_tracks_progress_and_has_dedicated_button(self) -> None:
+        self.assertIn("landintel.open_location_spine_ingest_progress", OPEN_LOCATION_COMPLETION_MIGRATION)
+        self.assertIn("analytics.v_open_location_spine_completion", OPEN_LOCATION_COMPLETION_MIGRATION)
+        self.assertIn("next_row_offset", OPEN_LOCATION_COMPLETION_MIGRATION)
+        self.assertIn("completion_status", OPEN_LOCATION_COMPLETION_MIGRATION)
+        self.assertIn("source_exhausted", OPEN_LOCATION_COMPLETION_MIGRATION)
+        self.assertIn("complete-open-data-universe", RUNNER)
+        self.assertIn("audit_open_location_spine_completion", RUNNER)
+        self.assertIn("_open_location_progress", RUNNER)
+        self.assertIn("_record_open_location_progress_updates", RUNNER)
+        self.assertIn("slice(row_offset, row_offset + read_limit)", RUNNER)
+        self.assertIn("OPEN_LOCATION_SPINE_RESET_PROGRESS", RUNNER)
+        self.assertIn("name: Run LandIntel Open Data Completion", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("workflow_dispatch:", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("open_data_cycles", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("open_data_max_features_per_source", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("open_data_max_csv_scan_rows", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("complete-open-data-universe", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("audit-open-location-spine-completion", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("OPEN_LOCATION_SPINE_FORCE_LARGE_DOWNLOADS", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS", OPEN_DATA_COMPLETION_WORKFLOW)
 
     def test_workflow_routes_expansion_commands_to_paged_expansion_runner(self) -> None:
         self.assertIn("src/source_expansion_runner.py", WORKFLOW)
@@ -184,13 +233,112 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertNotIn("reconcile-catchup-scan --source-family ela", WORKFLOW)
         self.assertNotIn("reconcile-catchup-scan --source-family vdl", WORKFLOW)
 
-    def test_os_sources_are_registered_without_local_storage(self) -> None:
-        for source_key in ("os_downloads_terrain50", "os_places_api", "os_features_api"):
+    def test_os_sources_are_registered_and_bulk_landing_is_bounded(self) -> None:
+        for source_key in (
+            "os_downloads_terrain50",
+            "os_places_api",
+            "os_features_api",
+            "os_linked_identifiers_api",
+            "os_downloads_openmap_local",
+            "os_downloads_open_roads",
+            "os_downloads_open_rivers",
+            "os_downloads_boundary_line",
+            "os_downloads_open_names",
+            "os_downloads_open_greenspace",
+            "os_downloads_open_uprn",
+            "os_downloads_open_usrn",
+            "osm_overpass_context",
+            "naptan_api_context",
+            "statistics_gov_scot_sparql",
+            "opentopography_srtm_global",
+        ):
             self.assertIn(source_key, RUNNER)
-        self.assertIn("https://api.os.uk/downloads/v1/products", RUNNER)
+        self.assertIn("https://api.os.uk/downloads/v1/products/Terrain50/downloads", RUNNER)
+        self.assertIn('"auth_env_vars": []', RUNNER)
+        for product_id in (
+            "OpenMapLocal",
+            "OpenRoads",
+            "OpenRivers",
+            "BoundaryLine",
+            "OpenNames",
+            "OpenGreenspace",
+            "OpenUPRN",
+            "OpenUSRN",
+        ):
+            self.assertIn(product_id, RUNNER)
         self.assertIn("https://api.os.uk/search/places/v1/find", RUNNER)
+        self.assertIn('"auth_env_vars": ["OS_PROJECT_API"]', RUNNER)
+        self.assertIn('self._os_key_params("os_places")', RUNNER)
+        self.assertIn("_os_key_value", RUNNER)
+        self.assertIn("_has_required_secret", RUNNER)
         self.assertIn("https://api.os.uk/features/v1/wfs", RUNNER)
+        self.assertIn("https://api.os.uk/search/links/v1", RUNNER)
+        priority_migration = (APP_DIR / "sql" / "046_phase_one_control_policy_priority.sql").read_text(encoding="utf-8")
+        self.assertIn("os_linked_identifiers", priority_migration)
+        self.assertIn("OS_DOWNLOADS_API", WORKFLOW)
+        self.assertIn("OS_PLACES_API", WORKFLOW)
+        self.assertIn("OS_FEATURES_API", WORKFLOW)
+        self.assertIn("OS_LINKED_IDENTIFIERS_API", WORKFLOW)
+        self.assertIn("OS_LINKED_IDENTIFIERS_API_KEY", WORKFLOW)
+        self.assertIn("OS_PROJECT_API", WORKFLOW)
+        self.assertIn("OPENTOPOGRAPHY_API_KEY", WORKFLOW)
+        self.assertIn("secrets.OS_PLACES_API_KEY", WORKFLOW)
+        self.assertIn("OS_LINKED_IDENTIFIERS_API_KEY", RUNNER)
+        self.assertIn("_os_url_has_key", RUNNER)
+        self.assertIn('self._os_key_params("os_linked_identifiers", endpoint)', RUNNER)
+        self.assertIn('os.getenv("OS_PLACES_API")', RUNNER)
+        self.assertIn("OPEN_LOCATION_SPINE_FAMILIES", RUNNER)
+        self.assertIn("probe-open-location-spine", RUNNER)
+        self.assertIn("https://overpass-api.de/api/interpreter", RUNNER)
+        self.assertIn("https://naptan.api.dft.gov.uk/swagger/v1/swagger.json", RUNNER)
+        self.assertIn("https://statistics.gov.scot/sparql", RUNNER)
+        self.assertIn("https://portal.opentopography.org/API/globaldem", RUNNER)
+        self.assertIn("OpenZoomstack", RUNNER)
+        self.assertIn("OpenTOID", RUNNER)
+        self.assertIn("BuiltUpAreas", RUNNER)
+        self.assertIn("OPEN_LOCATION_SPINE_BULK_FAMILIES", RUNNER)
+        self.assertIn("ingest-open-location-spine", RUNNER)
+        self.assertIn("landintel.open_location_spine_features", RUNNER)
+        self.assertIn("landintel.site_open_location_spine_context", RUNNER)
+        self.assertIn("OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES", RUNNER)
+        self.assertIn("OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES", WORKFLOW)
+        self.assertIn("OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS", RUNNER)
+        self.assertIn("OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS", WORKFLOW)
+        self.assertIn("non_geospatial_json_metadata_skipped", RUNNER)
+        self.assertIn("_open_location_json_is_geojson", RUNNER)
+        self.assertIn("x_coordinate", RUNNER)
+        self.assertIn("download_size_or_format_budget_skipped", RUNNER)
+        self.assertIn("SCOTLAND_BBOX_27700", RUNNER)
+        self.assertIn('"bbox": SCOTLAND_BBOX_27700', RUNNER)
+        self.assertIn('".gml"', RUNNER)
+        self.assertIn('"GML"', RUNNER)
+        self.assertIn("OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE", RUNNER)
+        self.assertIn("OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE", WORKFLOW)
+        self.assertIn("open_location_spine_context_refresh_deferred", RUNNER)
+        self.assertIn("open_location_context_not_legal_or_engineering_evidence", RUNNER)
+        self.assertIn("programme_phase", RUNNER)
+        self.assertIn("module_key", RUNNER)
+        self.assertIn("open_location_spine", RUNNER)
+        self.assertIn("SRTMGL1", RUNNER)
+        self.assertIn("_secret_value_is_api_key", RUNNER)
+        self.assertIn("_os_downloads_product_endpoint", RUNNER)
+        self.assertIn("parsed.path.rstrip(\"/\").endswith(cleaned_suffix_path)", RUNNER)
         self.assertNotIn("TEMP_STORAGE_PATH", RUNNER)
+
+    def test_bulk_download_universe_orchestrates_bounded_location_sources(self) -> None:
+        self.assertIn("- ingest-bulk-download-universe", WORKFLOW)
+        self.assertIn('"ingest-bulk-download-universe"', RUNNER)
+        self.assertIn('elif [ "$SELECTED_COMMAND" = "ingest-bulk-download-universe" ]; then', WORKFLOW)
+        self.assertIn("python -m src.source_expansion_runner_wfs_paging ingest-bulk-download-universe", WORKFLOW)
+        self.assertIn("python -m src.phase2_source_runner ingest-amenities", WORKFLOW)
+        self.assertIn("python -m src.phase2_source_runner ingest-demographics", WORKFLOW)
+        self.assertIn("python -m src.phase2_source_runner ingest-market-context", WORKFLOW)
+        self.assertIn("python -m src.phase2_source_runner ingest-power-infrastructure", WORKFLOW)
+        self.assertIn("python -m src.phase2_source_runner audit-full-source-estate", WORKFLOW)
+        self.assertIn("open_location_spine_max_download_bytes", WORKFLOW)
+        self.assertIn("inputs.open_location_spine_max_download_bytes", WORKFLOW)
+        self.assertIn("OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE", WORKFLOW)
+        self.assertIn("open_location_spine_force_large_downloads", WORKFLOW)
 
     def test_control_policy_spine_prioritises_title_ldp_and_settlement(self) -> None:
         priority_migration = (APP_DIR / "sql" / "046_phase_one_control_policy_priority.sql").read_text(encoding="utf-8")
@@ -313,9 +461,14 @@ class SourceExpansionContractTests(unittest.TestCase):
 
     def test_priority_zero_constraint_measurement_engine_is_batched_and_delta_based(self) -> None:
         self.assertIn("def measure_constraints", RUNNER)
+        self.assertIn("def measure_constraints_duckdb", RUNNER)
         self.assertIn("def measure_constraints_debug_all_layers", RUNNER)
         self.assertIn("def audit_constraint_measurements", RUNNER)
         self.assertIn("refresh_constraint_measurements_for_layer_sites", RUNNER)
+        self.assertIn("duckdb_spatial_prefilter_postgis_finalizer", RUNNER)
+        self.assertIn("constraint_measurement_duckdb_batch_completed", RUNNER)
+        self.assertIn("duckdb_prefilter_no_relationship", RUNNER)
+        self.assertIn("CONSTRAINT_DUCKDB_MAX_FEATURES_PER_BATCH", RUNNER)
         self.assertIn("CONSTRAINT_MEASURE_SITE_BATCH_SIZE", RUNNER)
         self.assertIn("CONSTRAINT_MEASURE_MAX_BATCHES_PER_LAYER", RUNNER)
         self.assertIn("measure-constraints-debug-all-layers", RUNNER)
@@ -346,15 +499,21 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("scanned_site_layer_pair_pct", CONSTRAINT_ENGINE_MIGRATION)
         self.assertIn("landintel.flood_records", CONSTRAINT_ENGINE_MIGRATION)
         self.assertIn("- measure-constraints", WORKFLOW)
+        self.assertIn("- measure-constraints-duckdb", WORKFLOW)
         self.assertIn("- measure-constraints-debug-all-layers", WORKFLOW)
         self.assertIn("- audit-constraint-measurements", WORKFLOW)
         self.assertIn('elif [ "$SELECTED_COMMAND" = "measure-constraints" ]; then', WORKFLOW)
+        self.assertIn('elif [ "$SELECTED_COMMAND" = "measure-constraints-duckdb" ]; then', WORKFLOW)
         self.assertIn('elif [ "$SELECTED_COMMAND" = "measure-constraints-debug-all-layers" ]; then', WORKFLOW)
         self.assertIn("python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements", WORKFLOW)
         self.assertIn("constraint_measure_max_batches", WORKFLOW)
+        self.assertIn("constraint_duckdb_max_features_per_batch", WORKFLOW)
         self.assertIn("CONSTRAINT_MEASURE_SITE_BATCH_SIZE: ${{ inputs.constraint_measure_site_batch_size || '25' }}", WORKFLOW)
         self.assertIn("CONSTRAINT_MEASURE_MAX_BATCHES: ${{ inputs.constraint_measure_max_batches || '4' }}", WORKFLOW)
+        self.assertIn("CONSTRAINT_DUCKDB_MAX_FEATURES_PER_BATCH", WORKFLOW)
         self.assertIn('CONSTRAINT_MEASURE_MAX_BATCHES_PER_LAYER: "1"', WORKFLOW)
+        self.assertIn('CONSTRAINT_MEASURE_MAX_LAYERS_PER_RUN: "1"', WORKFLOW)
+        self.assertIn("max_layers_per_run", RUNNER)
 
 
 if __name__ == "__main__":

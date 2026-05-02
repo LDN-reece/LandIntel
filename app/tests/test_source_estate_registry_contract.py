@@ -142,6 +142,7 @@ class SourceEstateRegistryContractTests(unittest.TestCase):
 
         self.assertIn("geonetwork/srv/api/search/records/_search", runner)
         self.assertIn("topography_os_terrain_50", runner)
+        self.assertIn("downloads/v1/products/Terrain50/downloads", runner)
         self.assertIn("topography_scottish_lidar", runner)
         self.assertIn("adopted_roads_authority_discovery", runner)
         self.assertIn("utilities_water_electric_discovery", runner)

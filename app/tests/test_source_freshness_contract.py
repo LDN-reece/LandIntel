@@ -16,6 +16,7 @@ class SourceFreshnessContractTests(unittest.TestCase):
 
         self.assertIn("create table if not exists landintel.source_freshness_states", sql)
         self.assertIn("analytics.v_source_freshness_matrix", sql)
+        self.assertIn("drop view if exists analytics.v_phase_one_source_estate_matrix;", sql)
         self.assertIn("public.ingest_runs", sql)
 
         for source_family in (

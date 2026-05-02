@@ -36,6 +36,7 @@ on:
           - resolve-title-numbers
           - audit-title-number-control
           - measure-constraints
+          - measure-constraints-duckdb
           - measure-constraints-debug-all-layers
           - audit-constraint-measurements
           - discover-phase2-sources
@@ -46,12 +47,26 @@ on:
           - ingest-market-context
           - ingest-planning-documents
           - ingest-intelligence-events
+          - ingest-companies-house
+          - ingest-fca-entities
+          - refresh-title-reviews
+          - refresh-planning-decisions
+          - audit-planning-decisions
           - refresh-title-readiness
           - refresh-site-market-context
           - refresh-site-amenity-context
           - refresh-site-demographic-context
           - refresh-site-power-context
           - refresh-site-abnormal-risk
+          - refresh-site-assessments
+          - refresh-site-prove-it-assessments
+          - audit-site-prove-it-assessments
+          - refresh-ldn-candidate-screen
+          - audit-ldn-candidate-screen
+          - refresh-urgent-address-title-pack
+          - audit-urgent-address-title-pack
+          - refresh-scotland-parcel-use-context
+          - audit-scotland-parcel-use-context
           - audit-full-source-estate
           - discover-ldp-sources
           - discover-settlement-sources
@@ -75,6 +90,27 @@ on:
           - ingest-os-topography
           - ingest-os-places
           - ingest-os-features
+          - ingest-os-linked-identifiers
+          - ingest-os-openmap-local
+          - ingest-os-open-roads
+          - ingest-os-open-rivers
+          - ingest-os-boundary-line
+          - ingest-os-open-names
+          - ingest-os-open-greenspace
+          - ingest-os-open-zoomstack
+          - ingest-os-open-toid
+          - ingest-os-open-built-up-areas
+          - ingest-os-open-uprn
+          - ingest-os-open-usrn
+          - ingest-osm-overpass
+          - ingest-open-location-spine
+          - complete-open-data-universe
+          - audit-open-location-spine-completion
+          - ingest-naptan
+          - ingest-statistics-gov-scot
+          - ingest-opentopography-srtm
+          - ingest-bulk-download-universe
+          - probe-open-location-spine
           - process-reconcile-queue
           - reconcile-catchup-scan
           - refresh-affected-sites
@@ -108,6 +144,10 @@ on:
         description: Feature probe cap for measure-constraints-debug-all-layers
         required: false
         default: "50"
+      constraint_duckdb_max_features_per_batch:
+        description: Feature cap for DuckDB constraint prefilter batches
+        required: false
+        default: "10000"
       phase2_source_family:
         description: Optional Phase 2 source family, module key or source key filter
         required: false
@@ -139,6 +179,47 @@ on:
         required: false
         type: boolean
         default: false
+      open_location_spine_max_download_bytes:
+        description: Max bytes per OS bulk download asset for open location spine runs
+        required: false
+        default: "90000000"
+      open_location_spine_max_features_per_source:
+        description: Max feature rows landed per open location source per run
+        required: false
+        default: "2500"
+      open_location_spine_max_csv_scan_rows:
+        description: Max CSV rows scanned per open location source per run
+        required: false
+        default: "500000"
+      open_location_spine_site_context_batch_size:
+        description: Canonical site batch size for open location context refresh
+        required: false
+        default: "250"
+      open_location_spine_force_large_downloads:
+        description: Allow supported OS downloads above the default byte budget when explicitly capped
+        required: false
+        type: boolean
+        default: false
+      open_location_spine_osm_site_batch_size:
+        description: Canonical site batch size for OSM Overpass harvesting
+        required: false
+        default: "10"
+      open_location_spine_osm_context_batch_size:
+        description: Canonical site batch size for OSM context refresh
+        required: false
+        default: "25"
+      open_location_spine_osm_element_limit:
+        description: Max OSM elements landed per OSM open location run
+        required: false
+        default: "2000"
+      open_location_spine_context_fallback_batch_size:
+        description: Smaller site batch used if open location context refresh hits statement timeout
+        required: false
+        default: "25"
+
+concurrency:
+  group: "landintel-sources-${{ github.ref }}"
+  cancel-in-progress: false
 
 # Automated schedules are intentionally paused during incremental reconcile burn-in.
 # Push runs are validation-only. Source-estate maintenance is manual-only during
@@ -150,10 +231,6 @@ on:
 # HLA is supporting evidence only; the source universe now expands through
 # Title Number, LDP, settlement, constraints, ELA, VDL and OS commands instead
 # of repeating HLA.
-
-concurrency:
-  group: landintel-sources-${{ github.event_name }}-${{ inputs.command || 'manual' }}
-  cancel-in-progress: false
 
 jobs:
   run:
@@ -174,7 +251,20 @@ jobs:
       BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}
       IMPROVEMENT_SERVICE_AUTHKEY: ${{ secrets.IMPROVEMENT_SERVICE_AUTHKEY }}
       BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
-      OS_API_KEY: ${{ secrets.OS_API_KEY }}
+      OS_PROJECT_API: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
+      OS_PROJECT_API_SECRET: ${{ secrets.OS_PROJECT_API_SECRET }}
+      OS_API_KEY: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
+      OS_PLACES_API: ${{ secrets.OS_PLACES_API }}
+      OS_PLACES_API_KEY: ${{ secrets.OS_PLACES_API_KEY }}
+      OS_DOWNLOADS_API: ${{ secrets.OS_DOWNLOADS_API }}
+      OS_FEATURES_API: ${{ secrets.OS_FEATURES_API }}
+      OS_LINKED_IDENTIFIERS_API: ${{ secrets.OS_LINKED_IDENTIFIERS_API }}
+      OS_LINKED_IDENTIFIERS_API_KEY: ${{ secrets.OS_LINKED_IDENTIFIERS_API_KEY }}
+      OPENTOPOGRAPHY_API_KEY: ${{ secrets.OPENTOPOGRAPHY_API_KEY }}
+      COMPANIES_HOUSE_API: ${{ secrets.COMPANIES_HOUSE_API }}
+      COMPANIES_HOUSE_API_KEY: ${{ secrets.COMPANIES_HOUSE_API_KEY }}
+      FCA_API: ${{ secrets.FCA_API }}
+      FCA_API_KEY: ${{ secrets.FCA_API_KEY }}
       ROS_CLIENT_ID: ${{ secrets.ROS_CLIENT_ID }}
       ROS_CLIENT_SECRET: ${{ secrets.ROS_CLIENT_SECRET }}
       AUDIT_ARTIFACT_BACKEND: none
@@ -200,6 +290,7 @@ jobs:
       CONSTRAINT_MEASURE_SITE_BATCH_SIZE: ${{ inputs.constraint_measure_site_batch_size || '25' }}
       CONSTRAINT_MEASURE_MAX_BATCHES: ${{ inputs.constraint_measure_max_batches || '4' }}
       CONSTRAINT_MEASURE_MAX_BATCHES_PER_LAYER: "1"
+      CONSTRAINT_MEASURE_MAX_LAYERS_PER_RUN: "1"
       CONSTRAINT_MEASURE_RUNTIME_MINUTES: ${{ inputs.constraint_measure_runtime_minutes || '10' }}
       CONSTRAINT_MEASURE_MIN_AREA_ACRES: "0"
       CONSTRAINT_MEASURE_SOURCE_FAMILY: ${{ inputs.constraint_measure_source_family || '' }}
@@ -207,8 +298,18 @@ jobs:
       CONSTRAINT_MEASURE_AUTHORITY: ${{ inputs.constraint_measure_authority || '' }}
       CONSTRAINT_MEASURE_DEBUG_SITE_COUNT: ${{ inputs.constraint_measure_site_batch_size || '25' }}
       CONSTRAINT_MEASURE_DEBUG_FEATURE_PROBE_LIMIT: ${{ inputs.constraint_measure_debug_feature_probe_limit || '50' }}
+      CONSTRAINT_DUCKDB_MAX_FEATURES_PER_BATCH: ${{ inputs.constraint_duckdb_max_features_per_batch || '10000' }}
       CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT: "1"
       CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"
+      OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: ${{ inputs.open_location_spine_max_download_bytes || '90000000' }}
+      OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: ${{ inputs.open_location_spine_max_features_per_source || '2500' }}
+      OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS: ${{ inputs.open_location_spine_max_csv_scan_rows || '500000' }}
+      OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: ${{ inputs.open_location_spine_site_context_batch_size || '250' }}
+      OPEN_LOCATION_SPINE_FORCE_LARGE_DOWNLOADS: ${{ inputs.open_location_spine_force_large_downloads || false }}
+      OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE: ${{ inputs.open_location_spine_osm_site_batch_size || '10' }}
+      OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: ${{ inputs.open_location_spine_osm_context_batch_size || '25' }}
+      OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT: ${{ inputs.open_location_spine_osm_element_limit || '2000' }}
+      OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE: ${{ inputs.open_location_spine_context_fallback_batch_size || '25' }}
       PHASE2_SOURCE_FAMILY: ${{ inputs.phase2_source_family || '' }}
       PHASE2_AUTHORITY: ${{ inputs.phase2_authority || '' }}
       PHASE2_BATCH_SIZE: ${{ inputs.phase2_batch_size || '250' }}
@@ -252,7 +353,26 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve selected command
+        run: |
+          set -euo pipefail
+          selected_command="${{ inputs.command }}"
+          if [ -z "$selected_command" ]; then
+            selected_command="validate-only"
+          fi
+          echo "SELECTED_COMMAND=${selected_command}" >> "$GITHUB_ENV"
+          case "$selected_command" in
+            validate-only|run-migrations|sync-source-catalog|audit-source-footprint|audit-source-freshness|register-source-estate|probe-source-estate|audit-source-estate|process-reconcile-queue|reconcile-catchup-scan|refresh-affected-sites|weekly-reconcile-maintenance|discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|audit-full-source-estate|refresh-planning-decisions|audit-planning-decisions|refresh-title-readiness|refresh-title-reviews|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|refresh-site-assessments|refresh-site-prove-it-assessments|audit-site-prove-it-assessments|refresh-ldn-candidate-screen|audit-ldn-candidate-screen|refresh-urgent-address-title-pack|audit-urgent-address-title-pack|refresh-scotland-parcel-use-context|audit-scotland-parcel-use-context|ingest-companies-house|ingest-fca-entities)
+              system_package_profile="minimal"
+              ;;
+            *)
+              system_package_profile="geospatial"
+              ;;
+          esac
+          echo "SYSTEM_PACKAGE_PROFILE=${system_package_profile}" >> "$GITHUB_ENV"
+
       - name: Install system packages
+        if: env.SYSTEM_PACKAGE_PROFILE == 'geospatial'
         run: |
           sudo apt-get update
           sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev proj-bin postgresql-client
@@ -268,18 +388,10 @@ jobs:
       - name: Compile critical runners
         run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py src/phase2_source_runner.py src/main.py
 
-      - name: Resolve selected command
-        run: |
-          set -euo pipefail
-          selected_command="${{ inputs.command }}"
-          if [ -z "$selected_command" ]; then
-            selected_command="validate-only"
-          fi
-          echo "SELECTED_COMMAND=${selected_command}" >> "$GITHUB_ENV"
-
       - name: Show selected command
         run: |
           echo "Command: ${SELECTED_COMMAND}"
+          echo "System package profile: ${SYSTEM_PACKAGE_PROFILE}"
 
       - name: Run source phase command
         run: |
@@ -312,7 +424,7 @@ jobs:
 
           is_source_expansion_ingest() {
             case "$1" in
-              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features)
+              resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features|ingest-os-linked-identifiers|ingest-os-openmap-local|ingest-os-open-roads|ingest-os-open-rivers|ingest-os-boundary-line|ingest-os-open-names|ingest-os-open-greenspace|ingest-os-open-zoomstack|ingest-os-open-toid|ingest-os-open-built-up-areas|ingest-os-open-uprn|ingest-os-open-usrn|ingest-osm-overpass|ingest-open-location-spine|complete-open-data-universe|ingest-naptan|ingest-statistics-gov-scot|ingest-opentopography-srtm|ingest-bulk-download-universe|probe-open-location-spine|audit-open-location-spine-completion)
                 return 0
                 ;;
               *)
@@ -323,7 +435,7 @@ jobs:
 
           is_phase2_command() {
             case "$1" in
-              discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|refresh-title-readiness|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|audit-full-source-estate)
+              discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|ingest-companies-house|ingest-fca-entities|refresh-title-reviews|refresh-planning-decisions|audit-planning-decisions|refresh-title-readiness|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|refresh-site-assessments|refresh-site-prove-it-assessments|audit-site-prove-it-assessments|refresh-ldn-candidate-screen|audit-ldn-candidate-screen|refresh-urgent-address-title-pack|audit-urgent-address-title-pack|refresh-scotland-parcel-use-context|audit-scotland-parcel-use-context|audit-full-source-estate)
                 return 0
                 ;;
               *)
@@ -400,6 +512,12 @@ jobs:
             python -m src.source_policy_discovery register-supplemental-sources
             run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging measure-constraints
             python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
+          elif [ "$SELECTED_COMMAND" = "measure-constraints-duckdb" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_estate_registry register-source-estate
+            python -m src.source_policy_discovery register-supplemental-sources
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging measure-constraints-duckdb
+            python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
           elif [ "$SELECTED_COMMAND" = "measure-constraints-debug-all-layers" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate
@@ -409,6 +527,28 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "audit-constraint-measurements" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
+          elif [ "$SELECTED_COMMAND" = "audit-open-location-spine-completion" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_expansion_runner_wfs_paging audit-open-location-spine-completion
+          elif [ "$SELECTED_COMMAND" = "ingest-bulk-download-universe" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_estate_registry register-source-estate
+            python -m src.source_policy_discovery register-supplemental-sources
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging ingest-bulk-download-universe
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.phase2_source_runner ingest-amenities
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.phase2_source_runner ingest-demographics
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.phase2_source_runner ingest-market-context
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.phase2_source_runner ingest-power-infrastructure
+            python -m src.source_expansion_runner_wfs_paging audit-source-expansion
+            python -m src.phase2_source_runner audit-full-source-estate
+          elif [ "$SELECTED_COMMAND" = "complete-open-data-universe" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_estate_registry register-source-estate
+            python -m src.source_policy_discovery register-supplemental-sources
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging complete-open-data-universe
+            python -m src.source_expansion_runner_wfs_paging audit-open-location-spine-completion
+            python -m src.source_expansion_runner_wfs_paging audit-source-expansion
+            python -m src.phase2_source_runner audit-full-source-estate
           elif is_phase2_command "$SELECTED_COMMAND"; then
             python -m src.source_phase_runner run-migrations
             run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.phase2_source_runner "$SELECTED_COMMAND"
@@ -433,14 +573,13 @@ jobs:
             python -m src.source_expansion_runner_wfs_paging audit-source-expansion
           elif [ "$SELECTED_COMMAND" = "process-reconcile-queue" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000
-            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
+            python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
           elif [ "$SELECTED_COMMAND" = "reconcile-catchup-scan" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_reconcile_catchup reconcile-catchup-scan
+            python -m src.source_reconcile_catchup reconcile-catchup-scan --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
           elif [ "$SELECTED_COMMAND" = "refresh-affected-sites" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
+            python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
           elif [ "$SELECTED_COMMAND" = "weekly-reconcile-maintenance" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_reconcile_incremental weekly-reconcile-maintenance
@@ -449,16 +588,16 @@ jobs:
             exit 1
           elif [ "$SELECTED_COMMAND" = "publish-planning-links" ]; then
             python -m src.source_phase_runner run-migrations
-            echo "Publishing existing planning records into the canonical-site reconcile queue. No full SpatialHub planning pull is being run."
-            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning
-            python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000
-            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
+            echo "Publishing existing planning records into the canonical-site reconcile queue with bounded runtime and batch controls. No full SpatialHub planning pull is being run."
+            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
+            python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
+            python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
           elif [ "$SELECTED_COMMAND" = "ingest-planning-history" ]; then
             python -m src.source_phase_runner run-migrations
             echo "Planning applications are already populated. Skipping full SpatialHub planning ingest and publishing existing records instead."
-            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning
-            python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000
-            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
+            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
+            python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
+            python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
           elif [ "$SELECTED_COMMAND" = "full-ingest-planning-history" ]; then
             python -m src.source_phase_runner run-migrations
             echo "Full SpatialHub planning ingest explicitly requested. This is the only planning command allowed to run the long WFS pull."

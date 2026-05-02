@@ -13,6 +13,8 @@ alter table landintel.site_source_links
             'source_reference',
             'planning_reference',
             'hla_reference',
+            'spatial_dominance',
+            'balanced_auto_create',
             'dominant_spatial_overlap',
             'spatial_overlap',
             'weak_spatial_overlap',

@@ -1,0 +1,193 @@
+name: Run LandIntel Open Data Completion
+
+on:
+  workflow_dispatch:
+    inputs:
+      open_data_source_family:
+        description: Optional single open-data family, blank runs the full open-data universe
+        required: false
+        default: ""
+      open_data_cycles:
+        description: Number of timed corpus-landing cycles to run
+        required: false
+        default: "1"
+      open_data_step_timeout_minutes:
+        description: Hard timeout per corpus landing cycle
+        required: false
+        default: "45"
+      open_data_max_download_bytes:
+        description: Maximum bytes per downloaded source asset
+        required: false
+        default: "2500000000"
+      open_data_max_features_per_source:
+        description: Maximum raw rows/features advanced per source per cycle
+        required: false
+        default: "25000"
+      open_data_max_csv_scan_rows:
+        description: Maximum CSV rows scanned per source per cycle before pausing the cursor
+        required: false
+        default: "500000"
+      open_data_site_context_batch_size:
+        description: Site context refresh batch size after each source batch
+        required: false
+        default: "500"
+      open_data_force_large_downloads:
+        description: Allow selecting larger supported OS downloads up to the byte cap
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: "landintel-open-data-completion-${{ github.ref }}"
+  cancel-in-progress: false
+
+jobs:
+  open-data-completion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: app
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}/app
+      SUPABASE_URL: https://icmgcxujqoiyzxqonwca.supabase.co
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}
+      IMPROVEMENT_SERVICE_AUTHKEY: ${{ secrets.IMPROVEMENT_SERVICE_AUTHKEY }}
+      BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
+      OS_PROJECT_API: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
+      OS_PROJECT_API_SECRET: ${{ secrets.OS_PROJECT_API_SECRET }}
+      OS_API_KEY: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
+      OS_DOWNLOADS_API: ${{ secrets.OS_DOWNLOADS_API }}
+      OS_FEATURES_API: ${{ secrets.OS_FEATURES_API }}
+      OS_LINKED_IDENTIFIERS_API: ${{ secrets.OS_LINKED_IDENTIFIERS_API }}
+      OS_LINKED_IDENTIFIERS_API_KEY: ${{ secrets.OS_LINKED_IDENTIFIERS_API_KEY }}
+      OPENTOPOGRAPHY_API_KEY: ${{ secrets.OPENTOPOGRAPHY_API_KEY }}
+      AUDIT_ARTIFACT_BACKEND: none
+      PERSIST_STAGING_ROWS: "false"
+      SOURCE_EXPANSION_COMMAND_TIMEOUT: ${{ inputs.open_data_step_timeout_minutes || '45' }}m
+      SOURCE_EXPANSION_PAGE_SIZE: "2000"
+      SOURCE_EXPANSION_MAX_FEATURES: "0"
+      OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: ${{ inputs.open_data_max_download_bytes || '2500000000' }}
+      OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: ${{ inputs.open_data_max_features_per_source || '25000' }}
+      OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS: ${{ inputs.open_data_max_csv_scan_rows || '500000' }}
+      OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: ${{ inputs.open_data_site_context_batch_size || '500' }}
+      OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE: "50"
+      OPEN_LOCATION_SPINE_FORCE_LARGE_DOWNLOADS: ${{ inputs.open_data_force_large_downloads }}
+      OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE: "25"
+      OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: "50"
+      OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT: "5000"
+      PHASE2_BATCH_SIZE: ${{ inputs.open_data_site_context_batch_size || '500' }}
+      PHASE2_RUNTIME_MINUTES: "10"
+      PHASE2_DRY_RUN: "false"
+      PHASE2_FORCE_REFRESH: "false"
+      PHASE2_AUDIT_ONLY: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+
+      - name: Validate open-data secrets
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || { echo "Missing GitHub secret: SUPABASE_DB_URL"; exit 1; }
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing GitHub secret: SUPABASE_SERVICE_ROLE_KEY"; exit 1; }
+          test -n "$BOUNDARY_AUTHKEY" || { echo "Missing GitHub secret: BOUNDARY_AUTHKEY"; exit 1; }
+
+      - name: Install geospatial system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev proj-bin postgresql-client
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile open-data runners
+        run: python -m py_compile src/source_phase_runner.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py src/phase2_source_runner.py
+
+      - name: Complete open-data corpus
+        env:
+          OPEN_DATA_SOURCE_FAMILY: ${{ inputs.open_data_source_family || '' }}
+          OPEN_DATA_CYCLES: ${{ inputs.open_data_cycles || '1' }}
+        run: |
+          set -euo pipefail
+
+          run_step() {
+            local label="$1"
+            shift
+            echo "::group::${label}"
+            echo "### ${label}" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "$*" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            "$@"
+            echo "- completed" >> "$GITHUB_STEP_SUMMARY"
+            echo "::endgroup::"
+          }
+
+          source_command_for_family() {
+            case "$1" in
+              os_openmap_local) echo "ingest-os-openmap-local" ;;
+              os_open_roads) echo "ingest-os-open-roads" ;;
+              os_open_rivers) echo "ingest-os-open-rivers" ;;
+              os_boundary_line) echo "ingest-os-boundary-line" ;;
+              os_open_names) echo "ingest-os-open-names" ;;
+              os_open_greenspace) echo "ingest-os-open-greenspace" ;;
+              os_open_zoomstack) echo "ingest-os-open-zoomstack" ;;
+              os_open_toid) echo "ingest-os-open-toid" ;;
+              os_open_built_up_areas) echo "ingest-os-open-built-up-areas" ;;
+              os_open_uprn) echo "ingest-os-open-uprn" ;;
+              os_open_usrn) echo "ingest-os-open-usrn" ;;
+              osm) echo "ingest-osm-overpass" ;;
+              "") echo "complete-open-data-universe" ;;
+              *) echo "unsupported" ;;
+            esac
+          }
+
+          command="$(source_command_for_family "$OPEN_DATA_SOURCE_FAMILY")"
+          if [ "$command" = "unsupported" ]; then
+            echo "Unsupported open_data_source_family: $OPEN_DATA_SOURCE_FAMILY"
+            exit 1
+          fi
+
+          echo "# LandIntel Open Data Completion" >> "$GITHUB_STEP_SUMMARY"
+          echo "- command: ${command}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- cycles: ${OPEN_DATA_CYCLES}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- max download bytes: ${OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- max features/source/cycle: ${OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- max CSV scan rows/source/cycle: ${OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS}" >> "$GITHUB_STEP_SUMMARY"
+
+          run_step "Migrations" python -m src.source_phase_runner run-migrations
+          run_step "Register source estate" python -m src.source_estate_registry register-source-estate
+          run_step "Register supplemental sources" python -m src.source_policy_discovery register-supplemental-sources
+
+          cycle=1
+          while [ "$cycle" -le "$OPEN_DATA_CYCLES" ]; do
+            run_step "Open-data corpus landing cycle ${cycle}" timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging "$command"
+            run_step "Open-data completion audit cycle ${cycle}" python -m src.source_expansion_runner_wfs_paging audit-open-location-spine-completion
+            cycle=$((cycle + 1))
+          done
+
+          run_step "Refresh amenity context" python -m src.phase2_source_runner ingest-amenities
+          run_step "Refresh demographic context" python -m src.phase2_source_runner ingest-demographics
+          run_step "Refresh market context" python -m src.phase2_source_runner ingest-market-context
+          run_step "Refresh power context" python -m src.phase2_source_runner ingest-power-infrastructure
+          run_step "Final source expansion audit" python -m src.source_expansion_runner_wfs_paging audit-source-expansion
+          run_step "Final source estate audit" python -m src.phase2_source_runner audit-full-source-estate
+
+          echo "## Completion Proof" >> "$GITHUB_STEP_SUMMARY"
+          echo "Review the open_location_spine_completion_audit and audit-full-source-estate payloads in this run log." >> "$GITHUB_STEP_SUMMARY"

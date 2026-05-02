@@ -33,6 +33,7 @@ Use it for:
 - `refresh-affected-sites`
 - `ingest-bgs`
 - `audit-source-footprint`
+- `probe-open-location-spine`
 
 ## Retired workflow
 
@@ -70,3 +71,5 @@ The old lean runner `app/src/lean_ops.py` is also retired and hard-fails if call
 ## Current design rule
 
 Phase One must run from the repo through GitHub Actions and prove itself in Supabase. Old full-refresh, lean parcel, and local execution paths are intentionally blocked.
+
+`probe-open-location-spine` checks the free/open location spine in one controlled run: OS OpenData product metadata, OS Linked Identifiers, OSM Overpass status, NaPTAN metadata, statistics.gov.scot SPARQL and the OpenTopography SRTM fallback gate. It does not bulk-download national files and it does not mark any source trusted for review.

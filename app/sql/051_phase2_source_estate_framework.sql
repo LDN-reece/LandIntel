@@ -110,6 +110,22 @@ alter table landintel.canonical_site_refresh_queue
             'topography',
             'os_places',
             'os_features',
+            'os_linked_identifiers',
+            'os_openmap_local',
+            'os_open_roads',
+            'os_open_rivers',
+            'os_boundary_line',
+            'os_open_names',
+            'os_open_greenspace',
+            'os_open_zoomstack',
+            'os_open_toid',
+            'os_open_built_up_areas',
+            'os_open_uprn',
+            'os_open_usrn',
+            'osm',
+            'naptan',
+            'statistics_gov_scot',
+            'opentopography_srtm',
             'local_landscape_areas',
             'local_nature',
             'forestry_woodland',
@@ -641,6 +657,42 @@ create table if not exists landintel.location_strength_facts (
     unique (canonical_site_id, fact_key)
 );
 
+create table if not exists landintel.open_location_spine_features (
+    id uuid primary key default gen_random_uuid(),
+    source_key text not null,
+    source_family text not null,
+    source_record_id text not null,
+    feature_type text not null,
+    feature_name text,
+    source_layer text,
+    source_url text,
+    geometry geometry(Geometry, 27700),
+    source_record_signature text,
+    raw_payload jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create table if not exists landintel.site_open_location_spine_context (
+    id uuid primary key default gen_random_uuid(),
+    canonical_site_id uuid not null references landintel.canonical_sites(id) on delete cascade,
+    source_key text not null,
+    source_family text not null,
+    feature_type text not null,
+    nearest_feature_id uuid references landintel.open_location_spine_features(id) on delete set null,
+    nearest_feature_name text,
+    nearest_distance_m numeric,
+    count_within_400m integer,
+    count_within_800m integer,
+    count_within_1600m integer,
+    measured_at timestamptz not null default now(),
+    source_record_signature text,
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (canonical_site_id, source_key, feature_type)
+);
+
 create table if not exists landintel.demographic_area_metrics (
     id uuid primary key default gen_random_uuid(),
     source_key text not null,
@@ -819,6 +871,7 @@ create unique index if not exists infrastructure_friction_facts_uidx on landinte
 create unique index if not exists market_transactions_source_uidx on landintel.market_transactions (source_key, source_record_id);
 create unique index if not exists epc_property_attributes_source_uidx on landintel.epc_property_attributes (source_key, source_record_id);
 create unique index if not exists amenity_assets_source_uidx on landintel.amenity_assets (source_key, source_record_id);
+create unique index if not exists open_location_spine_features_source_uidx on landintel.open_location_spine_features (source_key, source_record_id);
 create unique index if not exists planning_document_records_source_uidx on landintel.planning_document_records (source_key, source_record_id);
 create unique index if not exists planning_document_extractions_uidx on landintel.planning_document_extractions (planning_document_record_id, extraction_type, coalesce(issue_category, ''));
 create unique index if not exists section75_obligation_records_source_uidx on landintel.section75_obligation_records (source_key, source_record_id);
@@ -832,6 +885,9 @@ create index if not exists power_assets_geometry_gix on landintel.power_assets u
 create index if not exists power_capacity_zones_geometry_gix on landintel.power_capacity_zones using gist (geometry);
 create index if not exists market_transactions_geometry_gix on landintel.market_transactions using gist (geometry);
 create index if not exists amenity_assets_geometry_gix on landintel.amenity_assets using gist (geometry);
+create index if not exists open_location_spine_features_geometry_gix on landintel.open_location_spine_features using gist (geometry);
+create index if not exists open_location_spine_features_family_type_idx on landintel.open_location_spine_features (source_family, source_key, feature_type);
+create index if not exists open_location_spine_features_source_type_idx on landintel.open_location_spine_features (source_key, feature_type);
 
 create index if not exists planning_appeal_links_site_idx on landintel.site_planning_appeal_links (canonical_site_id);
 create index if not exists title_order_workflow_status_idx on landintel.title_order_workflow (title_order_status, title_review_status, updated_at desc);
@@ -841,6 +897,7 @@ create index if not exists site_power_context_site_idx on landintel.site_power_c
 create index if not exists site_ground_risk_context_site_idx on landintel.site_ground_risk_context (canonical_site_id);
 create index if not exists site_market_context_site_idx on landintel.site_market_context (canonical_site_id);
 create index if not exists site_amenity_context_site_idx on landintel.site_amenity_context (canonical_site_id, amenity_type);
+create index if not exists site_open_location_spine_context_site_idx on landintel.site_open_location_spine_context (canonical_site_id, source_key, feature_type);
 create index if not exists site_demographic_context_site_idx on landintel.site_demographic_context (canonical_site_id);
 create index if not exists site_planning_document_links_site_idx on landintel.site_planning_document_links (canonical_site_id);
 create index if not exists site_intelligence_links_site_idx on landintel.site_intelligence_links (canonical_site_id);
@@ -850,6 +907,8 @@ drop view if exists analytics.v_landintel_source_estate_matrix;
 drop view if exists analytics.v_site_intelligence_events;
 drop view if exists analytics.v_site_planning_document_context;
 drop view if exists analytics.v_site_demographic_context;
+drop view if exists analytics.v_open_location_spine_coverage;
+drop view if exists analytics.v_site_open_location_spine_context;
 drop view if exists analytics.v_site_amenity_context;
 drop view if exists analytics.v_site_market_context;
 drop view if exists analytics.v_site_abnormal_risk_context;
@@ -1005,6 +1064,41 @@ select
 from landintel.site_amenity_context as context
 join landintel.canonical_sites as site on site.id = context.canonical_site_id;
 
+create or replace view analytics.v_open_location_spine_coverage
+with (security_invoker = true) as
+select
+    feature.source_family,
+    feature.source_key,
+    feature.feature_type,
+    count(*)::bigint as feature_count,
+    count(*) filter (where feature.geometry is not null)::bigint as geometry_feature_count,
+    count(distinct context.canonical_site_id)::bigint as linked_site_count,
+    max(feature.updated_at) as latest_feature_updated_at,
+    max(context.measured_at) as latest_context_measured_at
+from landintel.open_location_spine_features as feature
+left join landintel.site_open_location_spine_context as context
+  on context.source_key = feature.source_key
+ and context.feature_type = feature.feature_type
+group by feature.source_family, feature.source_key, feature.feature_type;
+
+create or replace view analytics.v_site_open_location_spine_context
+with (security_invoker = true) as
+select
+    site.id as canonical_site_id,
+    site.site_name_primary,
+    site.authority_name,
+    context.source_key,
+    context.source_family,
+    context.feature_type,
+    context.nearest_feature_name,
+    context.nearest_distance_m,
+    context.count_within_400m,
+    context.count_within_800m,
+    context.count_within_1600m,
+    context.measured_at
+from landintel.site_open_location_spine_context as context
+join landintel.canonical_sites as site on site.id = context.canonical_site_id;
+
 create or replace view analytics.v_site_demographic_context
 with (security_invoker = true) as
 select
@@ -1079,6 +1173,8 @@ with source_rows as (
     union all select source_key, source_family, count(*)::bigint from landintel.amenity_assets group by source_key, source_family
     union all select source_key, source_family, count(*)::bigint from landintel.site_amenity_context group by source_key, source_family
     union all select source_key, source_family, count(*)::bigint from landintel.location_strength_facts group by source_key, source_family
+    union all select source_key, source_family, count(*)::bigint from landintel.open_location_spine_features group by source_key, source_family
+    union all select source_key, source_family, count(*)::bigint from landintel.site_open_location_spine_context group by source_key, source_family
     union all select source_key, source_family, count(*)::bigint from landintel.demographic_area_metrics group by source_key, source_family
     union all select source_key, source_family, count(*)::bigint from landintel.site_demographic_context group by source_key, source_family
     union all select source_key, source_family, count(*)::bigint from landintel.housing_demand_context group by source_key, source_family
@@ -1103,6 +1199,7 @@ linked_rollup as (
         union all select source_key, source_family, canonical_site_id from landintel.site_ground_risk_context
         union all select source_key, source_family, canonical_site_id from landintel.site_market_context
         union all select source_key, source_family, canonical_site_id from landintel.site_amenity_context
+        union all select source_key, source_family, canonical_site_id from landintel.site_open_location_spine_context
         union all select source_key, source_family, canonical_site_id from landintel.site_demographic_context
         union all select document.source_key, link.source_family, link.canonical_site_id
         from landintel.site_planning_document_links as link
@@ -1121,6 +1218,7 @@ measured_rollup as (
         union all select source_key, source_family, canonical_site_id from landintel.site_ground_risk_context
         union all select source_key, source_family, canonical_site_id from landintel.site_terrain_metrics
         union all select source_key, source_family, canonical_site_id from landintel.site_amenity_context
+        union all select source_key, source_family, canonical_site_id from landintel.site_open_location_spine_context
         union all select source_key, source_family, canonical_site_id from landintel.site_demographic_context
     ) as measurements
     group by source_key, source_family
@@ -1301,6 +1399,8 @@ begin
         'amenity_assets',
         'site_amenity_context',
         'location_strength_facts',
+        'open_location_spine_features',
+        'site_open_location_spine_context',
         'demographic_area_metrics',
         'site_demographic_context',
         'housing_demand_context',
@@ -1328,6 +1428,8 @@ grant select on analytics.v_site_power_context to authenticated;
 grant select on analytics.v_site_abnormal_risk_context to authenticated;
 grant select on analytics.v_site_market_context to authenticated;
 grant select on analytics.v_site_amenity_context to authenticated;
+grant select on analytics.v_open_location_spine_coverage to authenticated;
+grant select on analytics.v_site_open_location_spine_context to authenticated;
 grant select on analytics.v_site_demographic_context to authenticated;
 grant select on analytics.v_site_planning_document_context to authenticated;
 grant select on analytics.v_site_intelligence_events to authenticated;

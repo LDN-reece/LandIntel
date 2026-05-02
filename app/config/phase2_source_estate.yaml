@@ -12,6 +12,90 @@ lifecycle_stages:
   - assessment_ready
   - trusted_for_review
 sources:
+  - source_key: planning_decision_engine
+    module_key: planning_decisions
+    source_family: planning_decisions
+    source_name: Planning decision and event engine
+    source_group: planning_intelligence
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.planning_decision_facts
+    orchestration_mode: derived_from_live_planning_application_records
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: Planning decisions are evidence context and do not predict future consent.
+    next_action: Refresh approved, refused, withdrawn and live decision facts from planning records.
+
+  - source_key: site_assessment_refresh
+    module_key: site_assessment
+    source_family: site_assessment
+    source_name: Site assessment refresh engine
+    source_group: review_outputs
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.site_assessments
+    orchestration_mode: derived_from_proven_site_evidence
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: Assessment outputs support human review and do not make acquisition decisions.
+    next_action: Refresh review tier, missing evidence and next action from live evidence.
+
+  - source_key: prove_it_conviction_layer
+    module_key: site_conviction
+    source_family: site_conviction
+    source_name: LandIntel Prove It conviction layer
+    source_group: review_outputs
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.site_prove_it_assessments
+    orchestration_mode: derived_from_proven_site_evidence
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: Conviction outputs allocate LDN attention and title spend; they do not prove legal ownership, planning certainty, engineering certainty or buyer demand.
+    next_action: Refresh claim, proof, interpretation, risk, gap, action and verdict from current live evidence.
+
+  - source_key: ldn_candidate_screen
+    module_key: site_conviction
+    source_family: site_conviction
+    source_name: LDN private/no-builder candidate screen
+    source_group: review_outputs
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.site_ldn_candidate_screen
+    orchestration_mode: derived_from_registers_planning_constraints_and_title_readiness
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: This screen flags private/no-builder control fit and blocker signals; it does not confirm legal ownership before title review.
+    next_action: Refresh LDN candidate screen from HLA, ELA, VDL, LDP, settlement, planning, constraint and title-readiness evidence.
+
   - source_key: dpea_planning_appeals
     module_key: planning_appeals
     source_family: planning_appeals
@@ -55,6 +139,27 @@ sources:
     limitation_notes: Council publication patterns vary; portal-specific adapters are required.
     next_action: Prioritise target authorities and prove one stable adapter.
 
+  - source_key: planning_application_appeal_signals
+    module_key: planning_appeals
+    source_family: planning_appeals
+    source_name: Planning application appeal status signals
+    source_group: planning_intelligence
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.planning_appeal_records
+    orchestration_mode: derived_from_live_planning_application_records
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: This is an appeal signal from planning records, not a full DPEA appeal document corpus.
+    next_action: Extract appeal-linked planning records and preserve source limitations.
+
   - source_key: title_readiness_internal
     module_key: title_control
     source_family: title_control
@@ -75,6 +180,48 @@ sources:
     max_staleness_days: 1
     limitation_notes: Pre-title outputs are readiness and control signals only; legal ownership is not confirmed.
     next_action: Refresh title readiness from RoS parcel and title candidate evidence.
+
+  - source_key: urgent_address_title_pack
+    module_key: title_control
+    source_family: title_control
+    source_name: Urgent site address and title candidate pack
+    source_group: title_control
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.site_urgent_address_title_pack
+    orchestration_mode: derived_from_prove_it_ldn_screen_os_places_and_ros_candidates
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: Links urgent sites to address and RoS/ScotLIS title-number candidates only; legal ownership is not confirmed until manual title review.
+    next_action: Refresh whenever a site is marked order-title-urgent or true LDN candidate.
+
+  - source_key: scotland_parcel_use_spine
+    module_key: address_property_base
+    source_family: address_property_base
+    source_name: Scotland parcel use and address classification spine
+    source_group: address_property_base
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: normalised
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.site_scotland_parcel_use_context
+    orchestration_mode: derived_from_os_places_address_classification_and_ros_parcel_candidates
+    refresh_cadence: daily
+    max_staleness_days: 1
+    limitation_notes: OS address classification is use context only. RoS parcel and title-number candidates do not confirm ownership before manual title review.
+    next_action: Refresh Scotland parcel use context from OS Places/address classifications, RoS parcel candidates and service-anchor evidence.
 
   - source_key: title_review_manual
     module_key: title_control
@@ -104,7 +251,7 @@ sources:
     source_group: title_control
     geography: United Kingdom
     endpoint_url: https://api.company-information.service.gov.uk/
-    access_status: access_required
+    access_status: access_confirmed
     ingest_status: source_registered_no_rows
     normalisation_status: source_registered
     site_link_status: source_registered
@@ -117,7 +264,50 @@ sources:
     refresh_cadence: monthly
     max_staleness_days: 30
     limitation_notes: Corporate context is not legal ownership proof.
-    next_action: Add Companies House key and match only reviewed corporate proprietors or applicant/control signals.
+    next_action: Enrich reviewed corporate proprietors and developer/applicant control signals.
+
+  - source_key: fca_entity_enrichment
+    module_key: title_control
+    source_family: corporate_control
+    source_name: FCA entity enrichment
+    source_group: title_control
+    geography: United Kingdom
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.corporate_entity_enrichments
+    orchestration_mode: api_key_or_endpoint_required
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: FCA context is corporate/regulatory evidence and is not land ownership proof.
+    next_action: Enrich matched corporate entities where FCA access is configured.
+
+  - source_key: companies_house_charges
+    module_key: title_control
+    source_family: corporate_control
+    source_name: Companies House charge and lending context
+    source_group: title_control
+    geography: United Kingdom
+    endpoint_url: https://api.company-information.service.gov.uk/
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.corporate_charge_records
+    orchestration_mode: companies_house_api
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: Charge context is lending/control evidence and is not title ownership proof.
+    next_action: Refresh charge records for matched corporate entities.
 
   - source_key: sp_energy_networks_assets
     module_key: power_infrastructure
@@ -310,6 +500,27 @@ sources:
     limitation_notes: Transport proximity is location evidence, not demand certainty.
     next_action: Add bounded Scotland extract and nearest-asset context.
 
+  - source_key: os_places_amenity_context
+    module_key: amenities
+    source_family: amenities
+    source_name: OS Places and Features amenity context
+    source_group: location_strength
+    geography: Scotland
+    access_status: access_confirmed
+    ingest_status: source_registered
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.site_amenity_context
+    orchestration_mode: derived_from_ingested_os_places_features
+    refresh_cadence: monthly
+    max_staleness_days: 30
+    limitation_notes: OS-derived amenity context is proximity evidence only.
+    next_action: Refresh nearest-asset context when OS Places or OS Features rows exist.
+
   - source_key: scottish_schools_amenities
     module_key: amenities
     source_family: amenities
@@ -478,3 +689,289 @@ sources:
     max_staleness_days: 7
     limitation_notes: News ingestion requires source rights, deduplication and attribution control.
     next_action: Register approved sources before ingest.
+
+  - source_key: os_open_zoomstack
+    module_key: open_location_spine
+    source_family: base_geometry
+    source_name: OS Open Zoomstack
+    source_group: base_geometry
+    geography: Great Britain
+    endpoint_url: https://api.os.uk/downloads/v1/products/OpenZoomstack/downloads
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.source_estate_registry
+    orchestration_mode: os_downloads_metadata_then_bulk_adapter
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Product metadata is accessible; bulk vector features have not yet landed.
+    next_action: Use OS Downloads proof, then add a bounded bulk vector adapter for base geometry context.
+
+  - source_key: os_open_toid
+    module_key: address_property_base
+    source_family: address_property_base
+    source_name: OS Open TOID
+    source_group: address_context
+    geography: Great Britain
+    endpoint_url: https://api.os.uk/downloads/v1/products/OpenTOID/downloads
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: public.land_object_toid_enrichment
+    orchestration_mode: os_downloads_metadata_then_identifier_adapter
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: TOID metadata is accessible; site-to-TOID enrichment has not yet landed.
+    next_action: Add controlled identifier matching after Open UPRN and Open USRN context is stable.
+
+  - source_key: os_open_built_up_areas
+    module_key: open_location_spine
+    source_family: settlement_context
+    source_name: OS Open Built Up Areas
+    source_group: settlement_context
+    geography: Great Britain
+    endpoint_url: https://api.os.uk/downloads/v1/products/BuiltUpAreas/downloads
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.source_estate_registry
+    orchestration_mode: os_downloads_metadata_then_boundary_adapter
+    refresh_cadence: annual
+    max_staleness_days: 365
+    limitation_notes: Built-up area product metadata is accessible; settlement context polygons have not yet landed.
+    next_action: Add bulk polygon adapter and compare with live settlement boundary evidence.
+
+  - source_key: overture_buildings_open
+    module_key: address_property_base
+    source_family: address_property_base
+    source_name: Overture Maps buildings
+    source_group: property_base_layer
+    geography: Global
+    endpoint_url: https://docs.overturemaps.org/guides/buildings/
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.source_estate_registry
+    orchestration_mode: overture_geoparquet_adapter_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Open release is accessible; Scotland clip and building linkage adapter has not yet landed.
+    next_action: Add bounded GeoParquet release adapter before generating building footprint facts.
+
+  - source_key: overture_places_open
+    module_key: amenities
+    source_family: amenities
+    source_name: Overture Maps places
+    source_group: location_strength
+    geography: Global
+    endpoint_url: https://docs.overturemaps.org/guides/places/
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.amenity_assets
+    orchestration_mode: overture_geoparquet_adapter_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Open release is accessible; place assets have not yet landed.
+    next_action: Add Scotland clipped places adapter and keep Overture as contextual location evidence.
+
+  - source_key: overture_transportation_open
+    module_key: open_location_spine
+    source_family: access_context
+    source_name: Overture Maps transportation
+    source_group: access_context
+    geography: Global
+    endpoint_url: https://docs.overturemaps.org/guides/transportation/
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.source_estate_registry
+    orchestration_mode: overture_geoparquet_adapter_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Open release is accessible; transport network context has not yet landed.
+    next_action: Add Scotland clip only after OS Open Roads and OSM access context are stable.
+
+  - source_key: overture_base_open
+    module_key: open_location_spine
+    source_family: base_geometry
+    source_name: Overture Maps base
+    source_group: base_geometry
+    geography: Global
+    endpoint_url: https://docs.overturemaps.org/guides/base/
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.source_estate_registry
+    orchestration_mode: overture_geoparquet_adapter_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Open release is accessible; base feature assets have not yet landed.
+    next_action: Use as contextual enrichment only after official OS open base layers are proven.
+
+  - source_key: geolytix_supermarket_points
+    module_key: amenities
+    source_family: amenities
+    source_name: Geolytix supermarket retail points
+    source_group: location_strength
+    geography: United Kingdom
+    endpoint_url: https://geolytix.com/blog/supermarket-retail-points/
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.amenity_assets
+    orchestration_mode: controlled_file_download_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Open file source is identified; controlled download and attribution check has not yet landed.
+    next_action: Add file-backed adapter, deduplicate against OSM retail amenities and generate proximity context.
+
+  - source_key: geolytix_bank_points
+    module_key: amenities
+    source_family: amenities
+    source_name: Geolytix bank and building society points
+    source_group: location_strength
+    geography: United Kingdom
+    endpoint_url: https://geolytix.co.uk/blog/banking-building-societies-locations/
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.amenity_assets
+    orchestration_mode: controlled_file_download_required
+    refresh_cadence: quarterly
+    max_staleness_days: 90
+    limitation_notes: Open file source is identified; controlled download and attribution check has not yet landed.
+    next_action: Add file-backed adapter and generate finance/service amenity proximity context.
+
+  - source_key: retail_centre_boundaries_open
+    module_key: amenities
+    source_family: amenities
+    source_name: Retail Centre Boundaries and Open Indicators
+    source_group: location_strength
+    geography: Great Britain
+    endpoint_url: https://data.geods.ac.uk/dataset/retail-centre-boundaries-and-open-indicators
+    access_status: access_confirmed
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.amenity_assets
+    orchestration_mode: ckan_asset_adapter_required
+    refresh_cadence: annual
+    max_staleness_days: 365
+    limitation_notes: Open CKAN source is identified; boundary assets have not yet landed.
+    next_action: Add CKAN resource adapter and convert centre boundaries into service strength facts.
+
+  - source_key: nls_historic_os_maps
+    module_key: local_intelligence
+    source_family: historic_context
+    source_name: National Library of Scotland historic OS maps catalogue
+    source_group: local_intelligence
+    geography: Scotland
+    endpoint_url: https://maps.nls.uk/geo/find/
+    access_status: gated
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: landintel.source_estate_registry
+    orchestration_mode: catalogue_adapter_required
+    refresh_cadence: annual
+    max_staleness_days: 365
+    limitation_notes: Historic map catalogue needs a source URL preserving adapter before site facts are generated.
+    next_action: Use only for manual context until a bounded catalogue and citation workflow is proven.
+
+  - source_key: forest_research_trees_outside_woodland
+    module_key: constraints
+    source_family: environmental_context
+    source_name: Forest Research Trees Outside Woodland map
+    source_group: ecology
+    geography: England
+    endpoint_url: https://www.forestresearch.gov.uk/tools-and-resources/fthr/trees-outside-woodland-map/
+    access_status: gated
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: public.constraint_source_features
+    orchestration_mode: not_scotland_phase_one
+    refresh_cadence: annual
+    max_staleness_days: 365
+    limitation_notes: Dataset is England focused in the Catalyst catalogue and is gated for Scotland-first review.
+    next_action: Exclude from Scotland review outputs unless Scotland or GB coverage is confirmed.
+
+  - source_key: meta_tree_canopy_height
+    module_key: constraints
+    source_family: environmental_context
+    source_name: WRI and Meta Tree Canopy Height map
+    source_group: ecology
+    geography: Global
+    endpoint_url: https://registry.opendata.aws/dataforgood-fb-forests/
+    access_status: gated
+    ingest_status: source_registered_no_rows
+    normalisation_status: source_registered
+    site_link_status: source_registered
+    measurement_status: source_registered
+    evidence_status: source_registered
+    signal_status: source_registered
+    assessment_status: source_registered
+    target_table: public.constraint_source_features
+    orchestration_mode: raster_adapter_required
+    refresh_cadence: annual
+    max_staleness_days: 365
+    limitation_notes: Raster source needs licensing, processing and Scotland clipping checks before review use.
+    next_action: Defer until core Scottish ecology and constraint layers are materially covered.

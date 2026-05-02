@@ -28,7 +28,14 @@ The retired lean workflow is intentionally inert. It loads no Supabase secrets, 
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `BOUNDARY_AUTHKEY`
 - `IMPROVEMENT_SERVICE_AUTHKEY`
-- `OS_API_KEY`
+- `OS_PROJECT_API`
+- `OS_PROJECT_API_SECRET`
+- `OS_DOWNLOADS_API`
+- `OS_PLACES_API`
+- `OS_FEATURES_API`
+- `OS_LINKED_IDENTIFIERS_API`
+- `OS_API_KEY` remains supported as a legacy fallback for the OS project API key.
+- `OS_PLACES_API_KEY` remains supported as a legacy fallback key name. `OS_PLACES_API` is the endpoint URL, not a key. Places usage is probe-only until trial/commercial limits are approved.
 - `ROS_CLIENT_ID`
 - `ROS_CLIENT_SECRET`
 

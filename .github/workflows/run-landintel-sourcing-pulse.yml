@@ -1,0 +1,273 @@
+name: Run LandIntel Sourcing Pulse
+
+on:
+  workflow_dispatch:
+    inputs:
+      sourcing_authority:
+        description: Optional authority/geography filter for a focused sourcing pulse
+        required: false
+        default: ""
+      sourcing_batch_size:
+        description: Batch size for reconcile, context refresh and assessment steps
+        required: false
+        default: "250"
+      sourcing_runtime_minutes:
+        description: Runtime budget passed into each bounded sourcing step
+        required: false
+        default: "10"
+      sourcing_step_timeout_minutes:
+        description: Hard timeout per sourcing step
+        required: false
+        default: "20"
+      sourcing_constraint_cycles:
+        description: Number of non-flood constraint DuckDB cycles after the flood cycle
+        required: false
+        default: "1"
+      sourcing_constraint_site_batch_size:
+        description: Site batch size for each constraint/flood measurement cycle
+        required: false
+        default: "25"
+      sourcing_constraint_source_family:
+        description: Optional constraint source family after flood, blank means next eligible layer
+        required: false
+        default: ""
+      sourcing_include_source_ingest:
+        description: Run bounded open/source ingest before analysis
+        required: false
+        type: boolean
+        default: false
+      sourcing_include_title_linking:
+        description: Run bounded parcel/title candidate linking before title readiness
+        required: false
+        type: boolean
+        default: false
+      sourcing_include_address_pack:
+        description: Run OS Places address/title pack after candidate screen
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: "landintel-sourcing-pulse-${{ github.ref }}"
+  cancel-in-progress: false
+
+jobs:
+  sourcing-pulse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: app
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}/app
+      SUPABASE_URL: https://icmgcxujqoiyzxqonwca.supabase.co
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}
+      IMPROVEMENT_SERVICE_AUTHKEY: ${{ secrets.IMPROVEMENT_SERVICE_AUTHKEY }}
+      BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
+      OS_PROJECT_API: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
+      OS_PROJECT_API_SECRET: ${{ secrets.OS_PROJECT_API_SECRET }}
+      OS_API_KEY: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
+      OS_PLACES_API: ${{ secrets.OS_PLACES_API }}
+      OS_PLACES_API_KEY: ${{ secrets.OS_PLACES_API_KEY }}
+      OS_DOWNLOADS_API: ${{ secrets.OS_DOWNLOADS_API }}
+      OS_FEATURES_API: ${{ secrets.OS_FEATURES_API }}
+      OS_LINKED_IDENTIFIERS_API: ${{ secrets.OS_LINKED_IDENTIFIERS_API }}
+      OS_LINKED_IDENTIFIERS_API_KEY: ${{ secrets.OS_LINKED_IDENTIFIERS_API_KEY }}
+      OPENTOPOGRAPHY_API_KEY: ${{ secrets.OPENTOPOGRAPHY_API_KEY }}
+      COMPANIES_HOUSE_API: ${{ secrets.COMPANIES_HOUSE_API }}
+      COMPANIES_HOUSE_API_KEY: ${{ secrets.COMPANIES_HOUSE_API_KEY }}
+      FCA_API: ${{ secrets.FCA_API }}
+      FCA_API_KEY: ${{ secrets.FCA_API_KEY }}
+      ROS_CLIENT_ID: ${{ secrets.ROS_CLIENT_ID }}
+      ROS_CLIENT_SECRET: ${{ secrets.ROS_CLIENT_SECRET }}
+      AUDIT_ARTIFACT_BACKEND: none
+      PERSIST_STAGING_ROWS: "false"
+      MIN_OPERATIONAL_AREA_ACRES: "4"
+      PLANNING_NEW_SITE_MIN_AREA_ACRES: "4"
+      SOURCE_EXPANSION_COMMAND_TIMEOUT: ${{ inputs.sourcing_step_timeout_minutes || '20' }}m
+      SOURCE_EXPANSION_PAGE_SIZE: "2000"
+      SOURCE_EXPANSION_MAX_FEATURES: "0"
+      SOURCE_EXPANSION_ARCGIS_MAX_TILES: "75"
+      SOURCE_EXPANSION_ARCGIS_MAX_FEATURES_PER_LAYER: "10000"
+      SOURCE_EXPANSION_CONSTRAINT_MEASURE_MODE: "auto"
+      SOURCE_EXPANSION_MAX_MEASURE_FEATURES: "2500"
+      SOURCE_EXPANSION_MAX_MEASURE_LAYERS: "1"
+      CONSTRAINT_MEASURE_SITE_BATCH_SIZE: ${{ inputs.sourcing_constraint_site_batch_size || '25' }}
+      CONSTRAINT_MEASURE_MAX_BATCHES: "1"
+      CONSTRAINT_MEASURE_MAX_BATCHES_PER_LAYER: "1"
+      CONSTRAINT_MEASURE_MAX_LAYERS_PER_RUN: "1"
+      CONSTRAINT_MEASURE_RUNTIME_MINUTES: ${{ inputs.sourcing_runtime_minutes || '10' }}
+      CONSTRAINT_MEASURE_MIN_AREA_ACRES: "0"
+      CONSTRAINT_MEASURE_LAYER_KEY: ""
+      CONSTRAINT_MEASURE_AUTHORITY: ${{ inputs.sourcing_authority || '' }}
+      CONSTRAINT_DUCKDB_MAX_FEATURES_PER_BATCH: "10000"
+      CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT: "1"
+      CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"
+      PHASE2_SOURCE_FAMILY: ""
+      PHASE2_AUTHORITY: ${{ inputs.sourcing_authority || '' }}
+      PHASE2_BATCH_SIZE: ${{ inputs.sourcing_batch_size || '250' }}
+      PHASE2_RUNTIME_MINUTES: ${{ inputs.sourcing_runtime_minutes || '10' }}
+      PHASE2_DRY_RUN: "false"
+      PHASE2_FORCE_REFRESH: "false"
+      PHASE2_AUDIT_ONLY: "false"
+      TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE: "10"
+      TITLE_RESOLUTION_MIN_OVERLAP_SQM: "1"
+      TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE: "0"
+      TITLE_RESOLUTION_SITE_BATCH_SIZE: "250"
+      SITE_PARCEL_LINK_MAX_CANDIDATES_PER_SITE: "10"
+      SITE_PARCEL_LINK_MAX_DISTANCE_M: "250"
+      SITE_PARCEL_LINK_MIN_OVERLAP_SQM: "1"
+      SITE_PARCEL_LINK_SITE_BATCH_SIZE: "250"
+      RECONCILE_QUEUE_BATCH_LIMIT: ${{ inputs.sourcing_batch_size || '250' }}
+      RECONCILE_REFRESH_BATCH_LIMIT: ${{ inputs.sourcing_batch_size || '250' }}
+      RECONCILE_RUNTIME_MINUTES: ${{ inputs.sourcing_runtime_minutes || '10' }}
+      RECONCILE_LEASE_SECONDS: "1800"
+      RECONCILE_REFRESH_LEASE_SECONDS: "1200"
+      RECONCILE_MAX_ATTEMPTS: "3"
+      OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: "90000000"
+      OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: "2500"
+      OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: ${{ inputs.sourcing_batch_size || '250' }}
+      OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE: "10"
+      OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: "25"
+      OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT: "2000"
+      OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE: "25"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+
+      - name: Validate sourcing secrets
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || { echo "Missing GitHub secret: SUPABASE_DB_URL"; exit 1; }
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing GitHub secret: SUPABASE_SERVICE_ROLE_KEY"; exit 1; }
+          test -n "$BOUNDARY_AUTHKEY" || { echo "Missing GitHub secret: BOUNDARY_AUTHKEY"; exit 1; }
+
+      - name: Install geospatial system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev proj-bin postgresql-client
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile critical runners
+        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py src/phase2_source_runner.py src/main.py
+
+      - name: Run sourcing pulse
+        env:
+          SOURCING_AUTHORITY: ${{ inputs.sourcing_authority || '' }}
+          SOURCING_BATCH_SIZE: ${{ inputs.sourcing_batch_size || '250' }}
+          SOURCING_RUNTIME_MINUTES: ${{ inputs.sourcing_runtime_minutes || '10' }}
+          SOURCING_STEP_TIMEOUT: ${{ inputs.sourcing_step_timeout_minutes || '20' }}m
+          SOURCING_CONSTRAINT_CYCLES: ${{ inputs.sourcing_constraint_cycles || '1' }}
+          SOURCING_CONSTRAINT_SOURCE_FAMILY: ${{ inputs.sourcing_constraint_source_family || '' }}
+          SOURCING_INCLUDE_SOURCE_INGEST: ${{ inputs.sourcing_include_source_ingest || false }}
+          SOURCING_INCLUDE_TITLE_LINKING: ${{ inputs.sourcing_include_title_linking || false }}
+          SOURCING_INCLUDE_ADDRESS_PACK: ${{ inputs.sourcing_include_address_pack || false }}
+        run: |
+          set -euo pipefail
+
+          run_step() {
+            local label="$1"
+            shift
+            echo "::group::${label}"
+            echo "### ${label}" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "$*" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            timeout "$SOURCING_STEP_TIMEOUT" "$@"
+            echo "Completed: ${label}"
+            echo "- completed" >> "$GITHUB_STEP_SUMMARY"
+            echo "::endgroup::"
+          }
+
+          run_phase2() {
+            run_step "Phase 2: $1" python -m src.phase2_source_runner "$1"
+          }
+
+          echo "# LandIntel Sourcing Pulse" >> "$GITHUB_STEP_SUMMARY"
+          echo "- authority filter: ${SOURCING_AUTHORITY:-all}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- batch size: ${SOURCING_BATCH_SIZE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- step timeout: ${SOURCING_STEP_TIMEOUT}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- runtime minutes per bounded step: ${SOURCING_RUNTIME_MINUTES}" >> "$GITHUB_STEP_SUMMARY"
+
+          run_step "Migrations" python -m src.source_phase_runner run-migrations
+          run_step "Source catalog sync" python -m src.source_catalog_sync sync-source-catalog
+          run_step "Register source estate" python -m src.source_estate_registry register-source-estate
+          run_step "Register supplemental sources" python -m src.source_policy_discovery register-supplemental-sources
+          run_phase2 discover-phase2-sources
+
+          if [ "$SOURCING_INCLUDE_SOURCE_INGEST" = "true" ]; then
+            run_step "Optional bounded bulk/source ingest" python -m src.source_expansion_runner_wfs_paging ingest-bulk-download-universe
+            run_phase2 ingest-amenities
+            run_phase2 ingest-demographics
+            run_phase2 ingest-market-context
+            run_phase2 ingest-power-infrastructure
+          else
+            echo "Skipping optional bounded source ingest." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          run_step "Reconcile catchup scan" python -m src.source_reconcile_catchup reconcile-catchup-scan --runtime-minutes "$SOURCING_RUNTIME_MINUTES" --batch-limit "$SOURCING_BATCH_SIZE"
+          run_step "Process reconcile queue" python -m src.source_reconcile_incremental process-reconcile-queue --limit "$SOURCING_BATCH_SIZE" --runtime-minutes "$SOURCING_RUNTIME_MINUTES"
+          run_step "Refresh affected sites" python -m src.source_reconcile_incremental refresh-affected-sites --limit "$SOURCING_BATCH_SIZE" --runtime-minutes "$SOURCING_RUNTIME_MINUTES"
+
+          run_step "Measure SEPA flood constraints with DuckDB" env CONSTRAINT_MEASURE_SOURCE_FAMILY=sepa_flood python -m src.source_expansion_runner_wfs_paging measure-constraints-duckdb
+          constraint_cycle=1
+          while [ "$constraint_cycle" -le "${SOURCING_CONSTRAINT_CYCLES:-1}" ]; do
+            run_step "Measure constraint cycle ${constraint_cycle} with DuckDB" env CONSTRAINT_MEASURE_SOURCE_FAMILY="$SOURCING_CONSTRAINT_SOURCE_FAMILY" python -m src.source_expansion_runner_wfs_paging measure-constraints-duckdb
+            constraint_cycle=$((constraint_cycle + 1))
+          done
+          run_step "Audit constraint measurements" python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
+
+          if [ "$SOURCING_INCLUDE_TITLE_LINKING" = "true" ]; then
+            run_step "Optional bounded site-to-parcel linking" python -m src.source_expansion_runner_wfs_paging link-sites-to-ros-parcels
+            run_step "Optional bounded title candidate resolution" python -m src.source_expansion_runner_wfs_paging resolve-title-numbers
+            run_step "Audit title number control" python -m src.source_expansion_runner_wfs_paging audit-title-number-control
+          else
+            echo "Skipping optional parcel/title linking; using existing title candidates for readiness." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          run_phase2 refresh-planning-decisions
+          run_phase2 audit-planning-decisions
+          run_phase2 refresh-title-readiness
+          run_phase2 refresh-site-market-context
+          run_phase2 refresh-site-amenity-context
+          run_phase2 refresh-site-demographic-context
+          run_phase2 refresh-site-power-context
+          run_phase2 refresh-site-abnormal-risk
+          run_phase2 refresh-site-assessments
+          run_phase2 refresh-site-prove-it-assessments
+          run_phase2 audit-site-prove-it-assessments
+          run_phase2 refresh-ldn-candidate-screen
+          run_phase2 audit-ldn-candidate-screen
+
+          if [ "$SOURCING_INCLUDE_ADDRESS_PACK" = "true" ]; then
+            run_phase2 refresh-urgent-address-title-pack
+            run_phase2 refresh-scotland-parcel-use-context
+          else
+            echo "Skipping optional OS Places address/title pack." >> "$GITHUB_STEP_SUMMARY"
+            run_phase2 audit-urgent-address-title-pack
+            run_phase2 audit-scotland-parcel-use-context
+          fi
+
+          run_step "Audit source expansion" python -m src.source_expansion_runner_wfs_paging audit-source-expansion
+          run_phase2 audit-full-source-estate
+
+          echo "## Pulse Output" >> "$GITHUB_STEP_SUMMARY"
+          echo "Review the logs for phase2_source_command_completed payloads from audit-ldn-candidate-screen, audit-site-prove-it-assessments and audit-full-source-estate." >> "$GITHUB_STEP_SUMMARY"

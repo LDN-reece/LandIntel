@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import monotonic
 from typing import Any
+from uuid import UUID
 
 from shapely import wkb as shapely_wkb
 from shapely.geometry.base import BaseGeometry
@@ -93,11 +94,17 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
             "retryable_failed": 0,
             "dead_letter": 0,
             "refresh_enqueued": 0,
+            "released_unprocessed": 0,
         }
         try:
             while not self._runtime_limit_reached(started, effective_runtime_minutes):
                 remaining = max(effective_limit - stats["claimed"], 0)
                 if remaining == 0:
+                    break
+                stats["superseded"] += self._supersede_stale_reconcile_items(
+                    max(min(remaining, self.settings.reconcile_queue_batch_limit) * 5, 1)
+                )
+                if self._runtime_limit_reached(started, effective_runtime_minutes):
                     break
                 batch = self._claim_reconcile_items(min(remaining, self.settings.reconcile_queue_batch_limit))
                 if not batch:
@@ -113,6 +120,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                         stats[outcome] += 1
                         continue
                     stats[processed] += 1
+            stats["released_unprocessed"] += self._release_unprocessed_reconcile_items()
             self.loader.update_ingest_run(
                 run_id,
                 IngestRunUpdate(
@@ -127,6 +135,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
             self.logger.info("incremental_reconcile_queue_processed", extra=stats)
             return stats
         except Exception as exc:
+            self._release_unprocessed_reconcile_items()
             self.loader.update_ingest_run(
                 run_id,
                 IngestRunUpdate(status="failed", error_message=str(exc), metadata={"traceback": traceback.format_exc()}, finished=True),
@@ -212,7 +221,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
             )
         )
         started = monotonic()
-        stats = {"claimed": 0, "completed": 0, "retryable_failed": 0, "dead_letter": 0, "superseded": 0}
+        stats = {"claimed": 0, "completed": 0, "retryable_failed": 0, "dead_letter": 0, "superseded": 0, "released_unprocessed": 0}
         try:
             while not self._runtime_limit_reached(started, effective_runtime_minutes):
                 remaining = max(effective_limit - stats["claimed"], 0)
@@ -230,6 +239,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                     except Exception as exc:  # pragma: no cover - defensive runtime protection
                         processed = self._handle_refresh_error(item, exc)
                     stats[processed] += 1
+            stats["released_unprocessed"] += self._release_unprocessed_refresh_items()
             self.loader.update_ingest_run(
                 run_id,
                 IngestRunUpdate(
@@ -244,6 +254,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
             self.logger.info("incremental_site_refresh_completed", extra=stats)
             return stats
         except Exception as exc:
+            self._release_unprocessed_refresh_items()
             self.loader.update_ingest_run(
                 run_id,
                 IngestRunUpdate(status="failed", error_message=str(exc), metadata={"traceback": traceback.format_exc()}, finished=True),
@@ -346,6 +357,8 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
     def _process_reconcile_item(self, item: dict[str, Any], ingest_run_id: str) -> str:
         state = self._fetch_state(item["state_id"])
         source_row = self._fetch_source_row(item["source_family"], item["authority_name"], item["source_record_id"])
+        if item["work_type"] == "upsert" and source_row is not None and self._source_signature_drifted(item, state, source_row):
+            self._refresh_reconcile_item_to_current_source(item, state, source_row)
         if self._queue_item_is_outdated(item, state, source_row):
             self._mark_reconcile_queue_status(item, "superseded")
             return "superseded"
@@ -1026,6 +1039,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                 claimed_by = :worker_id,
                 claimed_at = now(),
                 lease_expires_at = now() + make_interval(secs => :lease_seconds),
+                processed_at = null,
                 attempt_count = coalesce(queue_row.attempt_count, 0) + 1,
                 updated_at = now()
             from candidates
@@ -1038,6 +1052,88 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                 "lease_seconds": self.settings.reconcile_lease_seconds,
             },
         )
+
+    def _release_unprocessed_reconcile_items(self) -> int:
+        row = self.database.fetch_one(
+            """
+            with released as (
+                update landintel.source_reconcile_queue as queue_row
+                set status = 'pending',
+                    claimed_by = null,
+                    claimed_at = null,
+                    lease_expires_at = null,
+                    attempt_count = greatest(coalesce(queue_row.attempt_count, 1) - 1, 0),
+                    metadata = coalesce(queue_row.metadata, '{}'::jsonb) || jsonb_build_object(
+                        'released_after_runtime_limit', true,
+                        'released_by', :worker_id,
+                        'released_at', now()
+                    ),
+                    updated_at = now()
+                where queue_row.status = 'processing'
+                  and queue_row.claimed_by = :worker_id
+                returning queue_row.id
+            )
+            select count(*)::int as released_count
+            from released
+            """,
+            {"worker_id": self.worker_id},
+        )
+        return int((row or {}).get("released_count", 0) or 0)
+
+    def _supersede_stale_reconcile_items(self, batch_limit: int) -> int:
+        row = self.database.fetch_one(
+            """
+            with pending_slice as (
+                select queue_row.id
+                from landintel.source_reconcile_queue as queue_row
+                where queue_row.status in ('pending', 'retryable_failed')
+                  and coalesce(queue_row.next_attempt_at, now()) <= now()
+                order by queue_row.priority desc, queue_row.updated_at asc, queue_row.created_at asc
+                limit :batch_limit
+                for update skip locked
+            ),
+            candidates as (
+                select queue_row.id
+                from pending_slice
+                join landintel.source_reconcile_queue as queue_row
+                  on queue_row.id = pending_slice.id
+                join landintel.source_reconcile_state as state_row
+                  on state_row.id = queue_row.state_id
+                where
+                  (
+                      queue_row.work_type = 'upsert'
+                      and (
+                          queue_row.source_signature is distinct from state_row.current_source_signature
+                          or queue_row.geometry_hash is distinct from state_row.current_geometry_hash
+                          or state_row.lifecycle_status = 'retired'
+                      )
+                  )
+                  or (
+                      queue_row.work_type = 'retire'
+                      and state_row.lifecycle_status <> 'retired'
+                  )
+            ),
+            superseded as (
+                update landintel.source_reconcile_queue as queue_row
+                set status = 'superseded',
+                    processed_at = now(),
+                    claimed_by = null,
+                    claimed_at = null,
+                    lease_expires_at = null,
+                    next_attempt_at = null,
+                    error_code = coalesce(queue_row.error_code, 'stale_before_claim'),
+                    error_message = coalesce(queue_row.error_message, 'Queue row was stale before claim and was superseded in bulk.'),
+                    updated_at = now()
+                from candidates
+                where queue_row.id = candidates.id
+                returning queue_row.id
+            )
+            select count(*)::int as superseded_count
+            from superseded
+            """,
+            {"batch_limit": batch_limit},
+        )
+        return int((row or {}).get("superseded_count", 0) or 0)
 
     def _claim_refresh_items(self, batch_limit: int) -> list[dict[str, Any]]:
         return self.database.fetch_all(
@@ -1056,6 +1152,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                 claimed_by = :worker_id,
                 claimed_at = now(),
                 lease_expires_at = now() + make_interval(secs => :lease_seconds),
+                processed_at = null,
                 attempt_count = coalesce(queue_row.attempt_count, 0) + 1,
                 updated_at = now()
             from candidates
@@ -1068,6 +1165,33 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                 "lease_seconds": self.settings.reconcile_refresh_lease_seconds,
             },
         )
+
+    def _release_unprocessed_refresh_items(self) -> int:
+        row = self.database.fetch_one(
+            """
+            with released as (
+                update landintel.canonical_site_refresh_queue as queue_row
+                set status = 'pending',
+                    claimed_by = null,
+                    claimed_at = null,
+                    lease_expires_at = null,
+                    attempt_count = greatest(coalesce(queue_row.attempt_count, 1) - 1, 0),
+                    metadata = coalesce(queue_row.metadata, '{}'::jsonb) || jsonb_build_object(
+                        'released_after_runtime_limit', true,
+                        'released_by', :worker_id,
+                        'released_at', now()
+                    ),
+                    updated_at = now()
+                where queue_row.status = 'processing'
+                  and queue_row.claimed_by = :worker_id
+                returning queue_row.id
+            )
+            select count(*)::int as released_count
+            from released
+            """,
+            {"worker_id": self.worker_id},
+        )
+        return int((row or {}).get("released_count", 0) or 0)
 
     def _fetch_state(self, state_id: str) -> dict[str, Any]:
         row = self.database.fetch_one(
@@ -1209,6 +1333,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
             cross join source_geometry
             where site.authority_name = :authority_name
               and site.geometry is not null
+              and site.geometry OPERATOR(extensions.&&) st_expand(source_geometry.geometry_value, 100)
               and (
                   st_intersects(site.geometry, source_geometry.geometry_value)
                   or st_dwithin(site.geometry, source_geometry.geometry_value, 100)
@@ -1267,6 +1392,7 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
                   on parcel.authority_name = site.authority_name
                  and site.id = cast(:site_id as uuid)
                  and site.geometry is not null
+                 and parcel.geometry OPERATOR(extensions.&&) site.geometry
                  and st_intersects(parcel.geometry, site.geometry)
                 order by overlap_area_sqm desc nulls last, parcel.id asc
                 limit 1
@@ -1329,6 +1455,88 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
         if state.get("current_geometry_hash") != source_row.get("geometry_hash"):
             return True
         return False
+
+    def _source_signature_drifted(
+        self,
+        item: dict[str, Any],
+        state: dict[str, Any],
+        source_row: dict[str, Any],
+    ) -> bool:
+        return (
+            item.get("source_signature") != source_row.get("source_signature")
+            or item.get("geometry_hash") != source_row.get("geometry_hash")
+            or state.get("current_source_signature") != source_row.get("source_signature")
+            or state.get("current_geometry_hash") != source_row.get("geometry_hash")
+        )
+
+    def _refresh_reconcile_item_to_current_source(
+        self,
+        item: dict[str, Any],
+        state: dict[str, Any],
+        source_row: dict[str, Any],
+    ) -> None:
+        with self.database.engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    update landintel.source_reconcile_state
+                    set active_flag = true,
+                        lifecycle_status = case
+                            when lifecycle_status = 'retired' then 'active'
+                            else lifecycle_status
+                        end,
+                        current_source_signature = :source_signature,
+                        current_geometry_hash = :geometry_hash,
+                        last_seen_ingest_run_id = cast(:ingest_run_id as uuid),
+                        last_seen_at = now(),
+                        metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
+                            'currentised_from_processing_worker', true,
+                            'currentised_at', now()
+                        ),
+                        updated_at = now()
+                    where id = cast(:state_id as uuid)
+                    """
+                ),
+                {
+                    "state_id": state["id"],
+                    "source_signature": source_row.get("source_signature"),
+                    "geometry_hash": source_row.get("geometry_hash"),
+                    "ingest_run_id": source_row.get("ingest_run_id"),
+                },
+            )
+            connection.execute(
+                text(
+                    """
+                    update landintel.source_reconcile_queue
+                    set source_signature = :source_signature,
+                        geometry_hash = :geometry_hash,
+                        ingest_run_id = cast(:ingest_run_id as uuid),
+                        error_code = null,
+                        error_message = null,
+                        review_reason_code = null,
+                        metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
+                            'currentised_from_processing_worker', true,
+                            'currentised_at', now()
+                        ),
+                        updated_at = now()
+                    where id = cast(:queue_id as uuid)
+                    """
+                ),
+                {
+                    "queue_id": item["id"],
+                    "source_signature": source_row.get("source_signature"),
+                    "geometry_hash": source_row.get("geometry_hash"),
+                    "ingest_run_id": source_row.get("ingest_run_id"),
+                },
+            )
+        item["source_signature"] = source_row.get("source_signature")
+        item["geometry_hash"] = source_row.get("geometry_hash")
+        item["ingest_run_id"] = source_row.get("ingest_run_id")
+        state["active_flag"] = True
+        state["lifecycle_status"] = "active" if state.get("lifecycle_status") == "retired" else state.get("lifecycle_status")
+        state["current_source_signature"] = source_row.get("source_signature")
+        state["current_geometry_hash"] = source_row.get("geometry_hash")
+        state["last_seen_ingest_run_id"] = source_row.get("ingest_run_id")
 
     def _mark_reconcile_queue_retryable(self, item: dict[str, Any], error_message: str) -> None:
         next_attempt_minutes = 5 if int(item.get("attempt_count") or 0) <= 1 else 15 if int(item.get("attempt_count") or 0) == 2 else 60
@@ -1517,19 +1725,28 @@ class IncrementalReconcileRunner(SourcePhaseRunner):
         return _polygonize_geometry(shapely_wkb.loads(bytes.fromhex(geometry_wkb)))
 
     def _pg_uuid_array(self, values: list[str] | None) -> str:
-        cleaned = [value for value in values or [] if value]
+        cleaned = [str(value) for value in values or [] if value]
         if not cleaned:
             return "{}"
         return "{" + ",".join(cleaned) + "}"
 
     def _json_dumps(self, payload: Any) -> str:
-        return json.dumps(payload, default=_json_default, ensure_ascii=False)
+        return json.dumps(payload, default=self._json_default, ensure_ascii=False)
+
+    def _json_default(self, value: Any) -> Any:
+        if isinstance(value, UUID):
+            return str(value)
+        converted = _json_default(value)
+        if converted is value and not isinstance(value, str | int | float | bool | list | dict | tuple | type(None)):
+            return str(value)
+        return converted
 
     def _dedupe_site_ids(self, site_ids: list[str]) -> list[str]:
         ordered: list[str] = []
         for site_id in site_ids:
-            if site_id and site_id not in ordered:
-                ordered.append(site_id)
+            site_id_text = str(site_id) if site_id else None
+            if site_id_text and site_id_text not in ordered:
+                ordered.append(site_id_text)
         return ordered
 
 

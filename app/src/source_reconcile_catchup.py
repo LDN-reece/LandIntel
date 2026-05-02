@@ -160,93 +160,284 @@ class IncrementalReconcileCatchupRunner(IncrementalReconcileRunner):
         batch_limit: int,
     ) -> list[dict[str, Any]]:
         if source_family == "planning":
-            return self.database.fetch_all(
+            missing_batch = self.database.fetch_all(
                 """
-                with prepared as (
+                with source_candidates as (
                     select
                         planning.authority_name,
                         planning.source_record_id,
-                        landintel.planning_reconcile_signature(
-                            planning.source_record_id,
-                            planning.authority_name,
-                            planning.planning_reference,
-                            planning.proposal_text,
-                            planning.application_status,
-                            planning.decision,
-                            planning.appeal_status,
-                            planning.raw_payload,
-                            planning.geometry
-                        ) as source_signature,
-                        landintel.normalized_geometry_hash(planning.geometry) as geometry_hash,
+                        planning.planning_reference,
+                        planning.proposal_text,
+                        planning.application_status,
+                        planning.decision,
+                        planning.appeal_status,
+                        planning.raw_payload,
+                        planning.geometry,
                         planning.canonical_site_id as source_canonical_site_id,
                         planning.ingest_run_id
                     from landintel.planning_application_records as planning
+                    left join landintel.source_reconcile_state as state_row
+                      on state_row.source_family = 'planning'
+                     and state_row.authority_name = planning.authority_name
+                     and state_row.source_record_id = planning.source_record_id
                     where planning.authority_name = :authority_name
+                      and state_row.id is null
+                    order by planning.source_record_id asc
+                    limit :batch_limit
+                ),
+                prepared as (
+                    select
+                        source_candidates.authority_name,
+                        source_candidates.source_record_id,
+                        landintel.planning_reconcile_signature(
+                            source_candidates.source_record_id,
+                            source_candidates.authority_name,
+                            source_candidates.planning_reference,
+                            source_candidates.proposal_text,
+                            source_candidates.application_status,
+                            source_candidates.decision,
+                            source_candidates.appeal_status,
+                            source_candidates.raw_payload,
+                            source_candidates.geometry
+                        ) as source_signature,
+                        landintel.normalized_geometry_hash(source_candidates.geometry) as geometry_hash,
+                        source_candidates.source_canonical_site_id,
+                        source_candidates.ingest_run_id
+                    from source_candidates
                 )
                 select prepared.*
                 from prepared
-                left join landintel.source_reconcile_state as state_row
-                  on state_row.source_family = 'planning'
-                 and state_row.authority_name = prepared.authority_name
-                 and state_row.source_record_id = prepared.source_record_id
-                where state_row.id is null
-                   or state_row.current_source_signature is distinct from prepared.source_signature
-                   or state_row.current_geometry_hash is distinct from prepared.geometry_hash
-                   or state_row.active_flag = false
-                   or (
-                        prepared.source_canonical_site_id is not null
-                        and state_row.current_canonical_site_id is null
-                        and state_row.last_processed_at is null
-                   )
-                order by prepared.source_record_id asc
-                limit :batch_limit
                 """,
                 {
                     "authority_name": authority_name,
                     "batch_limit": batch_limit,
                 },
             )
-        return self.database.fetch_all(
+            if missing_batch:
+                return missing_batch
+            return self.database.fetch_all(
+                """
+                with source_candidates as (
+                    select
+                        planning.authority_name,
+                        planning.source_record_id,
+                        planning.planning_reference,
+                        planning.proposal_text,
+                        planning.application_status,
+                        planning.decision,
+                        planning.appeal_status,
+                        planning.raw_payload,
+                        planning.geometry,
+                        planning.canonical_site_id as source_canonical_site_id,
+                        planning.ingest_run_id,
+                        state_row.current_source_signature,
+                        state_row.current_geometry_hash,
+                        state_row.current_canonical_site_id,
+                        state_row.active_flag,
+                        state_row.last_processed_at
+                    from landintel.planning_application_records as planning
+                    join landintel.source_reconcile_state as state_row
+                      on state_row.source_family = 'planning'
+                     and state_row.authority_name = planning.authority_name
+                     and state_row.source_record_id = planning.source_record_id
+                    where planning.authority_name = :authority_name
+                      and (
+                            state_row.active_flag = false
+                         or (
+                                planning.canonical_site_id is not null
+                                and state_row.current_canonical_site_id is null
+                                and state_row.last_processed_at is null
+                            )
+                         or planning.updated_at > coalesce(state_row.updated_at, timestamp with time zone 'epoch')
+                      )
+                    order by planning.updated_at desc nulls last, planning.source_record_id asc
+                    limit :batch_limit
+                ),
+                prepared as (
+                    select
+                        source_candidates.authority_name,
+                        source_candidates.source_record_id,
+                        landintel.planning_reconcile_signature(
+                            source_candidates.source_record_id,
+                            source_candidates.authority_name,
+                            source_candidates.planning_reference,
+                            source_candidates.proposal_text,
+                            source_candidates.application_status,
+                            source_candidates.decision,
+                            source_candidates.appeal_status,
+                            source_candidates.raw_payload,
+                            source_candidates.geometry
+                        ) as source_signature,
+                        landintel.normalized_geometry_hash(source_candidates.geometry) as geometry_hash,
+                        source_candidates.source_canonical_site_id,
+                        source_candidates.ingest_run_id,
+                        source_candidates.current_source_signature,
+                        source_candidates.current_geometry_hash,
+                        source_candidates.current_canonical_site_id,
+                        source_candidates.active_flag,
+                        source_candidates.last_processed_at
+                    from source_candidates
+                )
+                select
+                    authority_name,
+                    source_record_id,
+                    source_signature,
+                    geometry_hash,
+                    source_canonical_site_id,
+                    ingest_run_id
+                from prepared
+                where current_source_signature is distinct from source_signature
+                   or current_geometry_hash is distinct from geometry_hash
+                   or active_flag = false
+                   or (
+                        source_canonical_site_id is not null
+                        and current_canonical_site_id is null
+                        and last_processed_at is null
+                   )
+                """,
+                {
+                    "authority_name": authority_name,
+                    "batch_limit": batch_limit,
+                },
+            )
+        missing_batch = self.database.fetch_all(
             """
-            with prepared as (
+            with source_candidates as (
                 select
                     hla.authority_name,
                     hla.source_record_id,
-                    landintel.hla_reconcile_signature(
-                        hla.source_record_id,
-                        hla.authority_name,
-                        hla.site_reference,
-                        hla.site_name,
-                        hla.effectiveness_status,
-                        hla.programming_horizon,
-                        hla.constraint_reasons,
-                        hla.remaining_capacity,
-                        hla.raw_payload,
-                        hla.geometry
-                    ) as source_signature,
-                    landintel.normalized_geometry_hash(hla.geometry) as geometry_hash,
+                    hla.site_reference,
+                    hla.site_name,
+                    hla.effectiveness_status,
+                    hla.programming_horizon,
+                    hla.constraint_reasons,
+                    hla.remaining_capacity,
+                    hla.raw_payload,
+                    hla.geometry,
                     hla.canonical_site_id as source_canonical_site_id,
                     hla.ingest_run_id
                 from landintel.hla_site_records as hla
+                left join landintel.source_reconcile_state as state_row
+                  on state_row.source_family = 'hla'
+                 and state_row.authority_name = hla.authority_name
+                 and state_row.source_record_id = hla.source_record_id
                 where hla.authority_name = :authority_name
+                  and state_row.id is null
+                order by hla.source_record_id asc
+                limit :batch_limit
+            ),
+            prepared as (
+                select
+                    source_candidates.authority_name,
+                    source_candidates.source_record_id,
+                    landintel.hla_reconcile_signature(
+                        source_candidates.source_record_id,
+                        source_candidates.authority_name,
+                        source_candidates.site_reference,
+                        source_candidates.site_name,
+                        source_candidates.effectiveness_status,
+                        source_candidates.programming_horizon,
+                        source_candidates.constraint_reasons,
+                        source_candidates.remaining_capacity,
+                        source_candidates.raw_payload,
+                        source_candidates.geometry
+                    ) as source_signature,
+                    landintel.normalized_geometry_hash(source_candidates.geometry) as geometry_hash,
+                    source_candidates.source_canonical_site_id,
+                    source_candidates.ingest_run_id
+                from source_candidates
             )
             select prepared.*
             from prepared
-            left join landintel.source_reconcile_state as state_row
-              on state_row.source_family = 'hla'
-             and state_row.authority_name = prepared.authority_name
-             and state_row.source_record_id = prepared.source_record_id
-            where state_row.id is null
-               or state_row.current_source_signature is distinct from prepared.source_signature
-               or state_row.current_geometry_hash is distinct from prepared.geometry_hash
-               or state_row.active_flag = false
+            """,
+            {
+                "authority_name": authority_name,
+                "batch_limit": batch_limit,
+            },
+        )
+        if missing_batch:
+            return missing_batch
+        return self.database.fetch_all(
+            """
+            with source_candidates as (
+                select
+                    hla.authority_name,
+                    hla.source_record_id,
+                    hla.site_reference,
+                    hla.site_name,
+                    hla.effectiveness_status,
+                    hla.programming_horizon,
+                    hla.constraint_reasons,
+                    hla.remaining_capacity,
+                    hla.raw_payload,
+                    hla.geometry,
+                    hla.canonical_site_id as source_canonical_site_id,
+                    hla.ingest_run_id,
+                    state_row.current_source_signature,
+                    state_row.current_geometry_hash,
+                    state_row.current_canonical_site_id,
+                    state_row.active_flag,
+                    state_row.last_processed_at
+                from landintel.hla_site_records as hla
+                join landintel.source_reconcile_state as state_row
+                  on state_row.source_family = 'hla'
+                 and state_row.authority_name = hla.authority_name
+                 and state_row.source_record_id = hla.source_record_id
+                where hla.authority_name = :authority_name
+                  and (
+                        state_row.active_flag = false
+                     or (
+                            hla.canonical_site_id is not null
+                            and state_row.current_canonical_site_id is null
+                            and state_row.last_processed_at is null
+                        )
+                     or hla.updated_at > coalesce(state_row.updated_at, timestamp with time zone 'epoch')
+                  )
+                order by hla.updated_at desc nulls last, hla.source_record_id asc
+                limit :batch_limit
+            ),
+            prepared as (
+                select
+                    source_candidates.authority_name,
+                    source_candidates.source_record_id,
+                    landintel.hla_reconcile_signature(
+                        source_candidates.source_record_id,
+                        source_candidates.authority_name,
+                        source_candidates.site_reference,
+                        source_candidates.site_name,
+                        source_candidates.effectiveness_status,
+                        source_candidates.programming_horizon,
+                        source_candidates.constraint_reasons,
+                        source_candidates.remaining_capacity,
+                        source_candidates.raw_payload,
+                        source_candidates.geometry
+                    ) as source_signature,
+                    landintel.normalized_geometry_hash(source_candidates.geometry) as geometry_hash,
+                    source_candidates.source_canonical_site_id,
+                    source_candidates.ingest_run_id,
+                    source_candidates.current_source_signature,
+                    source_candidates.current_geometry_hash,
+                    source_candidates.current_canonical_site_id,
+                    source_candidates.active_flag,
+                    source_candidates.last_processed_at
+                from source_candidates
+            )
+            select
+                authority_name,
+                source_record_id,
+                source_signature,
+                geometry_hash,
+                source_canonical_site_id,
+                ingest_run_id
+            from prepared
+            where current_source_signature is distinct from source_signature
+               or current_geometry_hash is distinct from geometry_hash
+               or active_flag = false
                or (
-                    prepared.source_canonical_site_id is not null
-                    and state_row.current_canonical_site_id is null
-                    and state_row.last_processed_at is null
+                    source_canonical_site_id is not null
+                    and current_canonical_site_id is null
+                    and last_processed_at is null
                )
-            order by prepared.source_record_id asc
-            limit :batch_limit
             """,
             {
                 "authority_name": authority_name,

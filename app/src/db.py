@@ -26,8 +26,22 @@ class Database:
         """Execute ordered SQL migration files."""
 
         sql_files = sorted(self.settings.sql_dir.glob("*.sql"))
-        for path in sql_files:
-            self.execute_script(path)
+        lock_sql = "select pg_advisory_lock(hashtext('landintel.run_migrations')::bigint)"
+        unlock_sql = "select pg_advisory_unlock(hashtext('landintel.run_migrations')::bigint)"
+
+        with self.engine.connect() as connection:
+            connection.exec_driver_sql(lock_sql)
+            connection.commit()
+            try:
+                for path in sql_files:
+                    sql = path.read_text(encoding="utf-8")
+                    with connection.begin():
+                        connection.exec_driver_sql(sql)
+            finally:
+                if connection.in_transaction():
+                    connection.rollback()
+                connection.exec_driver_sql(unlock_sql)
+                connection.commit()
 
     def execute_script(self, path: Path) -> None:
         """Execute a single SQL file inside a transaction."""

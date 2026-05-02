@@ -70,9 +70,35 @@ class IncrementalReconcileContractTests(unittest.TestCase):
 
     def test_worker_rechecks_stale_items_before_processing(self) -> None:
         self.assertIn("def _queue_item_is_outdated", WORKER)
+        self.assertIn("def _supersede_stale_reconcile_items", WORKER)
+        self.assertIn("stale_before_claim", WORKER)
         self.assertIn('"superseded"', WORKER)
         self.assertIn("source_signature", WORKER)
         self.assertIn("current_source_signature", WORKER)
+
+    def test_worker_currentises_live_source_drift_before_processing(self) -> None:
+        self.assertIn("def _source_signature_drifted", WORKER)
+        self.assertIn("def _refresh_reconcile_item_to_current_source", WORKER)
+        self.assertIn("currentised_from_processing_worker", WORKER)
+        self.assertIn("self._refresh_reconcile_item_to_current_source(item, state, source_row)", WORKER)
+
+    def test_worker_releases_unprocessed_claims_after_runtime_limit(self) -> None:
+        self.assertIn("def _release_unprocessed_reconcile_items", WORKER)
+        self.assertIn("def _release_unprocessed_refresh_items", WORKER)
+        self.assertIn("released_after_runtime_limit", WORKER)
+        self.assertIn('stats["released_unprocessed"] += self._release_unprocessed_reconcile_items()', WORKER)
+        self.assertIn('stats["released_unprocessed"] += self._release_unprocessed_refresh_items()', WORKER)
+        self.assertIn("attempt_count = greatest(coalesce(queue_row.attempt_count, 1) - 1, 0)", WORKER)
+        self.assertIn("processed_at = null", WORKER)
+
+    def test_worker_serialises_database_uuid_values(self) -> None:
+        self.assertIn("from uuid import UUID", WORKER)
+        self.assertIn("if isinstance(value, UUID)", WORKER)
+        self.assertIn("str(value) for value in values or []", WORKER)
+
+    def test_worker_prefilters_live_spatial_matches(self) -> None:
+        self.assertIn("site.geometry OPERATOR(extensions.&&) st_expand(source_geometry.geometry_value, 100)", WORKER)
+        self.assertIn("parcel.geometry OPERATOR(extensions.&&) site.geometry", WORKER)
 
     def test_worker_locks_no_fuzzy_auto_match(self) -> None:
         for forbidden_snippet in ("SequenceMatcher", "difflib", "rapidfuzz", "fuzzywuzzy"):
@@ -87,7 +113,8 @@ class IncrementalReconcileContractTests(unittest.TestCase):
     def test_catchup_runner_scans_full_source_tables(self) -> None:
         self.assertNotIn("latest_successful_ingest_run", CATCHUP_WORKER)
         self.assertNotIn("where planning.ingest_run_id = cast(:run_id as uuid)", CATCHUP_WORKER)
-        self.assertIn("current_source_signature is distinct from prepared.source_signature", CATCHUP_WORKER)
+        self.assertIn("current_source_signature is distinct from source_signature", CATCHUP_WORKER)
+        self.assertIn("with source_candidates as", CATCHUP_WORKER)
         self.assertIn("not exists (", CATCHUP_WORKER)
         self.assertIn("_authority_scope_for_family", CATCHUP_WORKER)
 
@@ -162,6 +189,33 @@ class IncrementalReconcileContractTests(unittest.TestCase):
         ):
             self.assertIn(env_name, WORKFLOW)
 
+    def test_workflow_skips_heavy_system_packages_for_lightweight_proof_commands(self) -> None:
+        resolve_branch = WORKFLOW.split("selected_command=\"${{ inputs.command }}\"", 1)[1]
+        install_branch = WORKFLOW.split("- name: Install system packages", 1)[1]
+        install_branch = install_branch.split("- name: Install Python dependencies", 1)[0]
+
+        for command_name in (
+            "audit-source-footprint",
+            "process-reconcile-queue",
+            "refresh-affected-sites",
+            "weekly-reconcile-maintenance",
+            "ingest-planning-appeals",
+            "ingest-power-infrastructure",
+            "ingest-amenities",
+            "ingest-demographics",
+            "ingest-market-context",
+            "ingest-planning-documents",
+            "ingest-intelligence-events",
+            "audit-full-source-estate",
+        ):
+            self.assertIn(command_name, resolve_branch)
+
+        self.assertIn("system_package_profile=\"minimal\"", resolve_branch)
+        self.assertIn("system_package_profile=\"geospatial\"", resolve_branch)
+        self.assertIn("SYSTEM_PACKAGE_PROFILE=${system_package_profile}", resolve_branch)
+        self.assertIn("if: env.SYSTEM_PACKAGE_PROFILE == 'geospatial'", install_branch)
+        self.assertIn("gdal-bin", install_branch)
+
     def test_workflow_pauses_burn_in_schedules(self) -> None:
         self.assertIn("Automated schedules are intentionally paused during incremental reconcile burn-in.", WORKFLOW)
         self.assertNotIn("schedule:", WORKFLOW)
@@ -180,6 +234,13 @@ class IncrementalReconcileContractTests(unittest.TestCase):
             'python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py',
         ):
             self.assertIn(snippet, WORKFLOW)
+
+    def test_process_reconcile_command_does_not_force_refresh(self) -> None:
+        process_branch = WORKFLOW.split('elif [ "$SELECTED_COMMAND" = "process-reconcile-queue" ]; then', 1)[1]
+        process_branch = process_branch.split('elif [ "$SELECTED_COMMAND" = "reconcile-catchup-scan" ]; then', 1)[0]
+
+        self.assertIn("process-reconcile-queue --limit", process_branch)
+        self.assertNotIn("refresh-affected-sites", process_branch)
 
     def test_planning_history_command_does_not_run_full_wfs_ingest(self) -> None:
         planning_branch = WORKFLOW.split('elif [ "$SELECTED_COMMAND" = "ingest-planning-history" ]; then', 1)[1]

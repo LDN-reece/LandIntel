@@ -9,6 +9,9 @@ WORKFLOW = (APP_DIR.parent / ".github" / "workflows" / "run-landintel-sources.ym
 OPEN_DATA_COMPLETION_WORKFLOW = (
     APP_DIR.parent / ".github" / "workflows" / "run-landintel-open-data-completion.yml"
 ).read_text(encoding="utf-8")
+SIMPLE_SOURCING_WORKFLOW = (
+    APP_DIR.parent / ".github" / "workflows" / "ldn-simple-sourcing-control.yml"
+).read_text(encoding="utf-8")
 RUNNER = (APP_DIR / "src" / "source_expansion_runner.py").read_text(encoding="utf-8")
 PAGED_RUNNER = (APP_DIR / "src" / "source_expansion_runner_wfs_paging.py").read_text(encoding="utf-8")
 LOADER = (APP_DIR / "src" / "loaders" / "supabase_loader.py").read_text(encoding="utf-8")
@@ -333,6 +336,8 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn('"ingest-bulk-download-universe"', RUNNER)
         self.assertIn('elif [ "$SELECTED_COMMAND" = "ingest-bulk-download-universe" ]; then', WORKFLOW)
         self.assertIn("python -m src.source_expansion_runner_wfs_paging ingest-bulk-download-universe", WORKFLOW)
+        self.assertIn("run_bounded_step \"Open-data location spine\"", SIMPLE_SOURCING_WORKFLOW)
+        self.assertIn("reached time budget; landed data is retained", SIMPLE_SOURCING_WORKFLOW)
         self.assertIn("python -m src.phase2_source_runner ingest-amenities", WORKFLOW)
         self.assertIn("python -m src.phase2_source_runner ingest-demographics", WORKFLOW)
         self.assertIn("python -m src.phase2_source_runner ingest-market-context", WORKFLOW)

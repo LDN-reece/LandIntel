@@ -18,11 +18,15 @@ on:
       open_data_max_download_bytes:
         description: Maximum bytes per downloaded source asset
         required: false
-        default: "750000000"
+        default: "2500000000"
       open_data_max_features_per_source:
         description: Maximum raw rows/features advanced per source per cycle
         required: false
         default: "25000"
+      open_data_max_csv_scan_rows:
+        description: Maximum CSV rows scanned per source per cycle before pausing the cursor
+        required: false
+        default: "500000"
       open_data_site_context_batch_size:
         description: Site context refresh batch size after each source batch
         required: false
@@ -68,11 +72,12 @@ jobs:
       SOURCE_EXPANSION_COMMAND_TIMEOUT: ${{ inputs.open_data_step_timeout_minutes || '45' }}m
       SOURCE_EXPANSION_PAGE_SIZE: "2000"
       SOURCE_EXPANSION_MAX_FEATURES: "0"
-      OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: ${{ inputs.open_data_max_download_bytes || '750000000' }}
+      OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: ${{ inputs.open_data_max_download_bytes || '2500000000' }}
       OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: ${{ inputs.open_data_max_features_per_source || '25000' }}
+      OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS: ${{ inputs.open_data_max_csv_scan_rows || '500000' }}
       OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: ${{ inputs.open_data_site_context_batch_size || '500' }}
       OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE: "50"
-      OPEN_LOCATION_SPINE_FORCE_LARGE_DOWNLOADS: ${{ inputs.open_data_force_large_downloads || true }}
+      OPEN_LOCATION_SPINE_FORCE_LARGE_DOWNLOADS: ${{ inputs.open_data_force_large_downloads }}
       OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE: "25"
       OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: "50"
       OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT: "5000"
@@ -163,6 +168,7 @@ jobs:
           echo "- cycles: ${OPEN_DATA_CYCLES}" >> "$GITHUB_STEP_SUMMARY"
           echo "- max download bytes: ${OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES}" >> "$GITHUB_STEP_SUMMARY"
           echo "- max features/source/cycle: ${OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- max CSV scan rows/source/cycle: ${OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS}" >> "$GITHUB_STEP_SUMMARY"
 
           run_step "Migrations" python -m src.source_phase_runner run-migrations
           run_step "Register source estate" python -m src.source_estate_registry register-source-estate

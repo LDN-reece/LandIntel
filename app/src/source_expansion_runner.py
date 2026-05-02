@@ -3479,6 +3479,22 @@ class SourceExpansionRunner:
                 )
                 rows.extend(csv_rows)
                 progress_updates.append(csv_progress)
+            elif path.suffix.lower() == ".json" and not self._open_location_json_is_geojson(path):
+                source_path = self._open_location_source_path_key(path)
+                progress_updates.append(
+                    self._open_location_progress_payload(
+                        source,
+                        selected_download,
+                        download_signature,
+                        source_path,
+                        path.stem,
+                        0,
+                        0,
+                        0,
+                        "skipped",
+                        error="non_geospatial_json_metadata_skipped",
+                    )
+                )
             elif path.suffix.lower() in {".gpkg", ".shp", ".gml", ".geojson", ".json"}:
                 vector_rows, vector_progress = self._open_location_rows_from_vector(
                     source,
@@ -3490,6 +3506,14 @@ class SourceExpansionRunner:
                 rows.extend(vector_rows)
                 progress_updates.extend(vector_progress)
         return rows[:max_features], progress_updates
+
+    def _open_location_json_is_geojson(self, path: Path) -> bool:
+        try:
+            with path.open("r", encoding="utf-8", errors="ignore") as handle:
+                sample = handle.read(4096)
+        except Exception:
+            return False
+        return '"FeatureCollection"' in sample or '"Feature"' in sample or '"geometry"' in sample
 
     def _open_location_rows_from_vector(
         self,
@@ -3653,6 +3677,10 @@ class SourceExpansionRunner:
             )
         row_offset = int(progress.get("next_row_offset") or 0)
         attempted_rows = 0
+        scan_limit = max(
+            self._env_int("OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS", max_features * 20),
+            max_features,
+        )
         try:
             skiprows = range(1, row_offset + 1) if row_offset > 0 else None
             for chunk in pd.read_csv(path, chunksize=2000, low_memory=False, skiprows=skiprows):
@@ -3661,7 +3689,7 @@ class SourceExpansionRunner:
                     source_row_index = row_offset + attempted_rows - 1
                     geometry = self._point_from_open_location_csv_row(row.to_dict())
                     if geometry is None or not self._geometry_intersects_scotland_bbox(geometry):
-                        if attempted_rows >= max_features:
+                        if attempted_rows >= scan_limit:
                             break
                         continue
                     rows.append(
@@ -3674,9 +3702,9 @@ class SourceExpansionRunner:
                             source_row_index,
                         )
                     )
-                    if len(rows) >= max_features or attempted_rows >= max_features:
+                    if len(rows) >= max_features or attempted_rows >= scan_limit:
                         break
-                if len(rows) >= max_features or attempted_rows >= max_features:
+                if len(rows) >= max_features or attempted_rows >= scan_limit:
                     break
         except Exception as exc:
             self.logger.warning("open_location_spine_csv_skipped", extra={"path": str(path), "error": str(exc)})
@@ -3693,7 +3721,7 @@ class SourceExpansionRunner:
                 error=str(exc),
             )
         next_offset = row_offset + attempted_rows
-        status = "exhausted" if attempted_rows < max_features else "in_progress"
+        status = "exhausted" if attempted_rows < scan_limit else "in_progress"
         return rows, self._open_location_progress_payload(
             source,
             selected_download,
@@ -3871,8 +3899,38 @@ class SourceExpansionRunner:
 
     def _point_from_open_location_csv_row(self, row: dict[str, Any]) -> Point | None:
         lowered = {str(key).lower(): key for key in row.keys()}
-        east_key = next((lowered[key] for key in ("geometry_x", "x", "easting", "eastings") if key in lowered), None)
-        north_key = next((lowered[key] for key in ("geometry_y", "y", "northing", "northings") if key in lowered), None)
+        east_key = next(
+            (
+                lowered[key]
+                for key in (
+                    "geometry_x",
+                    "x",
+                    "x_coordinate",
+                    "xcoordinate",
+                    "easting",
+                    "eastings",
+                    "osgb36_easting",
+                )
+                if key in lowered
+            ),
+            None,
+        )
+        north_key = next(
+            (
+                lowered[key]
+                for key in (
+                    "geometry_y",
+                    "y",
+                    "y_coordinate",
+                    "ycoordinate",
+                    "northing",
+                    "northings",
+                    "osgb36_northing",
+                )
+                if key in lowered
+            ),
+            None,
+        )
         lon_key = next((lowered[key] for key in ("longitude", "lon", "long") if key in lowered), None)
         lat_key = next((lowered[key] for key in ("latitude", "lat") if key in lowered), None)
         if east_key and north_key:
@@ -5757,10 +5815,31 @@ class SourceExpansionRunner:
                 "API_Key": os.getenv("OPENTOPOGRAPHY_API_KEY", ""),
             }
         try:
+            if source["source_family"] == "statistics_gov_scot":
+                response = self.client.get(endpoint, params=params, headers=headers)
+                if response.status_code >= 400:
+                    response = self.client.post(
+                        "https://statistics.gov.scot/sparql",
+                        data={"query": "select * where { ?s ?p ?o } limit 1", "format": "json"},
+                        headers=headers,
+                    )
+                status = "reachable" if response.status_code < 400 else "failed"
+                return status, f"HTTP {response.status_code} from {source['source_name']}"
             response = self.client.get(endpoint, params=params, headers=headers)
             status = "reachable" if response.status_code < 400 else "failed"
             return status, f"HTTP {response.status_code} from {source['source_name']}"
         except Exception as exc:
+            if source["source_family"] == "statistics_gov_scot":
+                try:
+                    response = self.client.post(
+                        "https://statistics.gov.scot/sparql",
+                        data={"query": "select * where { ?s ?p ?o } limit 1", "format": "json"},
+                        headers=headers,
+                    )
+                    status = "reachable" if response.status_code < 400 else "failed"
+                    return status, f"HTTP {response.status_code} from {source['source_name']} via POST fallback"
+                except Exception as fallback_exc:
+                    return "failed", f"{exc}; POST fallback failed: {fallback_exc}"
             return "failed", str(exc)
 
     def _probe_os_download_product(self, source: dict[str, Any]) -> tuple[str, str]:

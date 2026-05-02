@@ -89,9 +89,11 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("workflow_dispatch:", OPEN_DATA_COMPLETION_WORKFLOW)
         self.assertIn("open_data_cycles", OPEN_DATA_COMPLETION_WORKFLOW)
         self.assertIn("open_data_max_features_per_source", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("open_data_max_csv_scan_rows", OPEN_DATA_COMPLETION_WORKFLOW)
         self.assertIn("complete-open-data-universe", OPEN_DATA_COMPLETION_WORKFLOW)
         self.assertIn("audit-open-location-spine-completion", OPEN_DATA_COMPLETION_WORKFLOW)
         self.assertIn("OPEN_LOCATION_SPINE_FORCE_LARGE_DOWNLOADS", OPEN_DATA_COMPLETION_WORKFLOW)
+        self.assertIn("OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS", OPEN_DATA_COMPLETION_WORKFLOW)
 
     def test_workflow_routes_expansion_commands_to_paged_expansion_runner(self) -> None:
         self.assertIn("src/source_expansion_runner.py", WORKFLOW)
@@ -296,6 +298,11 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("landintel.site_open_location_spine_context", RUNNER)
         self.assertIn("OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES", RUNNER)
         self.assertIn("OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES", WORKFLOW)
+        self.assertIn("OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS", RUNNER)
+        self.assertIn("OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS", WORKFLOW)
+        self.assertIn("non_geospatial_json_metadata_skipped", RUNNER)
+        self.assertIn("_open_location_json_is_geojson", RUNNER)
+        self.assertIn("x_coordinate", RUNNER)
         self.assertIn("download_size_or_format_budget_skipped", RUNNER)
         self.assertIn("SCOTLAND_BBOX_27700", RUNNER)
         self.assertIn('"bbox": SCOTLAND_BBOX_27700', RUNNER)
@@ -327,6 +334,7 @@ class SourceExpansionContractTests(unittest.TestCase):
         self.assertIn("open_location_spine_max_download_bytes", WORKFLOW)
         self.assertIn("inputs.open_location_spine_max_download_bytes", WORKFLOW)
         self.assertIn("OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE", WORKFLOW)
+        self.assertIn("open_location_spine_force_large_downloads", WORKFLOW)
 
     def test_control_policy_spine_prioritises_title_ldp_and_settlement(self) -> None:
         priority_migration = (APP_DIR / "sql" / "046_phase_one_control_policy_priority.sql").read_text(encoding="utf-8")

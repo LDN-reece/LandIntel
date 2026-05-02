@@ -185,10 +185,19 @@ on:
         description: Max feature rows landed per open location source per run
         required: false
         default: "2500"
+      open_location_spine_max_csv_scan_rows:
+        description: Max CSV rows scanned per open location source per run
+        required: false
+        default: "50000"
       open_location_spine_site_context_batch_size:
         description: Canonical site batch size for open location context refresh
         required: false
         default: "250"
+      open_location_spine_force_large_downloads:
+        description: Allow supported OS downloads above the default byte budget when explicitly capped
+        required: false
+        type: boolean
+        default: false
       open_location_spine_osm_site_batch_size:
         description: Canonical site batch size for OSM Overpass harvesting
         required: false
@@ -291,7 +300,9 @@ jobs:
       CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"
       OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: ${{ inputs.open_location_spine_max_download_bytes || '90000000' }}
       OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: ${{ inputs.open_location_spine_max_features_per_source || '2500' }}
+      OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS: ${{ inputs.open_location_spine_max_csv_scan_rows || '50000' }}
       OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: ${{ inputs.open_location_spine_site_context_batch_size || '250' }}
+      OPEN_LOCATION_SPINE_FORCE_LARGE_DOWNLOADS: ${{ inputs.open_location_spine_force_large_downloads || false }}
       OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE: ${{ inputs.open_location_spine_osm_site_batch_size || '10' }}
       OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: ${{ inputs.open_location_spine_osm_context_batch_size || '25' }}
       OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT: ${{ inputs.open_location_spine_osm_element_limit || '2000' }}

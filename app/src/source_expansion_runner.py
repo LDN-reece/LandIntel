@@ -4168,10 +4168,53 @@ class SourceExpansionRunner:
         source_keys: list[str],
         site_batch_size: int,
     ) -> dict[str, Any]:
+        refresh_mode = str(os.getenv("OPEN_LOCATION_SPINE_CONTEXT_REFRESH_MODE", "full")).strip().lower()
+        if refresh_mode in {"skip", "defer", "deferred", "off"}:
+            self.logger.info(
+                "open_location_spine_context_refresh_deferred",
+                extra={
+                    "source_keys": source_keys,
+                    "site_batch_size": site_batch_size,
+                    "refresh_mode": refresh_mode,
+                },
+            )
+            return {
+                "linked_rows": 0,
+                "measured_rows": 0,
+                "evidence_rows": 0,
+                "signal_rows": 0,
+                "context_status": "deferred_by_refresh_mode",
+            }
+
+        if refresh_mode in {"light", "nearest", "nearest_only"}:
+            try:
+                result = self._refresh_open_location_spine_context_light(source_keys, site_batch_size)
+                return {**result, "context_status": "refreshed_with_light_mode"}
+            except Exception as exc:  # noqa: BLE001 - bulk landing must survive bounded context failures.
+                error_text = str(exc)
+                self.logger.warning(
+                    "open_location_spine_context_refresh_deferred",
+                    extra={
+                        "source_keys": source_keys,
+                        "site_batch_size": site_batch_size,
+                        "refresh_mode": refresh_mode,
+                        "error": error_text,
+                    },
+                )
+                return {
+                    "linked_rows": 0,
+                    "measured_rows": 0,
+                    "evidence_rows": 0,
+                    "signal_rows": 0,
+                    "context_status": "deferred_after_light_mode_failure",
+                    "context_error": error_text[:500],
+                }
+
         try:
             result = self._refresh_open_location_spine_context(source_keys, site_batch_size)
             return {**result, "context_status": "refreshed"}
         except Exception as exc:  # noqa: BLE001 - source landing must survive heavy context refreshes.
+            primary_error = str(exc)
             fallback_batch_size = min(
                 site_batch_size,
                 max(self._env_int("OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE", 25), 1),
@@ -4186,6 +4229,8 @@ class SourceExpansionRunner:
                         "fallback_site_batch_size": fallback_batch_size,
                     }
                 except Exception as fallback_exc:  # noqa: BLE001
+                    fallback_error = str(fallback_exc)
+                    light_error = fallback_error
                     try:
                         result = self._refresh_open_location_spine_context_light(source_keys, fallback_batch_size)
                         return {
@@ -4196,16 +4241,16 @@ class SourceExpansionRunner:
                             "fallback_site_batch_size": fallback_batch_size,
                         }
                     except Exception as light_exc:  # noqa: BLE001
-                        pass
+                        light_error = str(light_exc)
                     self.logger.warning(
                         "open_location_spine_context_refresh_deferred",
                         extra={
                             "source_keys": source_keys,
                             "site_batch_size": site_batch_size,
                             "fallback_site_batch_size": fallback_batch_size,
-                            "error": str(light_exc),
-                            "primary_error": str(exc),
-                            "fallback_error": str(fallback_exc),
+                            "error": light_error,
+                            "primary_error": primary_error,
+                            "fallback_error": fallback_error,
                         },
                     )
                     return {
@@ -4214,14 +4259,14 @@ class SourceExpansionRunner:
                         "evidence_rows": 0,
                         "signal_rows": 0,
                         "context_status": "deferred_after_fallback_failure",
-                        "context_error": str(light_exc)[:500],
-                        "primary_context_error": str(exc)[:500],
-                        "fallback_context_error": str(fallback_exc)[:500],
+                        "context_error": light_error[:500],
+                        "primary_context_error": primary_error[:500],
+                        "fallback_context_error": fallback_error[:500],
                         "fallback_site_batch_size": fallback_batch_size,
                     }
             self.logger.warning(
                 "open_location_spine_context_refresh_deferred",
-                extra={"source_keys": source_keys, "site_batch_size": site_batch_size, "error": str(exc)},
+                extra={"source_keys": source_keys, "site_batch_size": site_batch_size, "error": primary_error},
             )
             return {
                 "linked_rows": 0,
@@ -4229,7 +4274,7 @@ class SourceExpansionRunner:
                 "evidence_rows": 0,
                 "signal_rows": 0,
                 "context_status": "deferred_after_primary_failure",
-                "context_error": str(exc)[:500],
+                "context_error": primary_error[:500],
             }
 
     def _refresh_open_location_spine_context(

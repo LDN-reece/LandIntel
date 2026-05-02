@@ -5125,7 +5125,17 @@ class Phase2SourceRunner:
                   and (
                         prove_it.title_spend_recommendation = 'order_title_urgently'
                      or (prove_it.verdict = 'pursue' and prove_it.title_spend_recommendation = 'order_title')
+                     or (
+                        prove_it.verdict = 'review'
+                        and prove_it.review_ready_flag = true
+                        and prove_it.title_spend_recommendation = 'manual_review_before_order'
+                     )
                      or ldn_screen.candidate_status = 'true_ldn_candidate'
+                     or ldn_screen.candidate_status in (
+                        'review_forgotten_soul',
+                        'review_private_candidate',
+                        'constraint_review_required'
+                     )
                      or title_workflow.next_action ilike '%urgent%'
                      or title_workflow.title_order_status ilike '%urgent%'
                   )
@@ -5305,11 +5315,34 @@ class Phase2SourceRunner:
               and (
                     prove_it.title_spend_recommendation = 'order_title_urgently'
                  or (prove_it.verdict = 'pursue' and prove_it.title_spend_recommendation = 'order_title')
+                 or (
+                    prove_it.verdict = 'review'
+                    and prove_it.review_ready_flag = true
+                    and prove_it.title_spend_recommendation = 'manual_review_before_order'
+                 )
                  or ldn_screen.candidate_status = 'true_ldn_candidate'
+                 or ldn_screen.candidate_status in (
+                    'review_forgotten_soul',
+                    'review_private_candidate',
+                    'constraint_review_required'
+                 )
                  or title_workflow.next_action ilike '%urgent%'
                  or title_workflow.title_order_status ilike '%urgent%'
               )
-            order by prove_it.updated_at desc nulls last, ldn_screen.updated_at desc nulls last, site.id
+            order by
+                case
+                    when prove_it.title_spend_recommendation = 'order_title_urgently' then 1
+                    when ldn_screen.candidate_status = 'true_ldn_candidate' then 2
+                    when ldn_screen.candidate_status = 'review_forgotten_soul' then 3
+                    when ldn_screen.candidate_status = 'constraint_review_required' then 4
+                    when ldn_screen.candidate_status = 'review_private_candidate' then 5
+                    when prove_it.verdict = 'review' and prove_it.review_ready_flag = true then 6
+                    else 7
+                end,
+                coalesce(site.area_acres, 0) desc,
+                prove_it.updated_at desc nulls last,
+                ldn_screen.updated_at desc nulls last,
+                site.id
             limit :batch_size
             """,
             {

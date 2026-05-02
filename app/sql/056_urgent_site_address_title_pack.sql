@@ -60,6 +60,12 @@ begin
             when ldn_screen.candidate_status = 'true_ldn_candidate' then 'true_ldn_candidate'
             when title_workflow.next_action ilike '%%urgent%%'
               or title_workflow.title_order_status ilike '%%urgent%%' then 'title_order_urgent'
+            when ldn_screen.candidate_status in ('review_forgotten_soul', 'review_private_candidate', 'constraint_review_required')
+              or (
+                    prove_it.verdict = 'review'
+                and prove_it.review_ready_flag = true
+                and prove_it.title_spend_recommendation = 'manual_review_before_order'
+              ) then 'urgent_review'
             else 'urgent_review'
         end,
         case
@@ -67,13 +73,17 @@ begin
             when ldn_screen.candidate_status = 'true_ldn_candidate' then 'ldn_candidate_screen'
             when title_workflow.next_action ilike '%%urgent%%'
               or title_workflow.title_order_status ilike '%%urgent%%' then 'title_order_workflow'
+            when ldn_screen.candidate_status in ('review_forgotten_soul', 'review_private_candidate', 'constraint_review_required') then 'ldn_candidate_review_queue'
+            when prove_it.verdict = 'review'
+              and prove_it.review_ready_flag = true
+              and prove_it.title_spend_recommendation = 'manual_review_before_order' then 'prove_it_review_queue'
             else 'site_review'
         end,
         coalesce(
             prove_it.review_next_action,
             ldn_screen.next_action,
             title_workflow.next_action,
-            'Urgent site requires address and title-number candidate pack before spend.'
+            'Review site requires address and title-number candidate pack before spend.'
         ),
         coalesce(prove_it.title_spend_recommendation, ldn_screen.title_spend_position, title_workflow.next_action),
         existing.source_record_signature
@@ -93,11 +103,35 @@ begin
       and (
             prove_it.title_spend_recommendation = 'order_title_urgently'
          or (prove_it.verdict = 'pursue' and prove_it.title_spend_recommendation = 'order_title')
+         or (
+                prove_it.verdict = 'review'
+            and prove_it.review_ready_flag = true
+            and prove_it.title_spend_recommendation = 'manual_review_before_order'
+         )
          or ldn_screen.candidate_status = 'true_ldn_candidate'
+         or ldn_screen.candidate_status in (
+                'review_forgotten_soul',
+                'review_private_candidate',
+                'constraint_review_required'
+         )
          or title_workflow.next_action ilike '%%urgent%%'
          or title_workflow.title_order_status ilike '%%urgent%%'
       )
-    order by existing.updated_at nulls first, prove_it.updated_at desc nulls last, ldn_screen.updated_at desc nulls last, site.id
+    order by
+        existing.updated_at nulls first,
+        case
+            when prove_it.title_spend_recommendation = 'order_title_urgently' then 1
+            when ldn_screen.candidate_status = 'true_ldn_candidate' then 2
+            when ldn_screen.candidate_status = 'review_forgotten_soul' then 3
+            when ldn_screen.candidate_status = 'constraint_review_required' then 4
+            when ldn_screen.candidate_status = 'review_private_candidate' then 5
+            when prove_it.verdict = 'review' and prove_it.review_ready_flag = true then 6
+            else 7
+        end,
+        coalesce(site.area_acres, 0) desc,
+        prove_it.updated_at desc nulls last,
+        ldn_screen.updated_at desc nulls last,
+        site.id
     limit v_batch_size;
 
     insert into landintel.site_urgent_address_candidates (

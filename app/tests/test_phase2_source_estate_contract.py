@@ -348,6 +348,13 @@ class Phase2SourceEstateContractTests(unittest.TestCase):
         self.assertIn("parse_qsl", RUNNER)
         self.assertIn("OS_PLACES_API", RUNNER)
         self.assertIn("OS_PROJECT_API", RUNNER)
+        self.assertIn("review_forgotten_soul", RUNNER)
+        self.assertIn("review_private_candidate", RUNNER)
+        self.assertIn("constraint_review_required", RUNNER)
+        self.assertIn("min(self.batch_size, 25)", RUNNER)
+        self.assertIn("prove_it.review_ready_flag = true", MIGRATION)
+        self.assertIn("ldn_candidate_review_queue", MIGRATION)
+        self.assertIn("coalesce(site.area_acres, 0) desc", MIGRATION)
         self.assertIn("refresh-urgent-address-title-pack", WORKFLOW)
         self.assertIn("audit-urgent-address-title-pack", WORKFLOW)
 

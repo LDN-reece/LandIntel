@@ -206,14 +206,25 @@ declare
         array['landintel_store.site_open_location_spine_context', 'landintel.site_open_location_spine_context']
     ];
     view_pair text[];
+    target_relation text;
+    source_relation text;
 begin
     foreach view_pair slice 1 in array compatibility_views loop
         if to_regclass(view_pair[2]) is not null then
-            execute format(
-                'create or replace view %s with (security_invoker = true) as select * from %s',
-                view_pair[1],
-                view_pair[2]
-            );
+            target_relation :=
+                quote_ident(split_part(view_pair[1], '.', 1))
+                || '.'
+                || quote_ident(split_part(view_pair[1], '.', 2));
+            source_relation :=
+                quote_ident(split_part(view_pair[2], '.', 1))
+                || '.'
+                || quote_ident(split_part(view_pair[2], '.', 2));
+
+            execute
+                'create or replace view '
+                || target_relation
+                || ' with (security_invoker = true) as select * from '
+                || source_relation;
         else
             raise notice 'Skipping compatibility view because source relation is not present in this database.';
         end if;

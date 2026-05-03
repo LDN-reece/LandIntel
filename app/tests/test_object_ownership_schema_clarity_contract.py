@@ -38,8 +38,10 @@ class ObjectOwnershipSchemaClarityContractTests(unittest.TestCase):
         self.assertIn("(schema_name, object_name, object_type)", MIGRATION_LOWER)
 
     def test_migration_uses_create_or_replace_view_for_compatibility_views(self) -> None:
-        self.assertIn("create or replace view %s with (security_invoker = true)", MIGRATION_LOWER)
         self.assertIn("to_regclass(view_pair[2]) is not null", MIGRATION_LOWER)
+        self.assertIn("'create or replace view '", MIGRATION_LOWER)
+        self.assertIn("quote_ident(split_part(view_pair[1], '.', 1))", MIGRATION_LOWER)
+        self.assertIn("quote_ident(split_part(view_pair[2], '.', 1))", MIGRATION_LOWER)
         for view_name in (
             "planning_application_records",
             "planning_decision_facts",

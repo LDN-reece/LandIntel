@@ -60,6 +60,12 @@ class PostAuditOperationalisationGuardTests(unittest.TestCase):
         self.assertIn("governance map", RUNBOOK_LOWER)
         self.assertNotIn("object_ownership_registry is the source of truth", RUNBOOK_LOWER)
 
+    def test_compatibility_view_sql_avoids_psycopg_percent_placeholders(self) -> None:
+        self.assertNotIn("create or replace view %s", MIGRATION_LOWER)
+        self.assertNotIn("format(", MIGRATION_LOWER)
+        self.assertIn("quote_ident(split_part(view_pair[1], '.', 1))", MIGRATION_LOWER)
+        self.assertIn("quote_ident(split_part(view_pair[2], '.', 1))", MIGRATION_LOWER)
+
     def test_bgs_status_is_locked_as_known_origin_not_orphaned(self) -> None:
         self.assertIn("'landintel', 'bgs_borehole_master'", MIGRATION_LOWER)
         self.assertIn("'known_origin_manual_bulk_upload'", MIGRATION_LOWER)

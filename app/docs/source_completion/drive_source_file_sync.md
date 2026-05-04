@@ -83,6 +83,23 @@ High-value ready file groups now tracked:
 - LDP Glasgow PDF and spatial ZIP;
 - HLA spatial ZIP and selected HLA PDFs/workbooks.
 
+## Immediate Priority Set
+
+The following files are marked `operator_priority = immediate` and `immediate_add_flag = true`.
+
+| Rank | File | Source family | Next action |
+|---:|---|---|---|
+| 1 | `Green_Belt_-_Scotland.zip` | `greenbelt` | source storage, then bounded constraint measurement |
+| 2 | `Contaminated_Land_-_Scotland.zip` | `contaminated_land` | source storage, then bounded constraint measurement |
+| 3 | `Culverts_-_Scotland.zip` | `culverts` | source storage, then bounded constraint measurement |
+| 4 | `Tree_Preservation_Orders_-_Scotland.zip` | `tpo` | source storage, then bounded constraint measurement |
+| 5 | `Conservation_Areas_-_Scotland.zip` | `conservation_areas` | source storage, then bounded constraint measurement |
+| 6 | `Council_Asset_Register_-_Scotland.zip` | `council_assets` | source storage, then public ownership exclusion layer |
+| 7 | `Local_Landscape_Areas_-_Scotland.zip` | `landscape` | source storage, then bounded constraint measurement |
+| 8 | `School_Catchments_-_Scotland.zip` | `school_catchments` | source storage, then location context |
+
+This priority set is deliberately file-control only. It makes the next source-completion order explicit without committing ZIPs into Git or loading them into truth tables.
+
 ## Deliberate Caveats
 
 ### BGS Remains Paused

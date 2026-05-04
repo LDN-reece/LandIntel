@@ -16,8 +16,12 @@ create table if not exists landintel_store.drive_source_file_registry (
     drive_url text,
     source_family text,
     asset_role text,
+    operator_priority text not null default 'standard',
+    priority_rank integer,
+    immediate_add_flag boolean not null default false,
     ready_to_upload_flag boolean not null default false,
     ready_to_upload_reason text,
+    source_completion_next_action text,
     upload_status text not null default 'metadata_only',
     download_status text not null default 'not_requested',
     storage_bucket text,
@@ -34,6 +38,8 @@ create table if not exists landintel_store.drive_source_file_registry (
     updated_at timestamptz not null default now(),
     constraint drive_source_file_registry_file_or_folder_check
         check (file_or_folder in ('file', 'folder')),
+    constraint drive_source_file_registry_operator_priority_check
+        check (operator_priority in ('immediate', 'standard', 'review', 'paused')),
     constraint drive_source_file_registry_upload_status_check
         check (
             upload_status in (
@@ -62,6 +68,18 @@ create table if not exists landintel_store.drive_source_file_registry (
 comment on table landintel_store.drive_source_file_registry is
     'Metadata registry for Google Drive-held Scotland source files. This is a source-control surface only; it does not ingest or interpret the datasets.';
 
+alter table landintel_store.drive_source_file_registry
+    add column if not exists operator_priority text not null default 'standard';
+
+alter table landintel_store.drive_source_file_registry
+    add column if not exists priority_rank integer;
+
+alter table landintel_store.drive_source_file_registry
+    add column if not exists immediate_add_flag boolean not null default false;
+
+alter table landintel_store.drive_source_file_registry
+    add column if not exists source_completion_next_action text;
+
 create unique index if not exists drive_source_file_registry_root_file_uidx
     on landintel_store.drive_source_file_registry (root_folder_id, file_id);
 
@@ -88,7 +106,11 @@ select
     registry.drive_url,
     registry.source_family,
     registry.asset_role,
+    registry.operator_priority,
+    registry.priority_rank,
+    registry.immediate_add_flag,
     registry.ready_to_upload_reason,
+    registry.source_completion_next_action,
     registry.upload_status,
     registry.download_status,
     registry.storage_bucket,
@@ -111,6 +133,7 @@ select
     count(*) filter (where registry.file_or_folder = 'folder')::bigint as folder_rows,
     count(*) filter (where registry.file_or_folder = 'file')::bigint as file_rows,
     count(*) filter (where registry.ready_to_upload_flag is true)::bigint as ready_to_upload_rows,
+    count(*) filter (where registry.immediate_add_flag is true)::bigint as immediate_add_rows,
     count(*) filter (where registry.asset_role = 'documentation')::bigint as documentation_rows,
     count(*) filter (where registry.asset_role = 'loose_shapefile_component')::bigint as loose_shapefile_component_rows,
     count(*) filter (where registry.asset_role = 'known_origin_manual_bulk_upload')::bigint as known_origin_manual_bulk_upload_rows,

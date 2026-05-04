@@ -43,8 +43,12 @@ class DriveSourceFile:
     drive_url: str
     source_family: str | None
     asset_role: str | None
+    operator_priority: str
+    priority_rank: int | None
+    immediate_add_flag: bool
     ready_to_upload_flag: bool
     ready_to_upload_reason: str | None
+    source_completion_next_action: str | None
     upload_status: str
     download_status: str
     size_bytes: int | None
@@ -68,8 +72,12 @@ class DriveSourceFile:
             "drive_url": self.drive_url,
             "source_family": self.source_family,
             "asset_role": self.asset_role,
+            "operator_priority": self.operator_priority,
+            "priority_rank": self.priority_rank,
+            "immediate_add_flag": self.immediate_add_flag,
             "ready_to_upload_flag": self.ready_to_upload_flag,
             "ready_to_upload_reason": self.ready_to_upload_reason,
+            "source_completion_next_action": self.source_completion_next_action,
             "upload_status": self.upload_status,
             "download_status": self.download_status,
             "size_bytes": self.size_bytes,
@@ -111,6 +119,7 @@ class DriveSourceSyncRunner:
             "folder_count": sum(1 for row in files if row.file_or_folder == "folder"),
             "file_count": sum(1 for row in files if row.file_or_folder == "file"),
             "ready_to_upload_count": sum(1 for row in files if row.ready_to_upload_flag),
+            "immediate_add_count": sum(1 for row in files if row.immediate_add_flag),
             "source_family_counts": dict(sorted(source_family_counts.items())),
             "asset_role_counts": dict(sorted(asset_role_counts.items())),
             "ready_to_upload_by_family": dict(sorted(ready_by_family.items())),
@@ -198,8 +207,12 @@ class DriveSourceSyncRunner:
                     drive_url=self._folder_url(str(folder_id or root_id)),
                     source_family=source_family,
                     asset_role="drive_folder",
+                    operator_priority="standard",
+                    priority_rank=None,
+                    immediate_add_flag=False,
                     ready_to_upload_flag=False,
                     ready_to_upload_reason="Folder row for inventory/navigation only.",
+                    source_completion_next_action=None,
                     upload_status="metadata_only",
                     download_status="not_requested",
                     size_bytes=None,
@@ -239,8 +252,12 @@ class DriveSourceSyncRunner:
             drive_url=self._file_url(str(file_payload["file_id"])),
             source_family=file_payload.get("source_family") or folder.get("source_family"),
             asset_role=asset_role,
+            operator_priority=str(file_payload.get("operator_priority") or "standard"),
+            priority_rank=self._as_int(file_payload.get("priority_rank")),
+            immediate_add_flag=bool(file_payload.get("immediate_add")),
             ready_to_upload_flag=ready_to_upload,
             ready_to_upload_reason=file_payload.get("ready_to_upload_reason"),
+            source_completion_next_action=file_payload.get("source_completion_next_action"),
             upload_status=upload_status,
             download_status="not_requested",
             size_bytes=self._as_int(file_payload.get("size_bytes")),
@@ -306,8 +323,12 @@ class DriveSourceSyncRunner:
                 drive_url,
                 source_family,
                 asset_role,
+                operator_priority,
+                priority_rank,
+                immediate_add_flag,
                 ready_to_upload_flag,
                 ready_to_upload_reason,
+                source_completion_next_action,
                 upload_status,
                 download_status,
                 size_bytes,
@@ -334,8 +355,12 @@ class DriveSourceSyncRunner:
                 :drive_url,
                 :source_family,
                 :asset_role,
+                :operator_priority,
+                :priority_rank,
+                :immediate_add_flag,
                 :ready_to_upload_flag,
                 :ready_to_upload_reason,
+                :source_completion_next_action,
                 :upload_status,
                 :download_status,
                 :size_bytes,
@@ -360,8 +385,12 @@ class DriveSourceSyncRunner:
                 drive_url = excluded.drive_url,
                 source_family = excluded.source_family,
                 asset_role = excluded.asset_role,
+                operator_priority = excluded.operator_priority,
+                priority_rank = excluded.priority_rank,
+                immediate_add_flag = excluded.immediate_add_flag,
                 ready_to_upload_flag = excluded.ready_to_upload_flag,
                 ready_to_upload_reason = excluded.ready_to_upload_reason,
+                source_completion_next_action = excluded.source_completion_next_action,
                 upload_status = excluded.upload_status,
                 download_status = excluded.download_status,
                 size_bytes = excluded.size_bytes,

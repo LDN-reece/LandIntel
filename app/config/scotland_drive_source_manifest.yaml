@@ -140,8 +140,12 @@ folders:
         file_id: "1QEdJM7SLniXrF4GdKvQyhATfYUblLkSj"
         mime_type: "application/zip"
         asset_role: "spatial_snapshot"
+        operator_priority: "immediate"
+        priority_rank: 5
+        immediate_add: true
         ready_to_upload: true
         ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+        source_completion_next_action: "source_storage_then_bounded_constraint_measurement"
 
   - folder_path: "Local Landscape Areas"
     folder_id: "1xZOwtoJvliUegfD5LznXiRzdAP1qd6rg"
@@ -151,8 +155,12 @@ folders:
         file_id: "1T3oUsowTfwASCAfLxrHGzN7xUNtKS8zv"
         mime_type: "application/zip"
         asset_role: "spatial_snapshot"
+        operator_priority: "immediate"
+        priority_rank: 7
+        immediate_add: true
         ready_to_upload: true
         ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+        source_completion_next_action: "source_storage_then_bounded_constraint_measurement"
 
   - folder_path: "School Catchment Areas"
     folder_id: "1bQpRk1YYU9DGZCuHYg4eWrE2faHbBNXp"
@@ -162,8 +170,12 @@ folders:
         file_id: "1-ZLKI88eNDlE7bDz8AtB1rwTeH8lWI3k"
         mime_type: "application/zip"
         asset_role: "spatial_snapshot"
+        operator_priority: "immediate"
+        priority_rank: 8
+        immediate_add: true
         ready_to_upload: true
         ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+        source_completion_next_action: "source_storage_then_location_context"
 
   - folder_path: "Local Nature Reserves and Conservation"
     folder_id: "1O79oh3VChYiTgNwewlD8OjGhD88JMjod"
@@ -201,8 +213,12 @@ folders:
         file_id: "1jruwKIVMtqDoI31xVlbbprbctQ6Lntqq"
         mime_type: "application/zip"
         asset_role: "spatial_snapshot"
+        operator_priority: "immediate"
+        priority_rank: 3
+        immediate_add: true
         ready_to_upload: true
         ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+        source_completion_next_action: "source_storage_then_bounded_constraint_measurement"
 
   - folder_path: "Council Asset Register"
     folder_id: "1z5ODbk3OuTffRREDhDwNKCW0Ek6OmBVW"
@@ -212,8 +228,12 @@ folders:
         file_id: "1jmUK8vxBpaIAjCwqDBEvVRRMfLB3J7Of"
         mime_type: "application/zip"
         asset_role: "spatial_snapshot"
+        operator_priority: "immediate"
+        priority_rank: 6
+        immediate_add: true
         ready_to_upload: true
         ready_to_upload_reason: "Packaged public-sector ownership/context layer ready for controlled source storage."
+        source_completion_next_action: "source_storage_then_public_ownership_exclusion_layer"
 
   - folder_path: "Vacant and Derelict Land"
     folder_id: "1XaUqMHQuBnLOtMDFIVbvTqqaO82xzTfn"
@@ -280,8 +300,12 @@ folders:
         file_id: "1KbeFIl0qARL0ZDf_ZehUsv3MG-ThcJca"
         mime_type: "application/zip"
         asset_role: "spatial_snapshot"
+        operator_priority: "immediate"
+        priority_rank: 4
+        immediate_add: true
         ready_to_upload: true
         ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+        source_completion_next_action: "source_storage_then_bounded_constraint_measurement"
 
   - folder_path: "Green Belt List"
     folder_id: "1k8ZI_6_IdWNJJMljpTetB3QIhLU6NT-5"
@@ -291,8 +315,12 @@ folders:
         file_id: "12ST3jcIuoIH49UzTxGgmY6jkemv4necD"
         mime_type: "application/zip"
         asset_role: "spatial_snapshot"
+        operator_priority: "immediate"
+        priority_rank: 1
+        immediate_add: true
         ready_to_upload: true
         ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+        source_completion_next_action: "source_storage_then_bounded_constraint_measurement"
 
   - folder_path: "Contaminated Land"
     folder_id: "1eYehS61GKHrKiwmlrORTUh_8Dw0E8l0x"
@@ -302,8 +330,12 @@ folders:
         file_id: "1lCET0aIWzT5Zgcz647I3V0RK9mOtFsMz"
         mime_type: "application/zip"
         asset_role: "spatial_snapshot"
+        operator_priority: "immediate"
+        priority_rank: 2
+        immediate_add: true
         ready_to_upload: true
         ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+        source_completion_next_action: "source_storage_then_bounded_constraint_measurement"
 
   - folder_path: "Employment Land Audit"
     folder_id: "17UxQYtqbGES-6GqxPU_JV8f-dlJZlJqX"

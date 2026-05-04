@@ -23,6 +23,9 @@ class DriveSourceFileSyncContractTests(unittest.TestCase):
         self.assertIn("create or replace view landintel_reporting.v_drive_source_sync_status", MIGRATION)
         self.assertIn("landintel_store.object_ownership_registry", MIGRATION)
         self.assertIn("metadata-only registry", MIGRATION)
+        self.assertIn("operator_priority", MIGRATION)
+        self.assertIn("immediate_add_flag", MIGRATION)
+        self.assertIn("source_completion_next_action", MIGRATION)
 
     def test_migration_contains_no_destructive_sql(self) -> None:
         forbidden_patterns = (
@@ -65,6 +68,27 @@ class DriveSourceFileSyncContractTests(unittest.TestCase):
         ):
             self.assertIn(required_file, {file["file_name"] for file in ready_files})
 
+    def test_manifest_marks_user_requested_eight_as_immediate_priority(self) -> None:
+        files = [file for folder in MANIFEST["folders"] for file in folder.get("files", [])]
+        immediate = {file["file_name"]: file for file in files if file.get("immediate_add")}
+
+        expected = {
+            "Green_Belt_-_Scotland.zip": 1,
+            "Contaminated_Land_-_Scotland.zip": 2,
+            "Culverts_-_Scotland.zip": 3,
+            "Tree_Preservation_Orders_-_Scotland.zip": 4,
+            "Conservation_Areas_-_Scotland.zip": 5,
+            "Council_Asset_Register_-_Scotland.zip": 6,
+            "Local_Landscape_Areas_-_Scotland.zip": 7,
+            "School_Catchments_-_Scotland.zip": 8,
+        }
+
+        self.assertEqual(set(immediate), set(expected))
+        for file_name, rank in expected.items():
+            self.assertEqual(immediate[file_name]["operator_priority"], "immediate")
+            self.assertEqual(immediate[file_name]["priority_rank"], rank)
+            self.assertIn("source_completion_next_action", immediate[file_name])
+
     def test_manifest_keeps_bgs_paused_and_loose_shapefiles_not_ready(self) -> None:
         files = [file for folder in MANIFEST["folders"] for file in folder.get("files", [])]
         by_name = {file["file_name"]: file for file in files}
@@ -81,6 +105,8 @@ class DriveSourceFileSyncContractTests(unittest.TestCase):
         self.assertIn("drive_source_sync_enable_downloads", RUNNER)
         self.assertIn("metadata_only", RUNNER)
         self.assertIn("does not ingest source datasets", RUNNER)
+        self.assertIn("immediate_add_count", RUNNER)
+        self.assertIn("operator_priority", RUNNER)
         self.assertIn("google_drive_api_key", SETTINGS)
         self.assertIn("default=false", SETTINGS)
 
@@ -106,6 +132,8 @@ class DriveSourceFileSyncContractTests(unittest.TestCase):
             "run landintel drive source sync",
             "v_drive_source_ready_upload_files",
             "v_drive_source_sync_status",
+            "immediate priority set",
+            "council_asset_register_-_scotland.zip",
         ):
             self.assertIn(required_phrase, DOC)
 

@@ -39,6 +39,7 @@ on:
           - measure-constraints
           - measure-constraints-duckdb
           - constraint-measurement-proof-flood-title-spend
+          - constraint-measurement-proof-title-spend-source-family
           - measure-constraints-debug-all-layers
           - audit-constraint-measurements
           - discover-phase2-sources
@@ -390,7 +391,7 @@ jobs:
           fi
           echo "SELECTED_COMMAND=${selected_command}" >> "$GITHUB_ENV"
           case "$selected_command" in
-            validate-only|run-migrations|sync-source-catalog|audit-source-footprint|audit-source-freshness|register-source-estate|probe-source-estate|audit-source-estate|audit-source-completion-matrix|process-reconcile-queue|reconcile-catchup-scan|refresh-affected-sites|weekly-reconcile-maintenance|discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|audit-full-source-estate|refresh-planning-decisions|audit-planning-decisions|refresh-title-readiness|refresh-title-reviews|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|refresh-site-bgs-borehole-context|audit-site-bgs-borehole-context|refresh-bgs-borehole-scan-registry|queue-bgs-borehole-scans|audit-bgs-borehole-scan-queue|fetch-bgs-borehole-scans|audit-bgs-borehole-scan-assets|refresh-site-assessments|refresh-site-prove-it-assessments|audit-site-prove-it-assessments|refresh-ldn-candidate-screen|audit-ldn-candidate-screen|refresh-urgent-address-title-pack|audit-urgent-address-title-pack|refresh-scotland-parcel-use-context|audit-scotland-parcel-use-context|constraint-measurement-proof-flood-title-spend|ingest-companies-house|ingest-fca-entities)
+            validate-only|run-migrations|sync-source-catalog|audit-source-footprint|audit-source-freshness|register-source-estate|probe-source-estate|audit-source-estate|audit-source-completion-matrix|process-reconcile-queue|reconcile-catchup-scan|refresh-affected-sites|weekly-reconcile-maintenance|discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|audit-full-source-estate|refresh-planning-decisions|audit-planning-decisions|refresh-title-readiness|refresh-title-reviews|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|refresh-site-bgs-borehole-context|audit-site-bgs-borehole-context|refresh-bgs-borehole-scan-registry|queue-bgs-borehole-scans|audit-bgs-borehole-scan-queue|fetch-bgs-borehole-scans|audit-bgs-borehole-scan-assets|refresh-site-assessments|refresh-site-prove-it-assessments|audit-site-prove-it-assessments|refresh-ldn-candidate-screen|audit-ldn-candidate-screen|refresh-urgent-address-title-pack|audit-urgent-address-title-pack|refresh-scotland-parcel-use-context|audit-scotland-parcel-use-context|constraint-measurement-proof-flood-title-spend|constraint-measurement-proof-title-spend-source-family|ingest-companies-house|ingest-fca-entities)
               system_package_profile="minimal"
               ;;
             *)
@@ -553,6 +554,12 @@ jobs:
             python -m src.source_phase_runner run-migrations
             python -m src.constraint_scaler_proof print-constraint-scaler-proof
             run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.constraint_measurement_execution_proof constraint-measurement-proof-flood-title-spend
+            python -m src.constraint_scaler_proof print-constraint-scaler-proof
+            python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
+          elif [ "$SELECTED_COMMAND" = "constraint-measurement-proof-title-spend-source-family" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.constraint_scaler_proof print-constraint-scaler-proof
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.constraint_measurement_execution_proof constraint-measurement-proof-title-spend-source-family
             python -m src.constraint_scaler_proof print-constraint-scaler-proof
             python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
           elif [ "$SELECTED_COMMAND" = "measure-constraints-debug-all-layers" ]; then

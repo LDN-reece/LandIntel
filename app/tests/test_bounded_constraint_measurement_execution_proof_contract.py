@@ -23,6 +23,8 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         ast.parse(RUNNER)
         self.assertIn("constraint-measurement-proof-flood-title-spend", RUNNER)
         self.assertIn("constraint_measurement_proof_flood_title_spend", RUNNER)
+        self.assertIn("constraint-measurement-proof-title-spend-source-family", RUNNER)
+        self.assertIn("constraint_measurement_proof_title_spend_source_family", RUNNER)
 
     def test_runner_uses_existing_truth_tables_and_finalizer_only(self) -> None:
         self.assertIn("landintel_reporting.v_constraint_priority_measurement_queue", RUNNER)
@@ -40,6 +42,14 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         self.assertIn("DEFAULT_PROOF_PAIR_BATCH_SIZE = 10", RUNNER)
         self.assertIn("limit :batch_size", RUNNER_LOWER)
 
+    def test_source_family_runner_fails_closed_without_filter(self) -> None:
+        self.assertIn("CONSTRAINT_MEASURE_SOURCE_FAMILY", RUNNER)
+        self.assertIn("CONSTRAINT_MEASURE_LAYER_KEY", RUNNER)
+        self.assertIn("requires source family or layer key", RUNNER_LOWER)
+        self.assertIn("This guard prevents broad all-layer runs.", RUNNER)
+        self.assertIn("source_family = :source_family", RUNNER)
+        self.assertIn("layer_key = :layer_key", RUNNER)
+
     def test_runner_contains_no_destructive_sql(self) -> None:
         forbidden_patterns = (
             r"\bdrop\s+table\b",
@@ -55,9 +65,12 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         for required_phrase in (
             "flood only",
             "title_spend_candidates only",
+            "source-family",
+            "coal_authority",
             "bounded batch",
             "hard cap",
             "no broad all-site/all-layer scan",
+            "fails closed",
             "scan state",
             "before/after proof",
             "does not add rag scoring",
@@ -68,14 +81,30 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
 
     def test_workflow_exposes_guarded_command(self) -> None:
         self.assertIn("- constraint-measurement-proof-flood-title-spend", WORKFLOW)
+        self.assertIn("- constraint-measurement-proof-title-spend-source-family", WORKFLOW)
         self.assertIn('CONSTRAINT_PROOF_PAIR_BATCH_SIZE: "10"', WORKFLOW)
         self.assertIn("constraint_measurement_execution_proof.py", WORKFLOW)
         self.assertIn(
             "python -m src.constraint_measurement_execution_proof constraint-measurement-proof-flood-title-spend",
             WORKFLOW,
         )
+        self.assertIn(
+            "python -m src.constraint_measurement_execution_proof constraint-measurement-proof-title-spend-source-family",
+            WORKFLOW,
+        )
         self.assertIn("python -m src.constraint_scaler_proof print-constraint-scaler-proof", WORKFLOW)
         self.assertIn("python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements", WORKFLOW)
+
+    def test_status_report_freezes_current_source_completion_state(self) -> None:
+        status_doc = (
+            ROOT / "docs" / "source_completion" / "source_completion_programme_status_2026_05_04.md"
+        ).read_text(encoding="utf-8").lower()
+        self.assertIn("live_complete`: 0", status_doc)
+        self.assertIn("pr #2", status_doc)
+        self.assertIn("pr #3", status_doc)
+        self.assertIn("stale/superseded", status_doc)
+        self.assertIn("constraint_measure_source_family", status_doc)
+        self.assertIn("no bgs, apex, source ingestion or planning extraction", status_doc)
 
 
 if __name__ == "__main__":

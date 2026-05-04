@@ -1,0 +1,95 @@
+name: Run LandIntel Drive Source Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: Drive source registry command to run
+        required: true
+        type: choice
+        default: audit-drive-source-manifest
+        options:
+          - audit-drive-source-manifest
+          - sync-drive-source-manifest
+          - sync-drive-ready-upload-files
+      drive_source_sync_enable_downloads:
+        description: Download ready files into the workflow artifact. Keep false unless intentionally taking a bounded copy.
+        required: false
+        type: boolean
+        default: false
+      drive_source_sync_max_files_per_run:
+        description: Maximum ready files to download when downloads are enabled
+        required: false
+        default: "10"
+      drive_source_sync_max_download_bytes:
+        description: Maximum total download bytes when downloads are enabled
+        required: false
+        default: "100000000"
+  schedule:
+    - cron: "17 6 * * 1"
+
+concurrency:
+  group: "landintel-drive-source-sync-${{ github.ref }}"
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: app
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}/app
+      SUPABASE_URL: https://icmgcxujqoiyzxqonwca.supabase.co
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      GOOGLE_DRIVE_API_KEY: ${{ secrets.GOOGLE_DRIVE_API_KEY }}
+      DRIVE_SOURCE_ROOT_FOLDER_ID: "1aXGeNM6AeqJ6IDH-jaVrZkhmjczYVTHt"
+      DRIVE_SOURCE_MANIFEST_PATH: ${{ github.workspace }}/app/config/scotland_drive_source_manifest.yaml
+      DRIVE_SOURCE_SYNC_ENABLE_DOWNLOADS: ${{ inputs.drive_source_sync_enable_downloads || false }}
+      DRIVE_SOURCE_SYNC_MAX_FILES_PER_RUN: ${{ inputs.drive_source_sync_max_files_per_run || '10' }}
+      DRIVE_SOURCE_SYNC_MAX_DOWNLOAD_BYTES: ${{ inputs.drive_source_sync_max_download_bytes || '100000000' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile Drive sync runner
+        run: python -m py_compile src/drive_source_sync.py config/settings.py
+
+      - name: Run migrations
+        run: python -m src.source_phase_runner run-migrations
+
+      - name: Run Drive source sync command
+        run: python -m src.drive_source_sync "${{ inputs.command || 'audit-drive-source-manifest' }}"
+
+      - name: Upload Drive source sync summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drive-source-sync-summary
+          path: app/.tmp/drive-source-sync-summary.json
+          if-no-files-found: warn
+
+      - name: Upload bounded ready-file downloads
+        if: ${{ inputs.drive_source_sync_enable_downloads == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: drive-source-ready-files
+          path: app/.tmp/drive_source_ready_files
+          if-no-files-found: warn

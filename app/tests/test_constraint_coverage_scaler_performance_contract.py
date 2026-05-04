@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+from pathlib import Path
+import re
+import unittest
+
+
+APP_DIR = Path(__file__).resolve().parents[1]
+MIGRATION = (
+    APP_DIR / "sql" / "068_constraint_coverage_scaler_performance_fix.sql"
+).read_text(encoding="utf-8")
+MIGRATION_LOWER = MIGRATION.lower()
+DOC = (APP_DIR / "docs" / "schema" / "constraint_coverage_scaler.md").read_text(
+    encoding="utf-8"
+)
+DOC_LOWER = DOC.lower()
+
+
+class ConstraintCoverageScalerPerformanceContractTests(unittest.TestCase):
+    def test_performance_fix_replaces_only_reporting_views(self) -> None:
+        for view_name in (
+            "landintel_reporting.v_constraint_priority_sites",
+            "landintel_reporting.v_constraint_priority_measurement_queue",
+        ):
+            self.assertIn(f"create or replace view {view_name}", MIGRATION_LOWER)
+
+        self.assertNotIn("create table", MIGRATION_LOWER)
+        self.assertNotIn("insert into public", MIGRATION_LOWER)
+        self.assertNotIn("insert into landintel", MIGRATION_LOWER)
+
+    def test_migration_contains_no_destructive_sql(self) -> None:
+        self.assertNotIn("drop table", MIGRATION_LOWER)
+        self.assertNotIn("drop view", MIGRATION_LOWER)
+        self.assertNotIn("truncate", MIGRATION_LOWER)
+        self.assertNotRegex(MIGRATION_LOWER, re.compile(r"delete\s+from\s+", re.IGNORECASE))
+        self.assertNotRegex(
+            MIGRATION_LOWER,
+            re.compile(r"alter\s+table\s+[^;]+\s+rename\s+", re.IGNORECASE),
+        )
+
+    def test_migration_does_not_run_spatial_measurement(self) -> None:
+        for forbidden in (
+            "st_intersects",
+            "st_intersection",
+            "st_dwithin",
+            "st_distance",
+            "refresh_constraint_measurements_for_layer_sites",
+            "measure_constraint_feature",
+        ):
+            self.assertNotIn(forbidden, MIGRATION_LOWER)
+
+    def test_priority_spine_uses_current_tables_not_heavy_operator_views(self) -> None:
+        for relation in (
+            "landintel.site_urgent_address_title_pack",
+            "landintel.site_prove_it_assessments",
+            "landintel.site_ldn_candidate_screen",
+            "landintel.title_order_workflow",
+            "landintel.canonical_sites",
+        ):
+            self.assertIn(relation, MIGRATION_LOWER)
+
+        self.assertNotIn("landintel_sourced.v_sourced_sites", MIGRATION_LOWER)
+        self.assertNotIn("landintel_sourced.v_review_queue", MIGRATION_LOWER)
+        self.assertNotIn("landintel_sourced.v_title_spend_candidates", MIGRATION_LOWER)
+
+    def test_queue_is_bounded_and_priority_layer_limited(self) -> None:
+        self.assertIn("limit 5000", MIGRATION_LOWER)
+        self.assertIn("constraint_priority_rank <= 8", MIGRATION_LOWER)
+        self.assertIn("guidance only", MIGRATION_LOWER)
+        self.assertIn("does not perform measurement", MIGRATION_LOWER)
+
+    def test_indexes_are_additive_only(self) -> None:
+        for index_name in (
+            "site_constraint_scan_state_location_layer_scope_idx",
+            "site_constraint_group_summaries_location_idx",
+            "site_commercial_friction_facts_location_idx",
+            "site_prove_it_assessments_latest_idx",
+            "site_urgent_address_title_pack_urgency_site_idx",
+        ):
+            self.assertIn(f"create index if not exists {index_name}", MIGRATION_LOWER)
+
+    def test_docs_record_codex_challenge_and_reason(self) -> None:
+        for required_phrase in (
+            "performance follow-up",
+            "codex challenge and evidence",
+            "site-priority coverage took several minutes",
+            "use the underlying current tables",
+            "the operator sourced-site views remain valid decision surfaces",
+            "no data is moved",
+            "no measurement is run",
+            "no truth table changes",
+        ):
+            self.assertIn(required_phrase, DOC_LOWER)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,566 @@
+root:
+  folder_id: "1aXGeNM6AeqJ6IDH-jaVrZkhmjczYVTHt"
+  folder_name: "Scotland"
+  drive_url: "https://drive.google.com/drive/folders/1aXGeNM6AeqJ6IDH-jaVrZkhmjczYVTHt"
+  inventory_basis: "Codex Google Drive folder traversal on 2026-05-04"
+  operating_note: "Repo-governed Drive source estate manifest. This controls file awareness and ready-upload status only; it does not ingest source data."
+
+folders:
+  - folder_path: "root"
+    folder_id: "1aXGeNM6AeqJ6IDH-jaVrZkhmjczYVTHt"
+    source_family: "source_catalogue"
+    files:
+      - file_name: "RoS- GIS-Data-Services-API-Dev-Doc.pdf"
+        file_id: "1WQzUeKjdOAOCndmDb5qnVO5koz8k2pEn"
+        mime_type: "application/pdf"
+        asset_role: "documentation"
+        ready_to_upload: false
+        ready_to_upload_reason: "Reference documentation; not a source layer upload."
+      - file_name: "Open Data Sources - Scotland.xlsx (Converted - 2026-04-25 14:14)"
+        file_id: "1tAhTwqMvO279X4b3cgz7sTakIsYjQKFYBmj1dUJwwKc"
+        mime_type: "application/vnd.google-apps.spreadsheet"
+        asset_role: "source_catalogue"
+        ready_to_upload: false
+        ready_to_upload_reason: "Catalogue/control document; use to govern source estate, not direct ingestion."
+      - file_name: "Open Data Sources - Scotland.xlsx"
+        file_id: "1hg8fh69MSOsCcFsGQUNSWYjM4NP7mUeu"
+        mime_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        asset_role: "source_catalogue"
+        ready_to_upload: true
+        ready_to_upload_reason: "Source catalogue workbook suitable for controlled upload/archival."
+
+  - folder_path: "Settlement Boundaries"
+    folder_id: "1HQ2j3vFtqAmstK2oSuUZ6b3K7QKl6usj"
+    source_family: "settlement"
+    files:
+      - file_name: "metadata.pdf"
+        file_id: "1oxj62qN0piIGYD2gRU7ZvosJApOyVAVp"
+        mime_type: "application/pdf"
+        asset_role: "documentation"
+        ready_to_upload: false
+        ready_to_upload_reason: "Layer metadata only."
+      - file_name: "data-tables.xlsx"
+        file_id: "1P2vCKJsjRvBN72GgAt0NP4ztu7p4PSnQ"
+        mime_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        asset_role: "supporting_table"
+        ready_to_upload: true
+        ready_to_upload_reason: "Supporting table ready for controlled source storage."
+      - file_name: "shapefiles.zip"
+        file_id: "1_f-Z93qFsyGiBNFbL6NTXn-UMinwhSfZ"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+
+  - folder_path: "Mining"
+    folder_id: "12mdo8gYUCIpYssucu1RnBlP0-yFZQjwR"
+    source_family: "coal_authority"
+    files:
+      - file_name: "Free of charge coal mining information - GOV.UK.pdf"
+        file_id: "1OcCDm78Ocy-USmafZ1DCv6aVUTKzbGIq"
+        mime_type: "application/pdf"
+        asset_role: "documentation"
+        ready_to_upload: false
+        ready_to_upload_reason: "Guidance document; no spatial upload payload."
+      - file_name: "Coal outcrops data set_ User guide - GOV.UK.pdf"
+        file_id: "1kMSsGC5b-HPETl98GcYEuwCk1nNOUM7T"
+        mime_type: "application/pdf"
+        asset_role: "documentation"
+        ready_to_upload: false
+        ready_to_upload_reason: "Guidance document; no spatial upload payload."
+      - file_name: "Shallow coal workings data set_ User guide - GOV.UK.pdf"
+        file_id: "1PM5NtczuSwbrIhbWkrpKQd0uT0vPFKzu"
+        mime_type: "application/pdf"
+        asset_role: "documentation"
+        ready_to_upload: false
+        ready_to_upload_reason: "Guidance document; no spatial upload payload."
+      - file_name: "Geological disturbance fissures and breaklines data set_ User guide - GOV.UK.pdf"
+        file_id: "1dNjuZ_MAR_AKnIs3xrK3uesisW7147_m"
+        mime_type: "application/pdf"
+        asset_role: "documentation"
+        ready_to_upload: false
+        ready_to_upload_reason: "Guidance document; no spatial upload payload."
+      - file_name: "Coalfield consultation area data set_ User guide - GOV.UK.pdf"
+        file_id: "1HfVmC7nXQm0L5RU9n88_tGfkXeWSgPwr"
+        mime_type: "application/pdf"
+        asset_role: "documentation"
+        ready_to_upload: false
+        ready_to_upload_reason: "Guidance document; no spatial upload payload."
+      - file_name: "Mine entries data set_ User guide - GOV.UK.pdf"
+        file_id: "1ly1r14Z56euUDyd93FtTwUmn6EY0_iK5"
+        mime_type: "application/pdf"
+        asset_role: "documentation"
+        ready_to_upload: false
+        ready_to_upload_reason: "Guidance document; no spatial upload payload."
+
+  - folder_path: "SGN Asset List"
+    folder_id: "1NcGc02knKX70eOpEjH60SV4emwE-4Fgu"
+    source_family: "sgn_assets"
+    files:
+      - file_name: "Open_Data_Catalogue updated 05-11-25.xlsx (Converted - 2026-04-25 14:14)"
+        file_id: "1ucTU-wh7-srNCG77le3VyjA9q3DlenMFjg6QsTyaDxY"
+        mime_type: "application/vnd.google-apps.spreadsheet"
+        asset_role: "source_catalogue"
+        ready_to_upload: false
+        ready_to_upload_reason: "Google Sheet catalogue; metadata tracked, binary upload not applicable."
+      - file_name: "Open_Data_Catalogue updated 05-11-25.xlsx"
+        file_id: "1j4kR5kPLHfc7Qos22ishwoVza5P8dhDf"
+        mime_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        asset_role: "source_catalogue"
+        ready_to_upload: true
+        ready_to_upload_reason: "Source catalogue workbook suitable for controlled storage."
+
+  - folder_path: "Ground Condition - Borehole Data"
+    folder_id: "1GsOHHKJ_BpwTLly70qLlPnfJCVTiWxFw"
+    source_family: "bgs"
+    files:
+      - file_name: "single-onshore-borehole-index-dataset-26-01-26.zip"
+        file_id: "1a3TFysOCnBxEhspykrerxhk-w9vNL9VB"
+        mime_type: "application/zip"
+        asset_role: "known_origin_manual_bulk_upload"
+        ready_to_upload: false
+        ready_to_upload_reason: "BGS/Pre-SI work is paused; this is governed as a known-origin manual bulk upload and must not be re-uploaded by this workflow."
+
+  - folder_path: "Local Planning Authroities"
+    folder_id: "1OKVbmi3VdnoAVLUPAz1RTLTaXocWpZsn"
+    source_family: "local_planning_authorities"
+    files:
+      - file_name: "SG_LocalPlanningAuthorities_2019.zip"
+        file_id: "1tb9SpbgqDeQFW-Xe9eRwLWwNzlDmI-Xu"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+
+  - folder_path: "Conservation Area"
+    folder_id: "1hrIsM2AOBTku2hB3xEWmjNhFYlKh2BeN"
+    source_family: "conservation_areas"
+    files:
+      - file_name: "Conservation_Areas_-_Scotland.zip"
+        file_id: "1QEdJM7SLniXrF4GdKvQyhATfYUblLkSj"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+
+  - folder_path: "Local Landscape Areas"
+    folder_id: "1xZOwtoJvliUegfD5LznXiRzdAP1qd6rg"
+    source_family: "landscape"
+    files:
+      - file_name: "Local_Landscape_Areas_-_Scotland.zip"
+        file_id: "1T3oUsowTfwASCAfLxrHGzN7xUNtKS8zv"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+
+  - folder_path: "School Catchment Areas"
+    folder_id: "1bQpRk1YYU9DGZCuHYg4eWrE2faHbBNXp"
+    source_family: "school_catchments"
+    files:
+      - file_name: "School_Catchments_-_Scotland.zip"
+        file_id: "1-ZLKI88eNDlE7bDz8AtB1rwTeH8lWI3k"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+
+  - folder_path: "Local Nature Reserves and Conservation"
+    folder_id: "1O79oh3VChYiTgNwewlD8OjGhD88JMjod"
+    source_family: "naturescot"
+    files:
+      - file_name: "Local_Nature_Reserves_-_Scotland.zip"
+        file_id: "1S9-uAB1qza76iUSA9iDnXNaxoe3JUoqa"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+      - file_name: "Local_Nature_Conservation_Sites_-_Scotland.zip"
+        file_id: "1bQVdISnrWERebm4SADv2yPqa7NRXuJB7"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+
+  - folder_path: "Forestry and Woodland"
+    folder_id: "18E1C6PZNfQznTnGFWl8F2vCXsq3zwTWV"
+    source_family: "forestry"
+    files:
+      - file_name: "Forestry_and_Woodland_Strategy_-_Scotland.zip"
+        file_id: "1sONV4slaY6aG3qf8Eht4fEYtOWZ6fzD0"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+
+  - folder_path: "Culverts"
+    folder_id: "1wyRZUYOlTUfTIhQ_XemLn3pJOrzLiV7C"
+    source_family: "culverts"
+    files:
+      - file_name: "Culverts_-_Scotland.zip"
+        file_id: "1jruwKIVMtqDoI31xVlbbprbctQ6Lntqq"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+
+  - folder_path: "Council Asset Register"
+    folder_id: "1z5ODbk3OuTffRREDhDwNKCW0Ek6OmBVW"
+    source_family: "council_assets"
+    files:
+      - file_name: "Council_Asset_Register_-_Scotland.zip"
+        file_id: "1jmUK8vxBpaIAjCwqDBEvVRRMfLB3J7Of"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged public-sector ownership/context layer ready for controlled source storage."
+
+  - folder_path: "Vacant and Derelict Land"
+    folder_id: "1XaUqMHQuBnLOtMDFIVbvTqqaO82xzTfn"
+    source_family: "vdl"
+    files:
+      - file_name: "opendata.scot_docs-main.zip"
+        file_id: "1L0wHCL76_gk2jUdPp1uGkLAaxJ5h6bae"
+        mime_type: "application/zip"
+        asset_role: "documentation_archive"
+        ready_to_upload: false
+        ready_to_upload_reason: "Documentation archive; not direct source layer upload."
+      - file_name: "2025 SVDL"
+        file_id: "1gWRBKxLXINSL-LLQzF_krrKg5ssDPIqJaMyqDla8egc"
+        mime_type: "application/vnd.google-apps.spreadsheet"
+        asset_role: "source_table"
+        ready_to_upload: false
+        ready_to_upload_reason: "Google Sheet source table; export required before controlled upload."
+      - file_name: "Vacant_and_Derelict_Land_-_Scotland.csv"
+        file_id: "1hysGd20lFQJxUHqEcJ3srk-sQJP9hIVI"
+        mime_type: "text/csv"
+        asset_role: "source_table"
+        ready_to_upload: true
+        ready_to_upload_reason: "CSV source table ready for controlled source storage."
+      - file_name: "Vacant_and_Derelict_Land_-_Scotland.zip"
+        file_id: "1ONkWZF8ugshQUtV_xxZynyeZTeSHGJE1"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+      - file_name: "CHMA+-+SVDLS+-+2025+-+SVDLS+Site+Regsiter+2024.ods"
+        file_id: "1-Kmy4k12W9fYGcklLWOGWZVylxEfsJud"
+        mime_type: "application/vnd.oasis.opendocument.spreadsheet"
+        asset_role: "source_table"
+        ready_to_upload: true
+        ready_to_upload_reason: "ODS source register ready for controlled source storage."
+
+  - folder_path: "Local Authority Boundaries"
+    folder_id: "1UAoHn2SVcRxDpuC9QIbJsxcssCnq-0SY"
+    source_family: "local_authority_boundaries"
+    files:
+      - file_name: "Local_Authority_Boundaries_-_Scotland.zip"
+        file_id: "1iAiPld6LXPRqptNAl_ZToP3RMuKuFuOn"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+
+  - folder_path: "Planning Applications"
+    folder_id: "1GTemFIRU096wgjjcEnMgTMKlBa_8Ch9J"
+    source_family: "planning"
+    files:
+      - file_name: "BritishGeologicalSurvey.github.io-master.zip"
+        file_id: "1vBmgXMyw0dbTnZiPmqRNkoZ4JpBIv1sb"
+        mime_type: "application/zip"
+        asset_role: "misfiled_review"
+        ready_to_upload: false
+        ready_to_upload_reason: "Appears to be a BGS documentation/code archive inside Planning Applications; needs human review before upload."
+
+  - folder_path: "TPO's"
+    folder_id: "1sxh3gfmZLIJ5yLUD_k0njIYDaWtn_J6x"
+    source_family: "tpo"
+    files:
+      - file_name: "Tree_Preservation_Orders_-_Scotland.zip"
+        file_id: "1KbeFIl0qARL0ZDf_ZehUsv3MG-ThcJca"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+
+  - folder_path: "Green Belt List"
+    folder_id: "1k8ZI_6_IdWNJJMljpTetB3QIhLU6NT-5"
+    source_family: "greenbelt"
+    files:
+      - file_name: "Green_Belt_-_Scotland.zip"
+        file_id: "12ST3jcIuoIH49UzTxGgmY6jkemv4necD"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+
+  - folder_path: "Contaminated Land"
+    folder_id: "1eYehS61GKHrKiwmlrORTUh_8Dw0E8l0x"
+    source_family: "contaminated_land"
+    files:
+      - file_name: "Contaminated_Land_-_Scotland.zip"
+        file_id: "1lCET0aIWzT5Zgcz647I3V0RK9mOtFsMz"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+
+  - folder_path: "Employment Land Audit"
+    folder_id: "17UxQYtqbGES-6GqxPU_JV8f-dlJZlJqX"
+    source_family: "ela"
+    files:
+      - file_name: "Employment_Land_Supply_-_Scotland.zip"
+        file_id: "1tJlTx51TegmX7wAP-NQXFL1Lh61Kmb_x"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+
+  - folder_path: "Council Cadastral Data"
+    folder_id: "121hpwLifAdD_Pod27PbBvBqJiFDXVPEh"
+    source_family: "ros_cadastral"
+    files:
+      - file_name: "Planning Application API"
+        file_id: "1Hi0Q1BrJ4AI_UhdyF2kXC5hU8af7CyfKp22rFTIDZr0"
+        mime_type: "application/vnd.google-apps.spreadsheet"
+        asset_role: "documentation"
+        ready_to_upload: false
+        ready_to_upload_reason: "Google Sheet operational note; export/review required before storage."
+      - file_name: "ROS - Webservice WMS"
+        file_id: "12Z56O47Gy-DJRmMVpuo61s1ErGnu4sPqYBCudRD5hoc"
+        mime_type: "application/vnd.google-apps.document"
+        asset_role: "documentation"
+        ready_to_upload: false
+        ready_to_upload_reason: "Google Doc operational note; metadata only."
+      - file_name: "Plots By Council"
+        file_id: "1kEtLFy9JDM8cG-TYM13dII2FDckUSw-3vFO9EQfbUUI"
+        mime_type: "application/vnd.google-apps.spreadsheet"
+        asset_role: "source_catalogue"
+        ready_to_upload: false
+        ready_to_upload_reason: "Google Sheet catalogue; export/review required before storage."
+      - file_name: "STG.zip"
+        file_id: "1B298eWtEoP63OfSuXtxjT34QlIDsu03g"
+        mime_type: "application/zip"
+        asset_role: "ros_cadastral_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged RoS cadastral authority extract ready for controlled source storage."
+      - file_name: "REN.zip"
+        file_id: "1k5yh3Va4gkCY_kFmqHguWNLz_4qZJLDq"
+        mime_type: "application/zip"
+        asset_role: "ros_cadastral_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged RoS cadastral authority extract ready for controlled source storage."
+      - file_name: "LAN.zip"
+        file_id: "1f2t0MLwtnOif82Dyxkaahmvgarj9_KrF"
+        mime_type: "application/zip"
+        asset_role: "ros_cadastral_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged RoS cadastral authority extract ready for controlled source storage."
+      - file_name: "KNC.zip"
+        file_id: "1WS09_6-sYBY3v2a1-XelZE4YCDnss8nW"
+        mime_type: "application/zip"
+        asset_role: "ros_cadastral_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged RoS cadastral authority extract ready for controlled source storage."
+      - file_name: "FFE.zip"
+        file_id: "1hCvTybNdRM2Y4cftiNeyLqeXZI2rv82h"
+        mime_type: "application/zip"
+        asset_role: "ros_cadastral_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged RoS cadastral authority extract ready for controlled source storage."
+      - file_name: "DMB.zip"
+        file_id: "1eUXDFR9HnEGUhJoz85-D4jTIfr6dkXsM"
+        mime_type: "application/zip"
+        asset_role: "ros_cadastral_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged RoS cadastral authority extract ready for controlled source storage."
+      - file_name: "ELN.zip"
+        file_id: "1S-rYZgL5nw1pWPUDWdjOP6_DP4fSJbzZ"
+        mime_type: "application/zip"
+        asset_role: "ros_cadastral_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged RoS cadastral authority extract ready for controlled source storage."
+      - file_name: "AYR.zip"
+        file_id: "16wEAOf61926VuXAr0cNf4je2aKNMbMCv"
+        mime_type: "application/zip"
+        asset_role: "ros_cadastral_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged RoS cadastral authority extract ready for controlled source storage."
+      - file_name: "WLN.zip"
+        file_id: "198AwfOmqaDChL3aZiE8pSRkx0JQIV6vo"
+        mime_type: "application/zip"
+        asset_role: "ros_cadastral_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged RoS cadastral authority extract ready for controlled source storage."
+      - file_name: "GLA.zip"
+        file_id: "1-5Mx6NIjlPdbcjR_XdddKx6TIsDtMPdO"
+        mime_type: "application/zip"
+        asset_role: "ros_cadastral_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged RoS cadastral authority extract ready for controlled source storage."
+      - file_name: "INSPIRE_dataset_specification_v1.5_March2025.pdf"
+        file_id: "1rmHkWyQ99ZqT01-s2eP0GHX3exQfcIH9"
+        mime_type: "application/pdf"
+        asset_role: "documentation"
+        ready_to_upload: false
+        ready_to_upload_reason: "Reference documentation; not a source layer upload."
+      - file_name: "WLN_bng.shp"
+        file_id: "1q6HlAeZpIdko6fcYEIFZVaLiyoC-M17s"
+        mime_type: "application/octet-stream"
+        asset_role: "loose_shapefile_component"
+        ready_to_upload: false
+        ready_to_upload_reason: "Loose shapefile component; package with matching .shx/.dbf/.prj before upload."
+      - file_name: "WLN_bng.shx"
+        file_id: "1HIlGPeOrFVUTlj9TJ9Y81y9yAg6yMWUt"
+        mime_type: "application/octet-stream"
+        asset_role: "loose_shapefile_component"
+        ready_to_upload: false
+        ready_to_upload_reason: "Loose shapefile component; package with matching .shp/.dbf/.prj before upload."
+      - file_name: "WLN_bng.dbf"
+        file_id: "1TsXQnR0vCZFAI_PRLUZuikWWvlR5XUOG"
+        mime_type: "application/octet-stream"
+        asset_role: "loose_shapefile_component"
+        ready_to_upload: false
+        ready_to_upload_reason: "Loose shapefile component; package with matching .shp/.shx/.prj before upload."
+      - file_name: "WLN_bng.prj"
+        file_id: "1K_aTjEA04C_S5HEBQVi_Bb-NFjtzjlOz"
+        mime_type: "application/octet-stream"
+        asset_role: "loose_shapefile_component"
+        ready_to_upload: false
+        ready_to_upload_reason: "Loose shapefile component; package with matching .shp/.shx/.dbf before upload."
+      - file_name: "GLA_bng.shx"
+        file_id: "13d3_PR8kQPq6kvfutMy6aZ8mIMNjfkPK"
+        mime_type: "application/octet-stream"
+        asset_role: "loose_shapefile_component"
+        ready_to_upload: false
+        ready_to_upload_reason: "Loose shapefile component; package with matching .shp/.dbf/.prj before upload."
+      - file_name: "GLA_bng.shp"
+        file_id: "17CsbC1FgaoVJ9gtLBAGtVlzXYckpJQSe"
+        mime_type: "application/octet-stream"
+        asset_role: "loose_shapefile_component"
+        ready_to_upload: false
+        ready_to_upload_reason: "Loose shapefile component; package with matching .shx/.dbf/.prj before upload."
+      - file_name: "GLA_bng.dbf"
+        file_id: "1WdugQy0Q-QB1_KKekbmdPrdaexJ4qQY3"
+        mime_type: "application/octet-stream"
+        asset_role: "loose_shapefile_component"
+        ready_to_upload: false
+        ready_to_upload_reason: "Loose shapefile component; package with matching .shp/.shx/.prj before upload."
+      - file_name: "GLA_bng.prj"
+        file_id: "18oqawzTwFNx7qVx8a5VT3LF9-IzO6XWT"
+        mime_type: "application/octet-stream"
+        asset_role: "loose_shapefile_component"
+        ready_to_upload: false
+        ready_to_upload_reason: "Loose shapefile component; package with matching .shp/.shx/.dbf before upload."
+
+  - folder_path: "LDP's"
+    folder_id: "1PCafGI44c_F5jl_budLooGzgBK6qSG03"
+    source_family: "ldp"
+    files:
+      - file_name: "Council LDP URL's"
+        file_id: "1GqR5nF6cNVZpshcTiFM_v_uPsIXxH3EMU9ZERPfV8Bg"
+        mime_type: "application/vnd.google-apps.spreadsheet"
+        asset_role: "source_catalogue"
+        ready_to_upload: false
+        ready_to_upload_reason: "Google Sheet catalogue; metadata tracked, export required before storage."
+      - file_name: "City_Development_Plan_-_29_March_2017.pdf"
+        file_id: "1bml-9READKQ-gl4r4ZVD-cQHchFp5udM"
+        mime_type: "application/pdf"
+        asset_role: "policy_document"
+        ready_to_upload: true
+        ready_to_upload_reason: "Policy PDF ready for controlled source storage/document corpus."
+      - file_name: "Glasgow.zip"
+        file_id: "1SF_4hSje_uo0t_BWb3LhEXuXQ7LiweAx"
+        mime_type: "application/zip"
+        asset_role: "policy_spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged LDP source layer ready for controlled source storage."
+
+  - folder_path: "Housing Land Audits"
+    folder_id: "1W5tm_rleO9znAkFgUqHyeKmqhRUnVBBk"
+    source_family: "hla"
+    files:
+      - file_name: "Housing_Land_Supply_-_Scotland.zip"
+        file_id: "1hGC8ODSHp9f0iTC1S2t78T9moHhCk0SA"
+        mime_type: "application/zip"
+        asset_role: "spatial_snapshot"
+        ready_to_upload: true
+        ready_to_upload_reason: "Packaged HLA spatial layer ready for controlled source storage."
+      - file_name: "South Lanarkshire HLA"
+        file_id: "1laEV7EOJ1pT_Zdgy8cmWBQ_w2p34Nz0o6DGyygld2MA"
+        mime_type: "application/vnd.google-apps.spreadsheet"
+        asset_role: "source_table"
+        ready_to_upload: false
+        ready_to_upload_reason: "Google Sheet source table; export required before controlled upload."
+      - file_name: "West Lothian HLA"
+        file_id: "1RWXTsB1IdyCwRAclTlvR2Ppi9ZrT9DJNE9rBso3VqaI"
+        mime_type: "application/vnd.google-apps.spreadsheet"
+        asset_role: "source_table"
+        ready_to_upload: false
+        ready_to_upload_reason: "Google Sheet source table; export required before controlled upload."
+      - file_name: "East Dumbartonshire HLA.numbers"
+        file_id: "1ZcnvMnooCS6OnQmbtOVM-8qWMXLk9ffV"
+        mime_type: "application/vnd.apple.numbers"
+        asset_role: "source_table"
+        ready_to_upload: true
+        ready_to_upload_reason: "Local authority source workbook ready for controlled storage, but conversion may be required before parsing."
+      - file_name: "Housing Evidence Paper.pdf"
+        file_id: "1sKNYvAUIFPU2KkG4JE7jfgLCJcNkWBBh"
+        mime_type: "application/pdf"
+        asset_role: "evidence_document"
+        ready_to_upload: true
+        ready_to_upload_reason: "HLA evidence PDF ready for controlled document corpus storage."
+      - file_name: "North Ayrshire HLA.pdf"
+        file_id: "16geGqJpD13zlbRXTs7rXFN0154j3Z7Q0"
+        mime_type: "application/pdf"
+        asset_role: "evidence_document"
+        ready_to_upload: true
+        ready_to_upload_reason: "HLA PDF ready for controlled document corpus storage."
+      - file_name: "North Ayrshire HLA.pdf"
+        file_id: "11nb8ktZvaZ_vCtWalPJaflXrZQ2g6m9l"
+        mime_type: "application/pdf"
+        asset_role: "evidence_document"
+        ready_to_upload: true
+        ready_to_upload_reason: "HLA PDF ready for controlled document corpus storage; duplicate filename should be checked by file_id."
+      - file_name: "Renfrewshire HLA.pdf"
+        file_id: "1bNZkUgbSabqxRryxRAM3S_qRK3Lfr6L4"
+        mime_type: "application/pdf"
+        asset_role: "evidence_document"
+        ready_to_upload: true
+        ready_to_upload_reason: "HLA PDF ready for controlled document corpus storage."
+      - file_name: "East Renfrew HLA.pdf"
+        file_id: "1MfWIC8iQyhgNO9auVR7S_wayYV1UjAwo"
+        mime_type: "application/pdf"
+        asset_role: "evidence_document"
+        ready_to_upload: true
+        ready_to_upload_reason: "HLA PDF ready for controlled document corpus storage."
+      - file_name: "Glasgow HLA.pdf"
+        file_id: "1Dj5ciBvZBGNl21tV3pe1SA4xYBsIQl54"
+        mime_type: "application/pdf"
+        asset_role: "evidence_document"
+        ready_to_upload: true
+        ready_to_upload_reason: "HLA PDF ready for controlled document corpus storage."
+      - file_name: "Midlothian HLA.pdf"
+        file_id: "1a2IC_WlT4vHFf6DbdcuZOe5xE2JmS3qF"
+        mime_type: "application/pdf"
+        asset_role: "evidence_document"
+        ready_to_upload: true
+        ready_to_upload_reason: "HLA PDF ready for controlled document corpus storage."
+      - file_name: "East_Lothian_Housing_Land_Audit_2023.pdf"
+        file_id: "1eU_galVFX3h06DGO-0kjVbd8ye4yYbaP"
+        mime_type: "application/pdf"
+        asset_role: "evidence_document"
+        ready_to_upload: true
+        ready_to_upload_reason: "HLA PDF ready for controlled document corpus storage."
+      - file_name: "Edinburgh HLA.pdf"
+        file_id: "16vmrcsEFpSmDT0yWJEkvbqT-02FdEWLN"
+        mime_type: "application/pdf"
+        asset_role: "evidence_document"
+        ready_to_upload: true
+        ready_to_upload_reason: "HLA PDF ready for controlled document corpus storage."
+      - file_name: "Stirling housing Audit.pdf"
+        file_id: "1y_87YREuMlrJLA8B0FFXTqGm81U8T62L"
+        mime_type: "application/pdf"
+        asset_role: "evidence_document"
+        ready_to_upload: true
+        ready_to_upload_reason: "HLA PDF ready for controlled document corpus storage."

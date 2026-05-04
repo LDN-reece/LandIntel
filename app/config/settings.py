@@ -99,6 +99,28 @@ class Settings(BaseSettings):
     reconcile_max_attempts: int = Field(default=3, alias="RECONCILE_MAX_ATTEMPTS")
     http_timeout_seconds: int = Field(default=120, alias="HTTP_TIMEOUT_SECONDS")
 
+    google_drive_api_key: str | None = Field(default=None, alias="GOOGLE_DRIVE_API_KEY")
+    drive_source_root_folder_id: str = Field(
+        default="1aXGeNM6AeqJ6IDH-jaVrZkhmjczYVTHt",
+        alias="DRIVE_SOURCE_ROOT_FOLDER_ID",
+    )
+    drive_source_manifest_path: Path = Field(
+        default=CONFIG_DIR / "scotland_drive_source_manifest.yaml",
+        alias="DRIVE_SOURCE_MANIFEST_PATH",
+    )
+    drive_source_sync_enable_downloads: bool = Field(
+        default=False,
+        alias="DRIVE_SOURCE_SYNC_ENABLE_DOWNLOADS",
+    )
+    drive_source_sync_max_files_per_run: int = Field(
+        default=25,
+        alias="DRIVE_SOURCE_SYNC_MAX_FILES_PER_RUN",
+    )
+    drive_source_sync_max_download_bytes: int = Field(
+        default=100_000_000,
+        alias="DRIVE_SOURCE_SYNC_MAX_DOWNLOAD_BYTES",
+    )
+
     enable_internal_scheduler: bool = Field(default=False, alias="ENABLE_INTERNAL_SCHEDULER")
     startup_command: str = Field(default="none", alias="STARTUP_COMMAND")
     quarterly_cron: str = Field(default="0 6 2 3,6,9,12 *", alias="QUARTERLY_CRON")

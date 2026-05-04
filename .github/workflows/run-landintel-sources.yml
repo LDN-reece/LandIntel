@@ -64,6 +64,8 @@ on:
           - refresh-bgs-borehole-scan-registry
           - queue-bgs-borehole-scans
           - audit-bgs-borehole-scan-queue
+          - fetch-bgs-borehole-scans
+          - audit-bgs-borehole-scan-assets
           - refresh-site-assessments
           - refresh-site-prove-it-assessments
           - audit-site-prove-it-assessments
@@ -338,6 +340,9 @@ jobs:
       BGS_SCAN_QUEUE_AUTHORITY: ${{ inputs.phase2_authority || '' }}
       BGS_SCAN_QUEUE_PRIORITY_BAND: ""
       BGS_SCAN_QUEUE_FORCE_REFRESH: ${{ inputs.phase2_force_refresh || false }}
+      BGS_SCAN_ASSET_MAX_PER_RUN: "5"
+      BGS_SCAN_ASSET_MAX_DOWNLOAD_BYTES: "15000000"
+      BGS_SCAN_FETCH_ENABLE_DOWNLOADS: "false"
       TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE: "10"
       TITLE_RESOLUTION_MIN_OVERLAP_SQM: "1"
       TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE: "0"
@@ -383,7 +388,7 @@ jobs:
           fi
           echo "SELECTED_COMMAND=${selected_command}" >> "$GITHUB_ENV"
           case "$selected_command" in
-            validate-only|run-migrations|sync-source-catalog|audit-source-footprint|audit-source-freshness|register-source-estate|probe-source-estate|audit-source-estate|audit-source-completion-matrix|process-reconcile-queue|reconcile-catchup-scan|refresh-affected-sites|weekly-reconcile-maintenance|discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|audit-full-source-estate|refresh-planning-decisions|audit-planning-decisions|refresh-title-readiness|refresh-title-reviews|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|refresh-site-bgs-borehole-context|audit-site-bgs-borehole-context|refresh-bgs-borehole-scan-registry|queue-bgs-borehole-scans|audit-bgs-borehole-scan-queue|refresh-site-assessments|refresh-site-prove-it-assessments|audit-site-prove-it-assessments|refresh-ldn-candidate-screen|audit-ldn-candidate-screen|refresh-urgent-address-title-pack|audit-urgent-address-title-pack|refresh-scotland-parcel-use-context|audit-scotland-parcel-use-context|ingest-companies-house|ingest-fca-entities)
+            validate-only|run-migrations|sync-source-catalog|audit-source-footprint|audit-source-freshness|register-source-estate|probe-source-estate|audit-source-estate|audit-source-completion-matrix|process-reconcile-queue|reconcile-catchup-scan|refresh-affected-sites|weekly-reconcile-maintenance|discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|audit-full-source-estate|refresh-planning-decisions|audit-planning-decisions|refresh-title-readiness|refresh-title-reviews|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|refresh-site-bgs-borehole-context|audit-site-bgs-borehole-context|refresh-bgs-borehole-scan-registry|queue-bgs-borehole-scans|audit-bgs-borehole-scan-queue|fetch-bgs-borehole-scans|audit-bgs-borehole-scan-assets|refresh-site-assessments|refresh-site-prove-it-assessments|audit-site-prove-it-assessments|refresh-ldn-candidate-screen|audit-ldn-candidate-screen|refresh-urgent-address-title-pack|audit-urgent-address-title-pack|refresh-scotland-parcel-use-context|audit-scotland-parcel-use-context|ingest-companies-house|ingest-fca-entities)
               system_package_profile="minimal"
               ;;
             *)
@@ -407,7 +412,7 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py" -v
 
       - name: Compile critical runners
-        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_completion_audit.py src/bgs_borehole_context_runner.py src/bgs_borehole_scan_queue_runner.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py src/constraint_scaler_proof.py src/phase2_source_runner.py src/main.py
+        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py src/source_freshness_audit.py src/source_completion_audit.py src/bgs_borehole_context_runner.py src/bgs_borehole_scan_queue_runner.py src/bgs_borehole_scan_asset_runner.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py src/constraint_scaler_proof.py src/phase2_source_runner.py src/main.py
 
       - name: Show selected command
         run: |
@@ -571,6 +576,13 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "audit-bgs-borehole-scan-queue" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.bgs_borehole_scan_queue_runner audit-bgs-borehole-scan-queue
+          elif [ "$SELECTED_COMMAND" = "fetch-bgs-borehole-scans" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.bgs_borehole_scan_asset_runner fetch-bgs-borehole-scans
+            python -m src.bgs_borehole_scan_asset_runner audit-bgs-borehole-scan-assets
+          elif [ "$SELECTED_COMMAND" = "audit-bgs-borehole-scan-assets" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.bgs_borehole_scan_asset_runner audit-bgs-borehole-scan-assets
           elif [ "$SELECTED_COMMAND" = "audit-open-location-spine-completion" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_expansion_runner_wfs_paging audit-open-location-spine-completion

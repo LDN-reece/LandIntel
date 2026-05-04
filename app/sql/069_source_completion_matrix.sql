@@ -55,6 +55,8 @@ with workflow_commands(command_name, workflow_file, command_family, broad_run_ri
         ('refresh-bgs-borehole-scan-registry', 'run-landintel-sources.yml', 'ground', false),
         ('queue-bgs-borehole-scans', 'run-landintel-sources.yml', 'ground', false),
         ('audit-bgs-borehole-scan-queue', 'run-landintel-sources.yml', 'ground', false),
+        ('fetch-bgs-borehole-scans', 'run-landintel-sources.yml', 'ground', false),
+        ('audit-bgs-borehole-scan-assets', 'run-landintel-sources.yml', 'ground', false),
         ('refresh-site-assessments', 'run-landintel-sources.yml', 'assessment', false),
         ('refresh-site-prove-it-assessments', 'run-landintel-sources.yml', 'assessment', false),
         ('audit-site-prove-it-assessments', 'run-landintel-sources.yml', 'assessment', false),

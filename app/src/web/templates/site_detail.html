@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}{{ brief.header.site_name }} | LandIntel{% endblock %}
+{% block body_class %}app-body site-detail-body{% endblock %}
+
+{% block content %}
+<section class="site-detail-page">
+  {% include "partials/site_context_header.html" %}
+
+  <div class="site-workspace-grid">
+    <aside class="workspace-pane intelligence-pane">
+      {% include "partials/site_map_shell.html" %}
+    </aside>
+
+    <section class="workspace-pane evidence-pane">
+      {% include "partials/site_evidence_stack.html" %}
+    </section>
+
+    <aside class="workspace-pane review-pane">
+      {% include "partials/site_review_actions.html" %}
+    </aside>
+  </div>
+</section>
+{% endblock %}

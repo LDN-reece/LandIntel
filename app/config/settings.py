@@ -6,7 +6,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-import yaml
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover - depends on local runtime image
+    yaml = None
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -81,8 +84,29 @@ class Settings(BaseSettings):
         default="landintel-ingest-audit",
         alias="SUPABASE_AUDIT_BUCKET_NAME",
     )
+    supabase_working_bucket_name: str = Field(
+        default="landintel-working",
+        alias="SUPABASE_WORKING_BUCKET_NAME",
+    )
+    supabase_archive_bucket_name: str = Field(
+        default="landintel-ingest-audit",
+        alias="SUPABASE_ARCHIVE_BUCKET_NAME",
+    )
     persist_staging_rows: bool = Field(default=False, alias="PERSIST_STAGING_ROWS")
     staging_retention_days: int = Field(default=14, alias="STAGING_RETENTION_DAYS")
+    artifact_working_retention_days: int = Field(
+        default=30,
+        alias="ARTIFACT_WORKING_RETENTION_DAYS",
+    )
+    artifact_archive_retention_days: int = Field(
+        default=365,
+        alias="ARTIFACT_ARCHIVE_RETENTION_DAYS",
+    )
+    minimum_operational_area_acres: float = Field(
+        default=4.0,
+        alias="MIN_OPERATIONAL_AREA_ACRES",
+    )
+    mirror_land_objects: bool = Field(default=False, alias="MIRROR_LAND_OBJECTS")
     batch_size: int = Field(default=1_000, alias="BATCH_SIZE")
     planning_new_site_min_area_acres: float = Field(
         default=4.0,
@@ -102,10 +126,46 @@ class Settings(BaseSettings):
     enable_internal_scheduler: bool = Field(default=False, alias="ENABLE_INTERNAL_SCHEDULER")
     startup_command: str = Field(default="none", alias="STARTUP_COMMAND")
     quarterly_cron: str = Field(default="0 6 2 3,6,9,12 *", alias="QUARTERLY_CRON")
+    planning_review_cron: str = Field(default="0 7 * * 1", alias="PLANNING_REVIEW_CRON")
+    policy_review_cron: str = Field(default="0 8 * * 1", alias="POLICY_REVIEW_CRON")
+    refresh_queue_cron: str = Field(default="0 9 * * *", alias="REFRESH_QUEUE_CRON")
+    bgs_borehole_archive_path: Path | None = Field(default=None, alias="BGS_BOREHOLE_ARCHIVE_PATH")
+    process_site_refresh_queue_after_bgs: bool = Field(
+        default=False,
+        alias="PROCESS_SITE_REFRESH_QUEUE_AFTER_BGS",
+    )
+    bgs_site_refresh_limit: int = Field(default=200, alias="BGS_SITE_REFRESH_LIMIT")
+    workflow_source_input_path: Path | None = Field(default=None, alias="LANDINTEL_SOURCE_INPUT_PATH")
+    workflow_source_input_dir: Path | None = Field(default=None, alias="LANDINTEL_SOURCE_INPUT_DIR")
+    workflow_source_input_extracted_dir: Path | None = Field(
+        default=None,
+        alias="LANDINTEL_SOURCE_INPUT_EXTRACTED_DIR",
+    )
+    workflow_source_input_filename: str | None = Field(default=None, alias="LANDINTEL_SOURCE_INPUT_FILENAME")
 
     councils_config_path: Path = Field(
         default=CONFIG_DIR / "councils.yaml",
         alias="COUNCILS_CONFIG_PATH",
+    )
+    buyer_profiles_config_path: Path = Field(
+        default=CONFIG_DIR / "buyer_profiles.yaml",
+        alias="BUYER_PROFILES_CONFIG_PATH",
+    )
+    commercial_defaults_config_path: Path = Field(
+        default=CONFIG_DIR / "commercial_defaults.yaml",
+        alias="COMMERCIAL_DEFAULTS_CONFIG_PATH",
+    )
+    investor_entities_config_path: Path = Field(
+        default=CONFIG_DIR / "investor_entities.yaml",
+        alias="INVESTOR_ENTITIES_CONFIG_PATH",
+    )
+    investor_evidence_config_path: Path = Field(
+        default=CONFIG_DIR / "investor_evidence.yaml",
+        alias="INVESTOR_EVIDENCE_CONFIG_PATH",
+    )
+    strategy_rules_config_path: Path = Field(
+        default=CONFIG_DIR / "strategy_rules.yaml",
+        alias="STRATEGY_RULES_CONFIG_PATH",
     )
 
     @property
@@ -133,6 +193,9 @@ class Settings(BaseSettings):
 
     def load_target_councils(self) -> list[str]:
         """Return the canonical authority names from YAML configuration."""
+
+        if yaml is None:
+            raise RuntimeError("PyYAML is required to load the councils configuration.")
 
         with self.councils_config_path.open("r", encoding="utf-8") as handle:
             payload: dict[str, Any] = yaml.safe_load(handle) or {}

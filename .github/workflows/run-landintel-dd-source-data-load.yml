@@ -1,0 +1,311 @@
+name: Run LandIntel DD Source Data Load
+
+on:
+  workflow_dispatch:
+    inputs:
+      dd_source_scope:
+        description: Source loading scope. Use all for the full DD source estate.
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - planning_policy_registers
+          - core_constraints
+          - open_location_context
+          - commercial_context
+          - drive_registry_only
+      dd_step_timeout_minutes:
+        description: Hard timeout per source command.
+        required: false
+        default: "35"
+      dd_continue_on_source_error:
+        description: Continue to later source families if one source command fails.
+        required: false
+        type: boolean
+        default: true
+      dd_enable_drive_downloads:
+        description: Download bounded Drive-ready source files as workflow artifacts only. Does not ingest them into source truth tables.
+        required: false
+        type: boolean
+        default: false
+      dd_drive_max_files:
+        description: Maximum Drive-ready files to download if Drive downloads are enabled.
+        required: false
+        default: "10"
+      dd_drive_max_download_bytes:
+        description: Maximum total Drive download bytes if Drive downloads are enabled.
+        required: false
+        default: "100000000"
+      dd_open_data_max_download_bytes:
+        description: Maximum bytes per OS/OpenData source asset.
+        required: false
+        default: "90000000"
+      dd_open_data_max_features_per_source:
+        description: Maximum source rows/features advanced per source.
+        required: false
+        default: "2500"
+      dd_open_data_max_csv_scan_rows:
+        description: Maximum CSV rows scanned per open source before pausing.
+        required: false
+        default: "500000"
+
+concurrency:
+  group: "landintel-dd-source-data-load-${{ github.ref }}"
+  cancel-in-progress: false
+
+jobs:
+  dd-source-data-load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: app
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}/app
+      SUPABASE_URL: https://icmgcxujqoiyzxqonwca.supabase.co
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}
+      IMPROVEMENT_SERVICE_AUTHKEY: ${{ secrets.IMPROVEMENT_SERVICE_AUTHKEY }}
+      BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
+      OS_PROJECT_API: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
+      OS_PROJECT_API_SECRET: ${{ secrets.OS_PROJECT_API_SECRET }}
+      OS_API_KEY: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
+      OS_DOWNLOADS_API: ${{ secrets.OS_DOWNLOADS_API }}
+      OS_FEATURES_API: ${{ secrets.OS_FEATURES_API }}
+      OS_LINKED_IDENTIFIERS_API: ${{ secrets.OS_LINKED_IDENTIFIERS_API }}
+      OS_LINKED_IDENTIFIERS_API_KEY: ${{ secrets.OS_LINKED_IDENTIFIERS_API_KEY }}
+      OPENTOPOGRAPHY_API_KEY: ${{ secrets.OPENTOPOGRAPHY_API_KEY }}
+      COMPANIES_HOUSE_API: ${{ secrets.COMPANIES_HOUSE_API }}
+      COMPANIES_HOUSE_API_KEY: ${{ secrets.COMPANIES_HOUSE_API_KEY }}
+      FCA_API: ${{ secrets.FCA_API }}
+      FCA_API_KEY: ${{ secrets.FCA_API_KEY }}
+      ROS_CLIENT_ID: ${{ secrets.ROS_CLIENT_ID }}
+      ROS_CLIENT_SECRET: ${{ secrets.ROS_CLIENT_SECRET }}
+      GOOGLE_DRIVE_API_KEY: ${{ secrets.GOOGLE_DRIVE_API_KEY }}
+      DRIVE_SOURCE_ROOT_FOLDER_ID: "1aXGeNM6AeqJ6IDH-jaVrZkhmjczYVTHt"
+      DRIVE_SOURCE_MANIFEST_PATH: ${{ github.workspace }}/app/config/scotland_drive_source_manifest.yaml
+      DRIVE_SOURCE_SYNC_ENABLE_DOWNLOADS: ${{ inputs.dd_enable_drive_downloads || false }}
+      DRIVE_SOURCE_SYNC_MAX_FILES_PER_RUN: ${{ inputs.dd_drive_max_files || '10' }}
+      DRIVE_SOURCE_SYNC_MAX_DOWNLOAD_BYTES: ${{ inputs.dd_drive_max_download_bytes || '100000000' }}
+      AUDIT_ARTIFACT_BACKEND: none
+      PERSIST_STAGING_ROWS: "false"
+      SOURCE_EXPANSION_COMMAND_TIMEOUT: ${{ inputs.dd_step_timeout_minutes || '35' }}m
+      SOURCE_EXPANSION_PAGE_SIZE: "2000"
+      SOURCE_EXPANSION_MAX_FEATURES: "0"
+      SOURCE_EXPANSION_ARCGIS_MAX_TILES: "75"
+      SOURCE_EXPANSION_ARCGIS_MAX_FEATURES_PER_LAYER: "10000"
+      SOURCE_EXPANSION_CONSTRAINT_MEASURE_MODE: "off"
+      SOURCE_EXPANSION_MAX_MEASURE_FEATURES: "0"
+      SOURCE_EXPANSION_MAX_MEASURE_LAYERS: "0"
+      OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: ${{ inputs.dd_open_data_max_download_bytes || '90000000' }}
+      OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: ${{ inputs.dd_open_data_max_features_per_source || '2500' }}
+      OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS: ${{ inputs.dd_open_data_max_csv_scan_rows || '500000' }}
+      OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: "0"
+      OPEN_LOCATION_SPINE_CONTEXT_REFRESH_MODE: "disabled"
+      OPEN_LOCATION_SPINE_MAX_CONTEXT_FEATURE_TYPES: "0"
+      OPEN_LOCATION_SPINE_FORCE_LARGE_DOWNLOADS: "false"
+      OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE: "0"
+      OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: "0"
+      OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT: "2000"
+      PHASE2_BATCH_SIZE: "250"
+      PHASE2_RUNTIME_MINUTES: "10"
+      PHASE2_DRY_RUN: "false"
+      PHASE2_FORCE_REFRESH: "false"
+      PHASE2_AUDIT_ONLY: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || { echo "Missing GitHub secret: SUPABASE_DB_URL"; exit 1; }
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing GitHub secret: SUPABASE_SERVICE_ROLE_KEY"; exit 1; }
+          test -n "$BOUNDARY_AUTHKEY" || { echo "Missing GitHub secret: BOUNDARY_AUTHKEY"; exit 1; }
+
+      - name: Install geospatial system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev proj-bin postgresql-client
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile data loaders
+        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py src/phase2_source_runner.py src/drive_source_sync.py
+
+      - name: Load DD source estate into Supabase
+        env:
+          DD_SOURCE_SCOPE: ${{ inputs.dd_source_scope || 'all' }}
+          DD_CONTINUE_ON_SOURCE_ERROR: ${{ inputs.dd_continue_on_source_error || true }}
+          DD_STEP_TIMEOUT: ${{ inputs.dd_step_timeout_minutes || '35' }}m
+        run: |
+          set -euo pipefail
+          mkdir -p .tmp
+          status_file=".tmp/dd-source-data-load-status.jsonl"
+          : > "$status_file"
+
+          run_required() {
+            local label="$1"
+            shift
+            echo "::group::${label}"
+            echo "### ${label}" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "$*" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            "$@"
+            echo "{\"label\":\"${label}\",\"status\":\"success\"}" >> "$status_file"
+            echo "- success" >> "$GITHUB_STEP_SUMMARY"
+            echo "::endgroup::"
+          }
+
+          run_optional() {
+            local label="$1"
+            shift
+            echo "::group::${label}"
+            echo "### ${label}" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "timeout ${DD_STEP_TIMEOUT} $*" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            set +e
+            timeout "$DD_STEP_TIMEOUT" "$@"
+            local status=$?
+            set -e
+            if [ "$status" -eq 0 ]; then
+              echo "{\"label\":\"${label}\",\"status\":\"success\"}" >> "$status_file"
+              echo "- success" >> "$GITHUB_STEP_SUMMARY"
+            elif [ "$status" -eq 124 ]; then
+              echo "{\"label\":\"${label}\",\"status\":\"timeout\"}" >> "$status_file"
+              echo "- timed out; landed rows are retained where the loader is incremental" >> "$GITHUB_STEP_SUMMARY"
+              echo "::warning::${label} reached the time budget."
+            else
+              echo "{\"label\":\"${label}\",\"status\":\"failed\",\"exit_code\":${status}}" >> "$status_file"
+              echo "- failed with exit code ${status}" >> "$GITHUB_STEP_SUMMARY"
+              echo "::warning::${label} failed with exit code ${status}."
+              if [ "$DD_CONTINUE_ON_SOURCE_ERROR" != "true" ]; then
+                echo "::endgroup::"
+                return "$status"
+              fi
+            fi
+            echo "::endgroup::"
+            return 0
+          }
+
+          source_phase() {
+            run_optional "$1" python -m src.source_expansion_runner_wfs_paging "$2"
+          }
+
+          phase2() {
+            run_optional "$1" python -m src.phase2_source_runner "$2"
+          }
+
+          echo "# LandIntel DD Source Data Load" >> "$GITHUB_STEP_SUMMARY"
+          echo "- scope: ${DD_SOURCE_SCOPE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- source command timeout: ${DD_STEP_TIMEOUT}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- continue on source error: ${DD_CONTINUE_ON_SOURCE_ERROR}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- interpretation/measurement: disabled" >> "$GITHUB_STEP_SUMMARY"
+
+          run_required "Run migrations" python -m src.source_phase_runner run-migrations
+          run_required "Sync source catalogue" python -m src.source_catalog_sync sync-source-catalog
+          run_required "Register source estate" python -m src.source_estate_registry register-source-estate
+          run_required "Register supplemental sources" python -m src.source_policy_discovery register-supplemental-sources
+          run_required "Sync Drive source registry" python -m src.drive_source_sync sync-drive-source-manifest
+
+          if [ "${DRIVE_SOURCE_SYNC_ENABLE_DOWNLOADS}" = "true" ]; then
+            run_optional "Download bounded Drive-ready source files as artifact" python -m src.drive_source_sync sync-drive-ready-upload-files
+          else
+            echo "Drive binary download disabled; registry metadata still synced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$DD_SOURCE_SCOPE" = "all" ] || [ "$DD_SOURCE_SCOPE" = "planning_policy_registers" ]; then
+            source_phase "Ingest LDP source data" ingest-ldp
+            source_phase "Ingest settlement boundary source data" ingest-settlement-boundaries
+            source_phase "Ingest HLA source data" ingest-hla
+            source_phase "Ingest ELA source data" ingest-ela
+            source_phase "Ingest VDL source data" ingest-vdl
+          fi
+
+          if [ "$DD_SOURCE_SCOPE" = "all" ] || [ "$DD_SOURCE_SCOPE" = "core_constraints" ]; then
+            source_phase "Ingest SEPA flood source data" ingest-sepa-flood
+            source_phase "Ingest Coal Authority source data" ingest-coal-authority
+            source_phase "Ingest Green Belt source data" ingest-greenbelt
+            source_phase "Ingest Contaminated Land source data" ingest-contaminated-land
+            source_phase "Ingest Culverts source data" ingest-culverts
+            source_phase "Ingest Tree Preservation Order source data" ingest-tpo
+            source_phase "Ingest Conservation Areas source data" ingest-conservation-areas
+            source_phase "Ingest HES heritage source data" ingest-hes-designations
+            source_phase "Ingest NatureScot ecology/designation source data" ingest-naturescot
+          fi
+
+          if [ "$DD_SOURCE_SCOPE" = "all" ] || [ "$DD_SOURCE_SCOPE" = "open_location_context" ]; then
+            source_phase "Ingest OS Boundary-Line source data" ingest-os-boundary-line
+            source_phase "Ingest OS Open Roads source data" ingest-os-open-roads
+            source_phase "Ingest OS Open Rivers source data" ingest-os-open-rivers
+            source_phase "Ingest OS Open Names source data" ingest-os-open-names
+            source_phase "Ingest OS Open Greenspace source data" ingest-os-open-greenspace
+            source_phase "Ingest OS Open Built Up Areas source data" ingest-os-open-built-up-areas
+            source_phase "Ingest NaPTAN source data" ingest-naptan
+            source_phase "Ingest statistics.gov.scot source data" ingest-statistics-gov-scot
+            source_phase "Ingest OpenTopography SRTM source data" ingest-opentopography-srtm
+          fi
+
+          if [ "$DD_SOURCE_SCOPE" = "all" ] || [ "$DD_SOURCE_SCOPE" = "commercial_context" ]; then
+            phase2 "Ingest amenities source data" ingest-amenities
+            phase2 "Ingest demographics source data" ingest-demographics
+            phase2 "Ingest market context source data" ingest-market-context
+            phase2 "Ingest power infrastructure source data" ingest-power-infrastructure
+            phase2 "Ingest planning appeals source data" ingest-planning-appeals
+            phase2 "Ingest planning documents source data" ingest-planning-documents
+            phase2 "Ingest Companies House source data" ingest-companies-house
+            phase2 "Ingest FCA source data" ingest-fca-entities
+          fi
+
+          run_optional "Audit open location spine completion" python -m src.source_expansion_runner_wfs_paging audit-open-location-spine-completion
+          run_optional "Audit source expansion" python -m src.source_expansion_runner_wfs_paging audit-source-expansion
+          run_optional "Audit full source estate" python -m src.phase2_source_runner audit-full-source-estate
+          run_optional "Audit source completion matrix" python -m src.source_completion_audit audit-source-completion-matrix
+
+          echo "## Source Load Status JSONL" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`json" >> "$GITHUB_STEP_SUMMARY"
+          cat "$status_file" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload DD source load status
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: dd-source-data-load-status
+          path: app/.tmp/dd-source-data-load-status.jsonl
+          if-no-files-found: warn
+
+      - name: Upload Drive source sync summary
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: drive-source-sync-summary
+          path: app/.tmp/drive-source-sync-summary.json
+          if-no-files-found: warn
+
+      - name: Upload bounded Drive-ready files
+        if: ${{ inputs.dd_enable_drive_downloads == true }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: drive-source-ready-files
+          path: app/.tmp/drive_source_ready_files
+          if-no-files-found: warn

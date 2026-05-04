@@ -63,6 +63,10 @@ class SiteBgsBoreholeContextContractTests(unittest.TestCase):
         self.assertIn("cast(:source_family as text)", RUNNER)
         self.assertIn("cast(:safe_use_caveat as text)", RUNNER)
 
+    def test_refresh_logging_does_not_overwrite_reserved_message_field(self) -> None:
+        self.assertIn('if key != "message"', RUNNER)
+        self.assertNotIn('extra=result)', RUNNER)
+
     def test_workflow_exposes_refresh_and_audit_commands(self) -> None:
         self.assertIn("- refresh-site-bgs-borehole-context", WORKFLOW)
         self.assertIn("- audit-site-bgs-borehole-context", WORKFLOW)

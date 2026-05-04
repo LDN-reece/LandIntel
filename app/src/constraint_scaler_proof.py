@@ -28,8 +28,8 @@ def collect_constraint_scaler_proof(database: Database) -> dict[str, Any]:
                 source_family,
                 source_feature_count,
                 measured_site_count,
-                measurement_count,
-                friction_fact_count
+                measured_row_count,
+                commercial_friction_fact_count
             from landintel_reporting.v_constraint_coverage_by_layer
             order by constraint_priority_rank, source_family, layer_key
             limit 20

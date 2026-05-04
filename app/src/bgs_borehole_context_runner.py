@@ -680,7 +680,10 @@ def main() -> int:
         if args.command == "refresh-site-bgs-borehole-context":
             result = runner.refresh()
             print(json.dumps(result, default=str, ensure_ascii=False), flush=True)
-            logger.info("site_bgs_borehole_context_refresh_completed", extra=result)
+            logger.info(
+                "site_bgs_borehole_context_refresh_completed",
+                extra={key: value for key, value in result.items() if key != "message"},
+            )
         else:
             result = runner.audit()
             print(json.dumps(result, default=str, ensure_ascii=False), flush=True)

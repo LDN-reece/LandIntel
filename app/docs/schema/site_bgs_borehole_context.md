@@ -52,7 +52,7 @@ Priority order:
 4. Prove It candidates
 5. wider canonical sites
 
-Default batch size is 25. The workflow has explicit controls for batch size, priority band, authority and force refresh.
+Default batch size is 25. The GitHub Action keeps that batch size fixed to avoid accidental broad scans, while reusing the existing Phase 2 authority and force-refresh inputs where needed. The runner also supports environment-level priority-band and max-age controls for deliberately scoped follow-up runs.
 
 ## Safe Use
 

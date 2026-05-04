@@ -45,7 +45,8 @@ class SiteBgsBoreholeContextContractTests(unittest.TestCase):
         self.assertIn("refresh-site-bgs-borehole-context", RUNNER)
         self.assertIn("audit-site-bgs-borehole-context", RUNNER)
         self.assertIn("landintel_reporting.v_constraint_priority_sites", RUNNER)
-        self.assertIn("bgs_borehole_context_batch_size", WORKFLOW)
+        self.assertIn('bgs_borehole_context_batch_size: "25"', WORKFLOW)
+        self.assertIn("bgs_borehole_context_authority: ${{ inputs.phase2_authority", WORKFLOW)
         self.assertIn("_env_int(\"bgs_borehole_context_batch_size", RUNNER)
         self.assertIn("min(value, maximum)", RUNNER)
         self.assertIn("limit :batch_size", RUNNER)
@@ -65,7 +66,23 @@ class SiteBgsBoreholeContextContractTests(unittest.TestCase):
         self.assertIn("python -m src.bgs_borehole_context_runner refresh-site-bgs-borehole-context", WORKFLOW)
         self.assertIn("python -m src.bgs_borehole_context_runner audit-site-bgs-borehole-context", WORKFLOW)
         self.assertIn("src/bgs_borehole_context_runner.py", WORKFLOW)
-        self.assertIn("bgs_borehole_context_force_refresh", WORKFLOW)
+        self.assertIn("bgs_borehole_context_force_refresh: ${{ inputs.phase2_force_refresh", WORKFLOW)
+
+    def test_workflow_dispatch_input_count_stays_within_github_limit(self) -> None:
+        workflow_text = (REPO_ROOT / ".github" / "workflows" / "run-landintel-sources.yml").read_text(
+            encoding="utf-8"
+        )
+        in_inputs = False
+        input_count = 0
+        for line in workflow_text.splitlines():
+            if line.startswith("    inputs:"):
+                in_inputs = True
+                continue
+            if in_inputs and line and not line.startswith("      "):
+                break
+            if in_inputs and line.startswith("      ") and not line.startswith("        ") and line.strip().endswith(":"):
+                input_count += 1
+        self.assertLessEqual(input_count, 25)
 
     def test_docs_lock_safe_use_and_no_broad_scan(self) -> None:
         for required_phrase in (

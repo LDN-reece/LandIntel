@@ -2797,6 +2797,21 @@ class SourceExpansionRunner:
             metadata=result,
         )
         self.logger.info("constraint_measurement_audit", extra=result)
+        print(
+            json.dumps(
+                {
+                    "message": "constraint_measurement_audit_stdout_proof",
+                    "command": result["command"],
+                    "status": result["status"],
+                    "coverage": result["coverage"],
+                    "constraint_scaler_counts": result["constraint_scaler_counts"],
+                    "constraint_scaler_site_priority": result["constraint_scaler_site_priority"],
+                    "constraint_scaler_queue_sample": result["constraint_scaler_queue_sample"],
+                },
+                default=str,
+                ensure_ascii=False,
+            )
+        )
         return result
 
     def _run_family_command(self, command: str, source_family: str) -> dict[str, Any]:

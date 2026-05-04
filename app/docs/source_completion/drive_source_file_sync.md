@@ -26,6 +26,7 @@ This stops source completion drifting into memory and guesswork.
 ## Objects
 
 - `landintel_store.drive_source_file_registry`
+- `landintel_reporting.v_drive_source_file_inventory`
 - `landintel_reporting.v_drive_source_ready_upload_files`
 - `landintel_reporting.v_drive_source_sync_status`
 - `app/config/scotland_drive_source_manifest.yaml`
@@ -97,6 +98,8 @@ The following files are marked `operator_priority = immediate` and `immediate_ad
 | 6 | `Council_Asset_Register_-_Scotland.zip` | `council_assets` | source storage, then public ownership exclusion layer |
 | 7 | `Local_Landscape_Areas_-_Scotland.zip` | `landscape` | source storage, then bounded constraint measurement |
 | 8 | `School_Catchments_-_Scotland.zip` | `school_catchments` | source storage, then location context |
+| 9 | `Local_Nature_Reserves_-_Scotland.zip` | `naturescot` | source storage, then bounded constraint measurement |
+| 10 | `Local_Nature_Conservation_Sites_-_Scotland.zip` | `naturescot` | source storage, then bounded constraint measurement |
 
 This priority set is deliberately file-control only. It makes the next source-completion order explicit without committing ZIPs into Git or loading them into truth tables.
 
@@ -163,6 +166,8 @@ After merge, run:
 Then verify:
 
 ```sql
+select * from landintel_reporting.v_drive_source_file_inventory;
+
 select * from landintel_reporting.v_drive_source_sync_status;
 
 select

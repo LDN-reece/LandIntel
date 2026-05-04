@@ -92,6 +92,39 @@ create index if not exists drive_source_file_registry_folder_idx
 create index if not exists drive_source_file_registry_metadata_gin_idx
     on landintel_store.drive_source_file_registry using gin (metadata);
 
+create or replace view landintel_reporting.v_drive_source_file_inventory
+with (security_invoker = true) as
+select
+    registry.root_folder_id,
+    registry.root_folder_name,
+    registry.folder_path,
+    registry.folder_id,
+    registry.file_id,
+    registry.file_name,
+    registry.file_or_folder,
+    registry.mime_type,
+    registry.file_extension,
+    registry.drive_url,
+    registry.source_family,
+    registry.asset_role,
+    registry.operator_priority,
+    registry.priority_rank,
+    registry.immediate_add_flag,
+    registry.ready_to_upload_flag,
+    registry.ready_to_upload_reason,
+    registry.source_completion_next_action,
+    registry.upload_status,
+    registry.download_status,
+    registry.storage_bucket,
+    registry.storage_path,
+    registry.size_bytes,
+    registry.drive_modified_at,
+    registry.manifest_seen_at,
+    registry.live_seen_at,
+    registry.last_synced_at,
+    registry.updated_at
+from landintel_store.drive_source_file_registry as registry;
+
 create or replace view landintel_reporting.v_drive_source_ready_upload_files
 with (security_invoker = true) as
 select
@@ -185,6 +218,27 @@ values
         false,
         'Metadata-only registry; do not treat as source ingestion proof or dataset interpretation.',
         'Use the dedicated Drive sync workflow to keep file awareness and ready-upload status current.',
+        '{"created_by_migration":"074_drive_source_file_registry.sql"}'::jsonb,
+        now(),
+        now()
+    ),
+    (
+        'landintel_reporting',
+        'v_drive_source_file_inventory',
+        'view',
+        'reporting_surface',
+        'LandIntel Reporting',
+        'Operator-safe inventory of all Drive-held source folders and files',
+        'source_completion',
+        true,
+        true,
+        true,
+        true,
+        false,
+        true,
+        false,
+        'Inventory view only; file presence is not source ingestion or evidence completion.',
+        'Use to verify Drive coverage before choosing source-completion work.',
         '{"created_by_migration":"074_drive_source_file_registry.sql"}'::jsonb,
         now(),
         now()

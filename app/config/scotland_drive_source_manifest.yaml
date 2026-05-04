@@ -185,14 +185,22 @@ folders:
         file_id: "1S9-uAB1qza76iUSA9iDnXNaxoe3JUoqa"
         mime_type: "application/zip"
         asset_role: "spatial_snapshot"
+        operator_priority: "immediate"
+        priority_rank: 9
+        immediate_add: true
         ready_to_upload: true
         ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+        source_completion_next_action: "source_storage_then_bounded_constraint_measurement"
       - file_name: "Local_Nature_Conservation_Sites_-_Scotland.zip"
         file_id: "1bQVdISnrWERebm4SADv2yPqa7NRXuJB7"
         mime_type: "application/zip"
         asset_role: "spatial_snapshot"
+        operator_priority: "immediate"
+        priority_rank: 10
+        immediate_add: true
         ready_to_upload: true
         ready_to_upload_reason: "Packaged spatial layer ready for controlled source storage."
+        source_completion_next_action: "source_storage_then_bounded_constraint_measurement"
 
   - folder_path: "Forestry and Woodland"
     folder_id: "18E1C6PZNfQznTnGFWl8F2vCXsq3zwTWV"

@@ -19,6 +19,7 @@ DOC = (ROOT / "docs" / "source_completion" / "drive_source_file_sync.md").read_t
 class DriveSourceFileSyncContractTests(unittest.TestCase):
     def test_migration_creates_metadata_registry_and_reporting_views(self) -> None:
         self.assertIn("create table if not exists landintel_store.drive_source_file_registry", MIGRATION)
+        self.assertIn("create or replace view landintel_reporting.v_drive_source_file_inventory", MIGRATION)
         self.assertIn("create or replace view landintel_reporting.v_drive_source_ready_upload_files", MIGRATION)
         self.assertIn("create or replace view landintel_reporting.v_drive_source_sync_status", MIGRATION)
         self.assertIn("landintel_store.object_ownership_registry", MIGRATION)
@@ -81,6 +82,8 @@ class DriveSourceFileSyncContractTests(unittest.TestCase):
             "Council_Asset_Register_-_Scotland.zip": 6,
             "Local_Landscape_Areas_-_Scotland.zip": 7,
             "School_Catchments_-_Scotland.zip": 8,
+            "Local_Nature_Reserves_-_Scotland.zip": 9,
+            "Local_Nature_Conservation_Sites_-_Scotland.zip": 10,
         }
 
         self.assertEqual(set(immediate), set(expected))
@@ -132,8 +135,10 @@ class DriveSourceFileSyncContractTests(unittest.TestCase):
             "run landintel drive source sync",
             "v_drive_source_ready_upload_files",
             "v_drive_source_sync_status",
+            "v_drive_source_file_inventory",
             "immediate priority set",
             "council_asset_register_-_scotland.zip",
+            "local_nature_conservation_sites_-_scotland.zip",
         ):
             self.assertIn(required_phrase, DOC)
 

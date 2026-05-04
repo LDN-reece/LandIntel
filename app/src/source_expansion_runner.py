@@ -2720,6 +2720,48 @@ class SourceExpansionRunner:
             order by measurement_count desc, overlap_character
             """
         )
+        constraint_scaler_counts = self.database.fetch_one(
+            """
+            select
+                (select count(*)::integer from landintel_reporting.v_constraint_coverage_by_layer)
+                    as coverage_by_layer_rows,
+                (select count(*)::integer from landintel_reporting.v_constraint_coverage_by_site_priority)
+                    as coverage_by_site_priority_rows,
+                (select count(*)::integer from landintel_reporting.v_constraint_measurement_backlog)
+                    as measurement_backlog_rows,
+                (select count(*)::integer from landintel_reporting.v_constraint_priority_measurement_queue)
+                    as priority_measurement_queue_rows
+            """
+        ) or {}
+        constraint_scaler_site_priority = self.database.fetch_all(
+            """
+            select
+                site_priority_rank,
+                site_priority_band,
+                site_count,
+                sites_with_measurements,
+                sites_with_scan_state,
+                sites_without_scan_state
+            from landintel_reporting.v_constraint_coverage_by_site_priority
+            order by site_priority_rank
+            """
+        )
+        constraint_scaler_queue_sample = self.database.fetch_all(
+            """
+            select
+                queue_rank,
+                site_priority_band,
+                constraint_priority_family,
+                layer_key,
+                authority_name,
+                area_acres,
+                recommended_workflow_command,
+                recommended_layer_key
+            from landintel_reporting.v_constraint_priority_measurement_queue
+            order by queue_rank
+            limit 20
+            """
+        )
         status = (
             "constraint_measurements_live_proven"
             if int(coverage.get("measured_site_constraint_row_count") or 0) > 0
@@ -2736,6 +2778,9 @@ class SourceExpansionRunner:
             "family_coverage": family_coverage,
             "flood_proof": flood_proof,
             "overlap_character_proof": overlap_character_proof,
+            "constraint_scaler_counts": constraint_scaler_counts,
+            "constraint_scaler_site_priority": constraint_scaler_site_priority,
+            "constraint_scaler_queue_sample": constraint_scaler_queue_sample,
             "top_measurements": top_measurements,
             "multi_group_sites": multi_group_sites,
         }

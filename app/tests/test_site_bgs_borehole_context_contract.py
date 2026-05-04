@@ -59,6 +59,9 @@ class SiteBgsBoreholeContextContractTests(unittest.TestCase):
         self.assertIn("bgs_borehole_ground_uncertainty", RUNNER)
         self.assertIn("bgs_borehole_nearest_distance", RUNNER)
         self.assertIn("safe_use_caveat", RUNNER)
+        self.assertIn("cast(:source_key as text)", RUNNER)
+        self.assertIn("cast(:source_family as text)", RUNNER)
+        self.assertIn("cast(:safe_use_caveat as text)", RUNNER)
 
     def test_workflow_exposes_refresh_and_audit_commands(self) -> None:
         self.assertIn("- refresh-site-bgs-borehole-context", WORKFLOW)

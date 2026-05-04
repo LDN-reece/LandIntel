@@ -67,6 +67,21 @@ Exposes a bounded first 5,000 unscanned site-layer pairs.
 
 This is a queue-guidance view only. It does not write scan state and it does not execute measurement.
 
+## Performance Follow-Up
+
+Live verification after PR #14 proved the views were readable, but `v_constraint_coverage_by_site_priority` and backlog sampling were too slow for an operator surface.
+
+Codex challenge and evidence:
+
+- object/workflow: `landintel_reporting.v_constraint_priority_sites` feeding the constraint scaler views;
+- assumed status: use the already polished `landintel_sourced` views directly;
+- challenged status: use the underlying current tables for the constraint priority spine, because the sourced-site views are heavier operator surfaces;
+- evidence: live count/sample verification returned, but site-priority coverage took several minutes and backlog sampling was slower than an operational control should be;
+- recommended action: keep the same reporting outputs, but derive priority bands from `landintel.site_urgent_address_title_pack`, `landintel.site_prove_it_assessments`, `landintel.site_ldn_candidate_screen`, `landintel.title_order_workflow` and `landintel.canonical_sites`;
+- proceed or wait: proceed as a narrow Phase E performance fix because no data is moved, no measurement is run and no truth table changes.
+
+The operator sourced-site views remain valid decision surfaces. The constraint scaler uses cheaper source tables so it can guide bounded measurement runs without becoming the bottleneck.
+
 ## Bounded Scale-Up Rule
 
 Run constraints in this order unless live evidence justifies a documented challenge:

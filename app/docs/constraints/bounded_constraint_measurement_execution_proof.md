@@ -31,6 +31,24 @@ The command filters the queue to:
 - `site_priority_band = 'title_spend_candidates'`
 - `constraint_priority_family = 'flood'`
 
+Reusable source-family command:
+
+`constraint-measurement-proof-title-spend-source-family`
+
+This command is the source completion programme adapter for the rest of the priority constraint estate. It still defaults to the `title_spend_candidates` cohort, but it refuses to run unless one of these existing workflow filters is provided:
+
+- `constraint_measure_source_family`
+- `constraint_measure_layer_key`
+
+That means coal/mining, green belt, contaminated land, culverts, heritage/conservation, ecology/NatureScot and TPO/landscape can follow the same bounded proof pattern without creating a new constraint engine or a broad all-layer button.
+
+Example next run:
+
+- command: `constraint-measurement-proof-title-spend-source-family`
+- `constraint_measure_source_family=coal_authority`
+- scope: title-spend candidates only
+- batch: 10 site-layer pairs
+
 ## Why Flood First
 
 Flood is the highest-priority constraint family because it can materially affect:
@@ -71,6 +89,7 @@ The command itself:
 
 - reads a capped batch from `v_constraint_priority_measurement_queue`;
 - runs only flood/title-spend pairs;
+- for the reusable command, runs only explicitly filtered title-spend source-family or layer pairs;
 - groups by layer key;
 - calls the existing `public.refresh_constraint_measurements_for_layer_sites` finalizer;
 - prints before/after proof;
@@ -152,6 +171,8 @@ This PR does not measure:
 
 It does not add RAG scoring, pass/fail status, planning certainty, legal certainty or engineering certainty.
 
+The reusable command makes those later families measurable, but they are not measured until the command is explicitly dispatched with a source-family or layer filter. A run without a filter fails closed.
+
 ## Post-Merge Run
 
 Run through GitHub Actions:
@@ -165,3 +186,13 @@ Initial batch setting:
 `CONSTRAINT_PROOF_PAIR_BATCH_SIZE = 10`
 
 Do not use this as a broad measurement button. It is a proof-grade bounded execution path for one commercial cohort and one constraint family.
+
+Next source-family proof run after this PR:
+
+1. `run-migrations`
+2. `constraint-measurement-proof-title-spend-source-family`
+   - `constraint_measure_source_family=coal_authority`
+3. `audit-constraint-measurements`
+4. `audit-source-completion-matrix`
+
+This should prove whether coal/mining can move through the same safe coverage pattern as flood, while leaving BGS, Apex, source ingestion and planning extraction untouched.

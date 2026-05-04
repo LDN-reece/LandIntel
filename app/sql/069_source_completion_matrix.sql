@@ -11,6 +11,7 @@ with workflow_commands(command_name, workflow_file, command_family, broad_run_ri
         ('audit-source-completion-matrix', 'run-landintel-sources.yml', 'audit', false),
         ('audit-full-source-estate', 'run-landintel-sources.yml', 'audit', false),
         ('audit-constraint-measurements', 'run-landintel-sources.yml', 'audit', false),
+        ('constraint-measurement-proof-title-spend-source-family', 'run-landintel-sources.yml', 'constraints', false),
         ('audit-open-location-spine-completion', 'run-landintel-sources.yml', 'audit', false),
         ('audit-title-number-control', 'run-landintel-sources.yml', 'audit', false),
         ('audit-urgent-address-title-pack', 'run-landintel-sources.yml', 'audit', false),
@@ -342,7 +343,7 @@ select
     coalesce(signal_output, 'not_documented') as signal_method,
     coalesce(data_age_basis, refresh_cadence, 'not_documented') as freshness_method,
     case
-        when source_family in ('sepa_flood', 'coal_authority', 'hes', 'naturescot', 'contaminated_land', 'tpo', 'culverts', 'conservation_areas', 'greenbelt') then 'audit-constraint-measurements / landintel_reporting.v_constraint_coverage_by_layer'
+        when source_family in ('sepa_flood', 'coal_authority', 'hes', 'naturescot', 'contaminated_land', 'tpo', 'culverts', 'conservation_areas', 'greenbelt') then 'constraint-measurement-proof-title-spend-source-family / audit-constraint-measurements / landintel_reporting.v_constraint_coverage_by_layer'
         when source_family in ('title_control', 'title_number', 'corporate_control') then 'audit-title-number-control / landintel_reporting.v_title_control_status'
         when source_family in ('planning_decisions', 'planning_appeals') then 'audit-planning-decisions / audit-full-source-estate'
         when source_family in ('amenities', 'demographics', 'market_context', 'power_infrastructure', 'address_property_base') then 'audit-full-source-estate'

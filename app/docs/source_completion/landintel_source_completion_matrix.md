@@ -113,6 +113,23 @@ Examples:
 
 These must remain bounded by workflow inputs and should not be treated as casual operator buttons.
 
+Constraint source-family completion now uses a reusable proof command:
+
+`constraint-measurement-proof-title-spend-source-family`
+
+This command is deliberately not broad-run safe without a filter. It must be dispatched with an existing workflow filter such as:
+
+- `constraint_measure_source_family=coal_authority`
+- `constraint_measure_source_family=greenbelt`
+- `constraint_measure_source_family=contaminated_land`
+- `constraint_measure_source_family=culverts`
+- `constraint_measure_source_family=hes`
+- `constraint_measure_source_family=conservation_areas`
+- `constraint_measure_source_family=naturescot`
+- `constraint_measure_source_family=tpo`
+
+The command remains `title_spend_candidates` first and processes a hard-capped 10 site-layer pairs by default. It is the repeatable path for moving priority constraint sources from `live_partial` toward `live_complete` after live measurement, audit and freshness proof.
+
 ## Source Completion CSV
 
 Static repo-side matrix:
@@ -144,5 +161,5 @@ It does not ingest data, download data, move rows, or run broad spatial scans.
 
 1. Run `audit-source-completion-matrix` after migration to prove the live matrix.
 2. Tighten per-source workflow/test evidence where the matrix says `registered_only` or `blocked`.
-3. Build bounded source-specific adapters only for the highest-value gaps.
+3. Use `constraint-measurement-proof-title-spend-source-family` to complete priority constraint coverage one source family at a time.
 4. Do not broaden ingestion until the relevant source row is visible in this matrix with a bounded workflow command.

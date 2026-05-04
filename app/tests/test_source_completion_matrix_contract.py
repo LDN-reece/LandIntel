@@ -113,6 +113,14 @@ class SourceCompletionMatrixContractTests(unittest.TestCase):
         self.assertIn("python -m src.source_completion_audit audit-source-completion-matrix", WORKFLOW)
         self.assertIn("src/source_completion_audit.py", WORKFLOW)
 
+    def test_constraint_source_family_completion_command_is_documented(self) -> None:
+        self.assertIn("constraint-measurement-proof-title-spend-source-family", MIGRATION)
+        self.assertIn("constraint-measurement-proof-title-spend-source-family", DOC)
+        self.assertIn("constraint_measure_source_family=coal_authority", DOC)
+        self.assertIn("constraint-measurement-proof-title-spend-source-family", CSV_TEXT)
+        self.assertIn("constraint_measure_source_family=coal_authority", CSV_TEXT)
+        self.assertIn("constraint_measure_source_family=greenbelt", CSV_TEXT)
+
     def test_csv_contains_required_sources_and_columns(self) -> None:
         rows = list(csv.DictReader(CSV_TEXT.splitlines()))
         self.assertGreaterEqual(len(rows), 60)

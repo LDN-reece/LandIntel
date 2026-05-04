@@ -96,9 +96,11 @@ class ConstraintCoverageScalerPerformanceContractTests(unittest.TestCase):
 
     def test_constraint_audit_reports_scaler_view_proof(self) -> None:
         for required_phrase in (
+            "constraint_measurement_audit_stdout_proof",
             "constraint_scaler_counts",
             "constraint_scaler_site_priority",
             "constraint_scaler_queue_sample",
+            "\"coverage\": result[\"coverage\"]",
             "landintel_reporting.v_constraint_coverage_by_layer",
             "landintel_reporting.v_constraint_coverage_by_site_priority",
             "landintel_reporting.v_constraint_measurement_backlog",

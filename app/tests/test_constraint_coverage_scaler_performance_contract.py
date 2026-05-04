@@ -22,6 +22,10 @@ MIGRATION = (
     APP_DIR / "sql" / "068_constraint_coverage_scaler_performance_fix.sql"
 ).read_text(encoding="utf-8")
 MIGRATION_LOWER = MIGRATION.lower()
+SOURCE_FAMILY_QUEUE_MIGRATION = (
+    APP_DIR / "sql" / "073_constraint_source_family_queue_fix.sql"
+).read_text(encoding="utf-8")
+SOURCE_FAMILY_QUEUE_MIGRATION_LOWER = SOURCE_FAMILY_QUEUE_MIGRATION.lower()
 DOC = (APP_DIR / "docs" / "schema" / "constraint_coverage_scaler.md").read_text(
     encoding="utf-8"
 )
@@ -80,6 +84,41 @@ class ConstraintCoverageScalerPerformanceContractTests(unittest.TestCase):
         self.assertIn("constraint_priority_rank <= 8", MIGRATION_LOWER)
         self.assertIn("guidance only", MIGRATION_LOWER)
         self.assertIn("does not perform measurement", MIGRATION_LOWER)
+
+    def test_source_family_queue_fix_keeps_lower_priority_sources_visible(self) -> None:
+        self.assertIn(
+            "create or replace view landintel_reporting.v_constraint_priority_measurement_queue",
+            SOURCE_FAMILY_QUEUE_MIGRATION_LOWER,
+        )
+        self.assertIn("partition by candidate_pairs.source_family", SOURCE_FAMILY_QUEUE_MIGRATION_LOWER)
+        self.assertIn("source_family_queue_rank <= 5000", SOURCE_FAMILY_QUEUE_MIGRATION_LOWER)
+        self.assertIn("flood backlog does not hide coal", SOURCE_FAMILY_QUEUE_MIGRATION_LOWER)
+        self.assertIn("guidance only", SOURCE_FAMILY_QUEUE_MIGRATION_LOWER)
+        self.assertIn("no measurement is executed by this view", SOURCE_FAMILY_QUEUE_MIGRATION_LOWER)
+
+    def test_source_family_queue_fix_contains_no_destructive_sql(self) -> None:
+        self.assertNotIn("drop table", SOURCE_FAMILY_QUEUE_MIGRATION_LOWER)
+        self.assertNotIn("drop view", SOURCE_FAMILY_QUEUE_MIGRATION_LOWER)
+        self.assertNotIn("truncate", SOURCE_FAMILY_QUEUE_MIGRATION_LOWER)
+        self.assertNotRegex(
+            SOURCE_FAMILY_QUEUE_MIGRATION_LOWER,
+            re.compile(r"delete\s+from\s+", re.IGNORECASE),
+        )
+        self.assertNotRegex(
+            SOURCE_FAMILY_QUEUE_MIGRATION_LOWER,
+            re.compile(r"alter\s+table\s+[^;]+\s+rename\s+", re.IGNORECASE),
+        )
+
+    def test_source_family_queue_fix_does_not_run_spatial_measurement(self) -> None:
+        for forbidden in (
+            "st_intersects",
+            "st_intersection",
+            "st_dwithin",
+            "st_distance",
+            "refresh_constraint_measurements_for_layer_sites",
+            "measure_constraint_feature",
+        ):
+            self.assertNotIn(forbidden, SOURCE_FAMILY_QUEUE_MIGRATION_LOWER)
 
     def test_indexes_are_additive_only(self) -> None:
         for index_name in (

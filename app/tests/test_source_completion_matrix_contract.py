@@ -117,6 +117,8 @@ class SourceCompletionMatrixContractTests(unittest.TestCase):
         self.assertIn("constraint-measurement-proof-title-spend-source-family", MIGRATION)
         self.assertIn("constraint-measurement-proof-title-spend-source-family", DOC)
         self.assertIn("constraint_measure_source_family=coal_authority", DOC)
+        self.assertIn("queue now caps candidate pairs per source family", DOC)
+        self.assertIn("flood backlog from hiding", DOC)
         self.assertIn("constraint-measurement-proof-title-spend-source-family", CSV_TEXT)
         self.assertIn("constraint_measure_source_family=coal_authority", CSV_TEXT)
         self.assertIn("constraint_measure_source_family=greenbelt", CSV_TEXT)

@@ -28,6 +28,10 @@ The first source-family proof run showed that the global 5,000-pair queue cap wa
 
 Migration `073_constraint_source_family_queue_fix.sql` keeps the same queue surface but caps it per source family. That means flood remains first priority, while coal/mining, green belt, contaminated land, culverts, heritage/conservation, ecology/NatureScot and TPO/landscape can also surface bounded candidate pairs without creating a second constraint engine.
 
+Audit correction:
+
+Once the queue became source-family aware, exact `count(*)` over the full queue became too expensive for the GitHub audit timeout. The audit now reports bounded/estimated queue counts and keeps exact proof to the before/after measurement output and queue samples.
+
 Execution command:
 
 `constraint-measurement-proof-flood-title-spend`

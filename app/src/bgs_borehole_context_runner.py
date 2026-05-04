@@ -256,10 +256,10 @@ class BgsBoreholeContextRunner:
                     prepared.evidence_density_signal,
                     prepared.ground_uncertainty_signal,
                     prepared.current_signature,
-                    :safe_use_caveat,
+                    cast(:safe_use_caveat as text),
                     jsonb_build_object(
-                        'source_key', :source_key,
-                        'source_family', :source_family,
+                        'source_key', cast(:source_key as text),
+                        'source_family', cast(:source_family as text),
                         'phase', 'G1',
                         'basis', 'BGS Single Onshore Borehole Index proximity and density context',
                         'deep_borehole_threshold_m', 10
@@ -331,7 +331,7 @@ class BgsBoreholeContextRunner:
                     coalesce(changed.nearest_borehole_reference, changed.evidence_density_signal),
                     'medium',
                     jsonb_build_object(
-                        'source_key', :source_key,
+                        'source_key', cast(:source_key as text),
                         'nearest_borehole_id', changed.nearest_borehole_id,
                         'nearest_borehole_distance_m', changed.nearest_borehole_distance_m,
                         'boreholes_within_1km', changed.boreholes_within_1km,
@@ -436,9 +436,9 @@ class BgsBoreholeContextRunner:
                     :source_family,
                     signal_rows.source_record_id,
                     signal_rows.fact_label,
-                    jsonb_build_object('source_key', :source_key, 'safe_use_caveat', signal_rows.safe_use_caveat),
+                    jsonb_build_object('source_key', cast(:source_key as text), 'safe_use_caveat', signal_rows.safe_use_caveat),
                     jsonb_build_object(
-                        'source_key', :source_key,
+                        'source_key', cast(:source_key as text),
                         'evidence_density_signal', signal_rows.evidence_density_signal,
                         'ground_uncertainty_signal', signal_rows.ground_uncertainty_signal,
                         'safe_use_caveat', signal_rows.safe_use_caveat

@@ -110,6 +110,8 @@ class DriveSourceFileSyncContractTests(unittest.TestCase):
         self.assertIn("does not ingest source datasets", RUNNER)
         self.assertIn("immediate_add_count", RUNNER)
         self.assertIn("operator_priority", RUNNER)
+        self.assertIn("logger = configure_logging(settings)", RUNNER)
+        self.assertNotIn('configure_logging("landintel")', RUNNER)
         self.assertIn("google_drive_api_key", SETTINGS)
         self.assertIn("default=false", SETTINGS)
 

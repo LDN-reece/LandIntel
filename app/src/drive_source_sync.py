@@ -501,8 +501,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    logger = configure_logging("landintel")
     settings = get_settings()
+    logger = configure_logging(settings)
     runner = DriveSourceSyncRunner(settings, logger)
     try:
         if args.command == "audit-drive-source-manifest":

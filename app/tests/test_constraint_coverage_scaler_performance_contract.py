@@ -6,6 +6,8 @@ import unittest
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
+RUNNER = (APP_DIR / "src" / "source_expansion_runner.py").read_text(encoding="utf-8")
+RUNNER_LOWER = RUNNER.lower()
 MIGRATION = (
     APP_DIR / "sql" / "068_constraint_coverage_scaler_performance_fix.sql"
 ).read_text(encoding="utf-8")
@@ -91,6 +93,18 @@ class ConstraintCoverageScalerPerformanceContractTests(unittest.TestCase):
             "no truth table changes",
         ):
             self.assertIn(required_phrase, DOC_LOWER)
+
+    def test_constraint_audit_reports_scaler_view_proof(self) -> None:
+        for required_phrase in (
+            "constraint_scaler_counts",
+            "constraint_scaler_site_priority",
+            "constraint_scaler_queue_sample",
+            "landintel_reporting.v_constraint_coverage_by_layer",
+            "landintel_reporting.v_constraint_coverage_by_site_priority",
+            "landintel_reporting.v_constraint_measurement_backlog",
+            "landintel_reporting.v_constraint_priority_measurement_queue",
+        ):
+            self.assertIn(required_phrase, RUNNER_LOWER)
 
 
 if __name__ == "__main__":

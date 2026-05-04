@@ -110,14 +110,14 @@ corpus_matches as (
     select
         drive_files.file_id,
         count(distinct asset.id)::integer as corpus_asset_match_count,
-        bool_or(asset.drive_url ilike '%' || drive_files.file_id || '%') as exact_drive_file_match,
+        bool_or(asset.drive_url ilike '%%' || drive_files.file_id || '%%') as exact_drive_file_match,
         bool_or(lower(asset.file_name) = drive_files.normalized_file_name) as file_name_match,
         array_remove(array_agg(distinct asset.source_key order by asset.source_key), null::text) as matched_source_keys,
         array_remove(array_agg(distinct estate.source_family order by estate.source_family), null::text) as matched_source_families,
         array_remove(array_agg(distinct asset.asset_role order by asset.asset_role), null::text) as matched_asset_roles
     from drive_files
     left join landintel.source_corpus_assets as asset
-      on asset.drive_url ilike '%' || drive_files.file_id || '%'
+      on asset.drive_url ilike '%%' || drive_files.file_id || '%%'
       or lower(asset.file_name) = drive_files.normalized_file_name
     left join landintel.source_estate_registry as estate
       on estate.source_key = asset.source_key

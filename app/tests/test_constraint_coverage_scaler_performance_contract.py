@@ -12,6 +12,12 @@ PAGED_RUNNER = (APP_DIR / "src" / "source_expansion_runner_wfs_paging.py").read_
     encoding="utf-8"
 )
 PAGED_RUNNER_LOWER = PAGED_RUNNER.lower()
+PROOF_RUNNER = (APP_DIR / "src" / "constraint_scaler_proof.py").read_text(encoding="utf-8")
+PROOF_RUNNER_LOWER = PROOF_RUNNER.lower()
+RUN_SOURCES_WORKFLOW = (
+    APP_DIR.parents[0] / ".github" / "workflows" / "run-landintel-sources.yml"
+).read_text(encoding="utf-8")
+RUN_SOURCES_WORKFLOW_LOWER = RUN_SOURCES_WORKFLOW.lower()
 MIGRATION = (
     APP_DIR / "sql" / "068_constraint_coverage_scaler_performance_fix.sql"
 ).read_text(encoding="utf-8")
@@ -119,6 +125,24 @@ class ConstraintCoverageScalerPerformanceContractTests(unittest.TestCase):
             "flush=true",
         ):
             self.assertIn(required_phrase, PAGED_RUNNER_LOWER)
+
+    def test_workflow_prints_bounded_constraint_scaler_proof_before_audit(self) -> None:
+        for required_phrase in (
+            "constraint_scaler_workflow_proof",
+            "landintel_reporting.v_constraint_coverage_by_layer",
+            "landintel_reporting.v_constraint_coverage_by_site_priority",
+            "landintel_reporting.v_constraint_measurement_backlog",
+            "landintel_reporting.v_constraint_priority_measurement_queue",
+            "limit 20",
+        ):
+            self.assertIn(required_phrase, PROOF_RUNNER_LOWER)
+
+        self.assertIn("src/constraint_scaler_proof.py", RUN_SOURCES_WORKFLOW)
+        self.assertIn(
+            "python -m src.constraint_scaler_proof print-constraint-scaler-proof",
+            RUN_SOURCES_WORKFLOW_LOWER,
+        )
+        self.assertIn("python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements", RUN_SOURCES_WORKFLOW_LOWER)
 
 
 if __name__ == "__main__":

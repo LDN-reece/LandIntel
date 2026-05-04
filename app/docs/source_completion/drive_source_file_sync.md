@@ -29,6 +29,11 @@ This stops source completion drifting into memory and guesswork.
 - `landintel_reporting.v_drive_source_file_inventory`
 - `landintel_reporting.v_drive_source_ready_upload_files`
 - `landintel_reporting.v_drive_source_sync_status`
+- `landintel_store.drive_source_use_case_catalog`
+- `landintel_reporting.v_drive_source_use_case_schema`
+- `landintel_reporting.v_drive_source_dedupe_enrichment`
+- `landintel_reporting.v_drive_source_duplicate_review_queue`
+- `landintel_reporting.v_drive_source_enrichment_queue`
 - `app/config/scotland_drive_source_manifest.yaml`
 - `.github/workflows/run-landintel-drive-source-sync.yml`
 
@@ -103,6 +108,48 @@ The following files are marked `operator_priority = immediate` and `immediate_ad
 
 This priority set is deliberately file-control only. It makes the next source-completion order explicit without committing ZIPs into Git or loading them into truth tables.
 
+## Duplicate And Enrichment Control
+
+Drive files must not be uploaded or parsed blindly.
+
+The dedupe/enrichment layer checks each file against:
+
+- `landintel.source_corpus_assets`
+- `landintel.source_estate_registry`
+- `landintel_reporting.v_source_completion_matrix`
+- the Drive registry itself, for duplicate file names inside Drive
+
+The current duplicate assessment is metadata-level:
+
+- Drive file ID match;
+- Drive URL match;
+- file-name match;
+- source-family already represented in the database;
+- loose shapefile component detection;
+- paused known-origin manual upload detection;
+- misfiled/manual-review detection.
+
+It does not claim content-level duplicate certainty unless a checksum or file hash is available.
+
+The main operator views are:
+
+- `landintel_reporting.v_drive_source_dedupe_enrichment`
+- `landintel_reporting.v_drive_source_duplicate_review_queue`
+- `landintel_reporting.v_drive_source_enrichment_queue`
+- `landintel_reporting.v_drive_source_use_case_schema`
+
+Important rule:
+
+If a file is not a known duplicate, it should enrich the existing source family or use case. It must not create a duplicate truth table.
+
+Examples:
+
+- Green belt, TPO, culverts, contaminated land, conservation, landscape and NatureScot files enrich the existing constraint engine.
+- Council asset register enriches public ownership exclusion and control context, not legal title truth.
+- HLA, ELA and VDL enrich register/context evidence only and must not inflate site conviction by themselves.
+- RoS cadastral files enrich the canonical RoS parcel source and must not revive `public.land_objects` as a separate truth model.
+- BGS stays paused as a known-origin manual bulk upload and must not be re-uploaded here.
+
 ## Deliberate Caveats
 
 ### BGS Remains Paused
@@ -169,6 +216,16 @@ Then verify:
 select * from landintel_reporting.v_drive_source_file_inventory;
 
 select * from landintel_reporting.v_drive_source_sync_status;
+
+select *
+from landintel_reporting.v_drive_source_dedupe_enrichment
+order by immediate_add_flag desc, priority_rank nulls last, source_family, file_name;
+
+select *
+from landintel_reporting.v_drive_source_duplicate_review_queue;
+
+select *
+from landintel_reporting.v_drive_source_enrichment_queue;
 
 select
     source_family,

@@ -182,23 +182,6 @@ on:
         required: false
         type: boolean
         default: false
-      bgs_borehole_context_batch_size:
-        description: Candidate-site batch size for bounded BGS borehole context refresh
-        required: false
-        default: "25"
-      bgs_borehole_context_priority_band:
-        description: Optional BGS context site priority band, for example title_spend_candidates or review_queue
-        required: false
-        default: ""
-      bgs_borehole_context_max_age_days:
-        description: Refresh BGS site context rows older than this many days
-        required: false
-        default: "30"
-      bgs_borehole_context_force_refresh:
-        description: Force BGS borehole context refresh for the bounded selected batch
-        required: false
-        type: boolean
-        default: false
       open_location_spine_max_download_bytes:
         description: Max bytes per OS bulk download asset for open location spine runs
         required: false
@@ -339,11 +322,11 @@ jobs:
       PHASE2_DRY_RUN: ${{ inputs.phase2_dry_run || false }}
       PHASE2_FORCE_REFRESH: ${{ inputs.phase2_force_refresh || false }}
       PHASE2_AUDIT_ONLY: ${{ inputs.phase2_audit_only || false }}
-      BGS_BOREHOLE_CONTEXT_BATCH_SIZE: ${{ inputs.bgs_borehole_context_batch_size || '25' }}
+      BGS_BOREHOLE_CONTEXT_BATCH_SIZE: "25"
       BGS_BOREHOLE_CONTEXT_AUTHORITY: ${{ inputs.phase2_authority || '' }}
-      BGS_BOREHOLE_CONTEXT_PRIORITY_BAND: ${{ inputs.bgs_borehole_context_priority_band || '' }}
-      BGS_BOREHOLE_CONTEXT_MAX_AGE_DAYS: ${{ inputs.bgs_borehole_context_max_age_days || '30' }}
-      BGS_BOREHOLE_CONTEXT_FORCE_REFRESH: ${{ inputs.bgs_borehole_context_force_refresh || false }}
+      BGS_BOREHOLE_CONTEXT_PRIORITY_BAND: ""
+      BGS_BOREHOLE_CONTEXT_MAX_AGE_DAYS: "30"
+      BGS_BOREHOLE_CONTEXT_FORCE_REFRESH: ${{ inputs.phase2_force_refresh || false }}
       TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE: "10"
       TITLE_RESOLUTION_MIN_OVERLAP_SQM: "1"
       TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE: "0"

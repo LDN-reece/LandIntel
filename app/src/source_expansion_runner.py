@@ -2810,7 +2810,8 @@ class SourceExpansionRunner:
                 },
                 default=str,
                 ensure_ascii=False,
-            )
+            ),
+            flush=True,
         )
         return result
 

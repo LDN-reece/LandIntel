@@ -540,8 +540,10 @@ def main() -> int:
     logger = configure_logging(settings)
     runner = PagedWfsSourceExpansionRunner(settings, logger)
     try:
+        print(f"source_expansion_runner_command_start={args.command}", flush=True)
         runner.run_command(args.command)
         logger.info("source_expansion_command_completed", extra={"command": args.command})
+        print(f"source_expansion_runner_command_completed={args.command}", flush=True)
         return 0
     except Exception:
         logger.exception("source_expansion_command_failed", extra={"command": args.command, "traceback": traceback.format_exc()})

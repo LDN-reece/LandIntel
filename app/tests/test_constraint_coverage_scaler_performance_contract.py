@@ -8,6 +8,10 @@ import unittest
 APP_DIR = Path(__file__).resolve().parents[1]
 RUNNER = (APP_DIR / "src" / "source_expansion_runner.py").read_text(encoding="utf-8")
 RUNNER_LOWER = RUNNER.lower()
+PAGED_RUNNER = (APP_DIR / "src" / "source_expansion_runner_wfs_paging.py").read_text(
+    encoding="utf-8"
+)
+PAGED_RUNNER_LOWER = PAGED_RUNNER.lower()
 MIGRATION = (
     APP_DIR / "sql" / "068_constraint_coverage_scaler_performance_fix.sql"
 ).read_text(encoding="utf-8")
@@ -101,12 +105,20 @@ class ConstraintCoverageScalerPerformanceContractTests(unittest.TestCase):
             "constraint_scaler_site_priority",
             "constraint_scaler_queue_sample",
             "\"coverage\": result[\"coverage\"]",
+            "flush=true",
             "landintel_reporting.v_constraint_coverage_by_layer",
             "landintel_reporting.v_constraint_coverage_by_site_priority",
             "landintel_reporting.v_constraint_measurement_backlog",
             "landintel_reporting.v_constraint_priority_measurement_queue",
         ):
             self.assertIn(required_phrase, RUNNER_LOWER)
+
+        for required_phrase in (
+            "source_expansion_runner_command_start",
+            "source_expansion_runner_command_completed",
+            "flush=true",
+        ):
+            self.assertIn(required_phrase, PAGED_RUNNER_LOWER)
 
 
 if __name__ == "__main__":

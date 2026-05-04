@@ -69,6 +69,9 @@ class SourceFreshnessContractTests(unittest.TestCase):
         preflight = preflight_path.read_text()
         migration_names = [path.name for path in sorted((REPO_ROOT / "sql").glob("*.sql"))]
 
+        self.assertIn("drop view if exists landintel_reporting.v_drive_source_enrichment_queue;", preflight)
+        self.assertIn("drop view if exists landintel_reporting.v_drive_source_duplicate_review_queue;", preflight)
+        self.assertIn("drop view if exists landintel_reporting.v_drive_source_dedupe_enrichment;", preflight)
         self.assertIn("drop view if exists landintel_reporting.v_source_completion_matrix;", preflight)
         self.assertIn("drop view if exists analytics.v_phase_one_source_estate_matrix;", preflight)
         self.assertIn("drop view if exists analytics.v_live_source_coverage_freshness;", preflight)

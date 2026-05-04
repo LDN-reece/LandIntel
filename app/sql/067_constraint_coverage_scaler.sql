@@ -390,7 +390,9 @@ select
     'measure-constraints-duckdb'::text as recommended_workflow_command,
     layer_key as recommended_layer_key,
     authority_name as recommended_authority_filter,
-    'Use small site batches and one layer per run. This queue is guidance only and does not perform measurement.'::text as bounded_run_guidance
+    'Use small site batches and one layer per run. This queue is guidance only and does not perform measurement.'::text as bounded_run_guidance,
+    null::bigint as source_family_queue_rank,
+    null::bigint as priority_family_queue_rank
 from ranked
 where queue_rank <= 5000;
 

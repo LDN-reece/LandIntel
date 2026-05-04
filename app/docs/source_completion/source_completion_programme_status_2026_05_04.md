@@ -106,4 +106,8 @@ Post-merge live proof found one remaining queue flaw: `v_constraint_priority_mea
 
 The next narrow fix is therefore to keep the same queue surface but make the cap source-family aware. That is a controls fix only; it should then be followed by a repeat `coal_authority` proof run and audit.
 
+Rerunnable migration guard:
+
+Because LandIntel reruns repo SQL files in filename order, the earlier `067` and `068` queue definitions must keep the same output column shape as the later `073` queue fix. Otherwise a later `run-migrations` command can fail before reaching `073`. The hotfix keeps all three queue definitions column-compatible.
+
 No BGS, Apex, source ingestion or planning extraction work is included in this PR.

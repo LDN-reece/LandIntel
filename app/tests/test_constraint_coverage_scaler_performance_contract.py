@@ -18,6 +18,10 @@ RUN_SOURCES_WORKFLOW = (
     APP_DIR.parents[0] / ".github" / "workflows" / "run-landintel-sources.yml"
 ).read_text(encoding="utf-8")
 RUN_SOURCES_WORKFLOW_LOWER = RUN_SOURCES_WORKFLOW.lower()
+BASE_MIGRATION = (APP_DIR / "sql" / "067_constraint_coverage_scaler.sql").read_text(
+    encoding="utf-8"
+)
+BASE_MIGRATION_LOWER = BASE_MIGRATION.lower()
 MIGRATION = (
     APP_DIR / "sql" / "068_constraint_coverage_scaler_performance_fix.sql"
 ).read_text(encoding="utf-8")
@@ -95,6 +99,11 @@ class ConstraintCoverageScalerPerformanceContractTests(unittest.TestCase):
         self.assertIn("flood backlog does not hide coal", SOURCE_FAMILY_QUEUE_MIGRATION_LOWER)
         self.assertIn("guidance only", SOURCE_FAMILY_QUEUE_MIGRATION_LOWER)
         self.assertIn("no measurement is executed by this view", SOURCE_FAMILY_QUEUE_MIGRATION_LOWER)
+
+    def test_earlier_queue_migrations_keep_same_view_column_shape(self) -> None:
+        for migration_sql in (BASE_MIGRATION_LOWER, MIGRATION_LOWER, SOURCE_FAMILY_QUEUE_MIGRATION_LOWER):
+            self.assertIn("source_family_queue_rank", migration_sql)
+            self.assertIn("priority_family_queue_rank", migration_sql)
 
     def test_source_family_queue_fix_contains_no_destructive_sql(self) -> None:
         self.assertNotIn("drop table", SOURCE_FAMILY_QUEUE_MIGRATION_LOWER)

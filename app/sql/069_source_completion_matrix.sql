@@ -50,6 +50,8 @@ with workflow_commands(command_name, workflow_file, command_family, broad_run_ri
         ('refresh-site-demographic-context', 'run-landintel-sources.yml', 'demographics', false),
         ('refresh-site-power-context', 'run-landintel-sources.yml', 'power', false),
         ('refresh-site-abnormal-risk', 'run-landintel-sources.yml', 'ground', false),
+        ('refresh-site-bgs-borehole-context', 'run-landintel-sources.yml', 'ground', false),
+        ('audit-site-bgs-borehole-context', 'run-landintel-sources.yml', 'ground', false),
         ('refresh-site-assessments', 'run-landintel-sources.yml', 'assessment', false),
         ('refresh-site-prove-it-assessments', 'run-landintel-sources.yml', 'assessment', false),
         ('audit-site-prove-it-assessments', 'run-landintel-sources.yml', 'assessment', false),

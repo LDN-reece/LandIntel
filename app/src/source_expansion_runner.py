@@ -2722,15 +2722,42 @@ class SourceExpansionRunner:
         )
         constraint_scaler_counts = self.database.fetch_one(
             """
+            with active_layers as (
+                select
+                    layer.id,
+                    layer.source_family
+                from public.constraint_layer_registry as layer
+                where layer.is_active = true
+                  and exists (
+                      select 1
+                      from public.constraint_source_features as feature
+                      where feature.constraint_layer_id = layer.id
+                  )
+            ),
+            priority_site_bands as (
+                select
+                    site_priority_band,
+                    count(*)::integer as site_count
+                from landintel_reporting.v_constraint_priority_sites
+                group by site_priority_band
+            )
             select
                 (select count(*)::integer from landintel_reporting.v_constraint_coverage_by_layer)
                     as coverage_by_layer_rows,
-                (select count(*)::integer from landintel_reporting.v_constraint_coverage_by_site_priority)
+                (select count(*)::integer from priority_site_bands)
                     as coverage_by_site_priority_rows,
-                (select count(*)::integer from landintel_reporting.v_constraint_measurement_backlog)
+                (
+                    (select count(*)::integer from active_layers)
+                    * greatest((select count(*)::integer from priority_site_bands), 1)
+                )
                     as measurement_backlog_rows,
-                (select count(*)::integer from landintel_reporting.v_constraint_priority_measurement_queue)
-                    as priority_measurement_queue_rows
+                (
+                    (select count(distinct source_family)::integer from active_layers)
+                    * 5000
+                )
+                    as priority_measurement_queue_rows,
+                'estimated_without_expanding_priority_queue'::text as count_mode,
+                'Counts avoid exact expansion of v_constraint_priority_measurement_queue because the source-family-aware queue is intentionally larger and can hit statement timeout.'::text as count_caveat
             """
         ) or {}
         constraint_scaler_site_priority = self.database.fetch_all(

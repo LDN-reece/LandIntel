@@ -156,16 +156,22 @@ class ConstraintCoverageScalerPerformanceContractTests(unittest.TestCase):
         for required_phrase in (
             "constraint_measurement_audit_stdout_proof",
             "constraint_scaler_counts",
+            "estimated_without_expanding_priority_queue",
+            "count_caveat",
             "constraint_scaler_site_priority",
             "constraint_scaler_queue_sample",
             "\"coverage\": result[\"coverage\"]",
             "flush=true",
             "landintel_reporting.v_constraint_coverage_by_layer",
             "landintel_reporting.v_constraint_coverage_by_site_priority",
-            "landintel_reporting.v_constraint_measurement_backlog",
             "landintel_reporting.v_constraint_priority_measurement_queue",
         ):
             self.assertIn(required_phrase, RUNNER_LOWER)
+
+        self.assertNotIn(
+            "select count(*)::integer from landintel_reporting.v_constraint_priority_measurement_queue",
+            RUNNER_LOWER,
+        )
 
         for required_phrase in (
             "source_expansion_runner_command_start",

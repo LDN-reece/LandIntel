@@ -51,14 +51,17 @@ def collect_constraint_scaler_proof(database: Database) -> dict[str, Any]:
         "measurement_backlog_sample": database.fetch_all(
             """
             select
+                site_priority_rank,
                 site_priority_band,
+                constraint_priority_rank,
                 constraint_priority_family,
                 layer_key,
-                authority_name,
-                backlog_reason,
+                target_site_layer_pairs,
+                scanned_site_layer_pairs,
+                backlog_site_layer_pairs,
                 recommended_workflow_command
             from landintel_reporting.v_constraint_measurement_backlog
-            order by site_priority_rank, constraint_priority_rank, canonical_site_id, layer_key
+            order by site_priority_rank, constraint_priority_rank, layer_key
             limit 20
             """
         ),

@@ -135,6 +135,8 @@ class ConstraintCoverageScalerPerformanceContractTests(unittest.TestCase):
             "landintel_reporting.v_constraint_priority_measurement_queue",
             "measured_row_count",
             "commercial_friction_fact_count",
+            "target_site_layer_pairs",
+            "backlog_site_layer_pairs",
             "limit 20",
         ):
             self.assertIn(required_phrase, PROOF_RUNNER_LOWER)

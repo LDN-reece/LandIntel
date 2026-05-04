@@ -118,6 +118,8 @@ class DriveSourceFileSyncContractTests(unittest.TestCase):
         self.assertIn("sync-drive-source-manifest", WORKFLOW)
         self.assertIn("sync-drive-ready-upload-files", WORKFLOW)
         self.assertIn("drive_source_sync_enable_downloads", WORKFLOW)
+        self.assertIn("boundary_authkey", WORKFLOW)
+        self.assertIn("improvement_service_authkey", WORKFLOW)
         self.assertIn("python -m src.drive_source_sync", WORKFLOW)
         self.assertIn("python -m src.source_phase_runner run-migrations", WORKFLOW)
         self.assertNotIn("ingest-", WORKFLOW)

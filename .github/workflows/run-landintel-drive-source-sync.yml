@@ -48,6 +48,9 @@ jobs:
       SUPABASE_URL: https://icmgcxujqoiyzxqonwca.supabase.co
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}
+      IMPROVEMENT_SERVICE_AUTHKEY: ${{ secrets.IMPROVEMENT_SERVICE_AUTHKEY }}
+      BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
       GOOGLE_DRIVE_API_KEY: ${{ secrets.GOOGLE_DRIVE_API_KEY }}
       DRIVE_SOURCE_ROOT_FOLDER_ID: "1aXGeNM6AeqJ6IDH-jaVrZkhmjczYVTHt"
       DRIVE_SOURCE_MANIFEST_PATH: ${{ github.workspace }}/app/config/scotland_drive_source_manifest.yaml

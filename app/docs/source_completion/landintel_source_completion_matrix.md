@@ -130,6 +130,10 @@ This command is deliberately not broad-run safe without a filter. It must be dis
 
 The command remains `title_spend_candidates` first and processes a hard-capped 10 site-layer pairs by default. It is the repeatable path for moving priority constraint sources from `live_partial` toward `live_complete` after live measurement, audit and freshness proof.
 
+Queue correction:
+
+The bounded proof command reads `landintel_reporting.v_constraint_priority_measurement_queue`. The queue now caps candidate pairs per source family, not just globally. This prevents SEPA flood backlog from hiding coal/mining, green belt, contamination, culverts, heritage, ecology or TPO rows. The change is still controls-only until a workflow run actually processes a source-family batch and the audit proves before/after movement.
+
 ## Source Completion CSV
 
 Static repo-side matrix:

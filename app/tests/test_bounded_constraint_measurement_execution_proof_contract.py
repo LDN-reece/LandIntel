@@ -73,6 +73,8 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
             "fails closed",
             "scan state",
             "before/after proof",
+            "queue correction",
+            "caps it per source family",
             "does not add rag scoring",
             "pass/fail",
             "not a new constraint engine",

@@ -22,6 +22,12 @@ Selection surface:
 
 `landintel_reporting.v_constraint_priority_measurement_queue`
 
+Queue correction:
+
+The first source-family proof run showed that the global 5,000-pair queue cap was commercially too narrow. Flood backlog consumed the queue, which meant `coal_authority` had backlog in `v_constraint_measurement_backlog` but zero queued rows in `v_constraint_priority_measurement_queue`.
+
+Migration `073_constraint_source_family_queue_fix.sql` keeps the same queue surface but caps it per source family. That means flood remains first priority, while coal/mining, green belt, contaminated land, culverts, heritage/conservation, ecology/NatureScot and TPO/landscape can also surface bounded candidate pairs without creating a second constraint engine.
+
 Execution command:
 
 `constraint-measurement-proof-flood-title-spend`
@@ -148,7 +154,7 @@ The command prints:
 
 ## Rollback And Safety
 
-No schema migration is required for this PR.
+Migration `073_constraint_source_family_queue_fix.sql` only replaces a reporting view. It does not move data, create a duplicate truth table or run measurement.
 
 The command uses existing update semantics inside the measurement engine. For the requested layer/site pairs, the finalizer refreshes measurements and summaries, then records scan state. It does not touch unrelated layers or unrelated sites.
 

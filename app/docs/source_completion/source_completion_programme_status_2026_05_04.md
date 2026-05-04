@@ -87,9 +87,9 @@ Recommended order remains:
 
 ## Current PR Scope
 
-This PR continues Priority 1 constraints.
+This programme continues Priority 1 constraints.
 
-The flood proof showed the existing engine can move a bounded title-spend batch safely. The next structural gap is that the command is currently flood-specific. This PR adds a reusable title-spend source-family proof command so the same pattern can be repeated for:
+The flood proof showed the existing engine can move a bounded title-spend batch safely. PR #31 added the reusable title-spend source-family proof command so the same pattern can be repeated for:
 
 - `coal_authority`
 - `greenbelt`
@@ -101,5 +101,9 @@ The flood proof showed the existing engine can move a bounded title-spend batch 
 - `tpo`
 
 The command fails closed unless an explicit `constraint_measure_source_family` or `constraint_measure_layer_key` filter is provided.
+
+Post-merge live proof found one remaining queue flaw: `v_constraint_priority_measurement_queue` used a single global 5,000-pair cap, so SEPA flood consumed the entire queue and `coal_authority` returned zero candidate pairs even though `v_constraint_measurement_backlog` showed live title-spend coal backlog.
+
+The next narrow fix is therefore to keep the same queue surface but make the cap source-family aware. That is a controls fix only; it should then be followed by a repeat `coal_authority` proof run and audit.
 
 No BGS, Apex, source ingestion or planning extraction work is included in this PR.

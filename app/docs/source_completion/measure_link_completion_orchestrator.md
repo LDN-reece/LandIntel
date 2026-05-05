@@ -68,7 +68,9 @@ The workflow can be rerun later for `prove_it_candidates` and `wider_canonical_s
 
 The workflow:
 
-- uses existing `landintel_reporting.v_constraint_priority_measurement_queue`;
+- uses existing constraint priority sites, priority layers and scan-state surfaces;
+- keeps `landintel_reporting.v_constraint_priority_measurement_queue` as the operator/audit reporting surface;
+- avoids sorting the full national measurement queue inside every live proof batch;
 - runs one source family and priority band at a time;
 - uses `constraint-measurement-proof-title-spend-source-family`;
 - preserves scan-state logic;
@@ -119,3 +121,10 @@ Completion is proven when:
 This workflow is bounded by GitHub Actions runtime. If the estate still has backlog at the end of a run, rerun it. That is deliberate: repeated bounded runs are safer than a single unbounded database-wide scan.
 
 Some very heavy constraint layers may need narrower layer-specific batches or indexing work before they can be treated as cleanly operational. They should not block all other DD measurement.
+
+Runtime proof note:
+
+Run `25401595259` completed successfully but proved that queue selection itself was a scale bottleneck. The runner was
+therefore tightened to select directly from filtered priority sites and filtered priority layers before applying
+scan-state. This does not change constraint truth. It makes repeated GitHub Actions cycles materially faster and keeps
+the measurement programme commercially usable.

@@ -213,8 +213,70 @@ def _collect_source_family_counts(
 def _candidate_pairs(database: Database, batch_size: int) -> list[dict[str, Any]]:
     return database.fetch_all(
         """
+        with priority_sites as (
+            select
+                priority_sites.canonical_site_id,
+                priority_sites.site_location_id,
+                priority_sites.site_label,
+                priority_sites.authority_name,
+                priority_sites.area_acres,
+                priority_sites.site_priority_rank,
+                priority_sites.site_priority_band
+            from landintel_reporting.v_constraint_priority_sites as priority_sites
+            where priority_sites.site_priority_band = 'title_spend_candidates'
+        ),
+        active_layers as (
+            select
+                priority_layers.constraint_layer_id::uuid as constraint_layer_id,
+                priority_layers.layer_key,
+                priority_layers.layer_name,
+                priority_layers.source_family,
+                priority_layers.constraint_group,
+                priority_layers.constraint_priority_rank,
+                priority_layers.constraint_priority_family
+            from landintel_reporting.v_constraint_priority_layers as priority_layers
+            where priority_layers.is_active = true
+              and priority_layers.constraint_priority_family = 'flood'
+              and exists (
+                  select 1
+                  from public.constraint_source_features as feature
+                  where feature.constraint_layer_id = priority_layers.constraint_layer_id::uuid
+              )
+        ),
+        candidate_pairs as (
+            select
+                priority_sites.canonical_site_id,
+                priority_sites.site_location_id,
+                priority_sites.site_label,
+                priority_sites.authority_name,
+                priority_sites.area_acres,
+                priority_sites.site_priority_rank,
+                priority_sites.site_priority_band,
+                active_layers.constraint_layer_id,
+                active_layers.layer_key,
+                active_layers.layer_name,
+                active_layers.source_family,
+                active_layers.constraint_group,
+                active_layers.constraint_priority_rank,
+                active_layers.constraint_priority_family
+            from priority_sites
+            cross join active_layers
+            left join public.site_constraint_measurement_scan_state as scan_state
+              on scan_state.site_location_id = priority_sites.site_location_id
+             and scan_state.constraint_layer_id = active_layers.constraint_layer_id
+             and scan_state.scan_scope = 'canonical_site_geometry'
+            where scan_state.id is null
+        )
         select
-            queue_rank,
+            row_number() over (
+                order by
+                    candidate_pairs.site_priority_rank,
+                    candidate_pairs.constraint_priority_rank,
+                    candidate_pairs.authority_name nulls last,
+                    candidate_pairs.area_acres desc nulls last,
+                    candidate_pairs.site_location_id,
+                    candidate_pairs.layer_key
+            ) as queue_rank,
             canonical_site_id::text as canonical_site_id,
             site_location_id,
             site_label,
@@ -223,9 +285,7 @@ def _candidate_pairs(database: Database, batch_size: int) -> list[dict[str, Any]
             layer_key,
             constraint_priority_family,
             site_priority_band
-        from landintel_reporting.v_constraint_priority_measurement_queue
-        where site_priority_band = 'title_spend_candidates'
-          and constraint_priority_family = 'flood'
+        from candidate_pairs
         order by queue_rank
         limit :batch_size
         """,
@@ -243,8 +303,72 @@ def _source_family_candidate_pairs(
 ) -> list[dict[str, Any]]:
     return database.fetch_all(
         """
+        with priority_sites as (
+            select
+                priority_sites.canonical_site_id,
+                priority_sites.site_location_id,
+                priority_sites.site_label,
+                priority_sites.authority_name,
+                priority_sites.area_acres,
+                priority_sites.site_priority_rank,
+                priority_sites.site_priority_band
+            from landintel_reporting.v_constraint_priority_sites as priority_sites
+            where priority_sites.site_priority_band = :site_priority_band
+        ),
+        active_layers as (
+            select
+                priority_layers.constraint_layer_id::uuid as constraint_layer_id,
+                priority_layers.layer_key,
+                priority_layers.layer_name,
+                priority_layers.source_family,
+                priority_layers.constraint_group,
+                priority_layers.constraint_priority_rank,
+                priority_layers.constraint_priority_family
+            from landintel_reporting.v_constraint_priority_layers as priority_layers
+            where priority_layers.is_active = true
+              and priority_layers.constraint_priority_rank <= 8
+              and (:source_family = '' or priority_layers.source_family = :source_family)
+              and (:layer_key = '' or priority_layers.layer_key = :layer_key)
+              and exists (
+                  select 1
+                  from public.constraint_source_features as feature
+                  where feature.constraint_layer_id = priority_layers.constraint_layer_id::uuid
+              )
+        ),
+        candidate_pairs as (
+            select
+                priority_sites.canonical_site_id,
+                priority_sites.site_location_id,
+                priority_sites.site_label,
+                priority_sites.authority_name,
+                priority_sites.area_acres,
+                priority_sites.site_priority_rank,
+                priority_sites.site_priority_band,
+                active_layers.constraint_layer_id,
+                active_layers.layer_key,
+                active_layers.layer_name,
+                active_layers.source_family,
+                active_layers.constraint_group,
+                active_layers.constraint_priority_rank,
+                active_layers.constraint_priority_family
+            from priority_sites
+            cross join active_layers
+            left join public.site_constraint_measurement_scan_state as scan_state
+              on scan_state.site_location_id = priority_sites.site_location_id
+             and scan_state.constraint_layer_id = active_layers.constraint_layer_id
+             and scan_state.scan_scope = 'canonical_site_geometry'
+            where scan_state.id is null
+        )
         select
-            queue_rank,
+            row_number() over (
+                order by
+                    candidate_pairs.site_priority_rank,
+                    candidate_pairs.constraint_priority_rank,
+                    candidate_pairs.authority_name nulls last,
+                    candidate_pairs.area_acres desc nulls last,
+                    candidate_pairs.site_location_id,
+                    candidate_pairs.layer_key
+            ) as queue_rank,
             canonical_site_id::text as canonical_site_id,
             site_location_id,
             site_label,
@@ -256,10 +380,7 @@ def _source_family_candidate_pairs(
             constraint_group,
             constraint_priority_family,
             site_priority_band
-        from landintel_reporting.v_constraint_priority_measurement_queue
-        where site_priority_band = :site_priority_band
-          and (:source_family = '' or source_family = :source_family)
-          and (:layer_key = '' or layer_key = :layer_key)
+        from candidate_pairs
         order by queue_rank
         limit :batch_size
         """,

@@ -81,6 +81,7 @@ It produces the next step per site:
 
 It recommends existing workflow commands:
 
+- `site-title-traceability-proof`;
 - `link-sites-to-ros-parcels`;
 - `resolve-title-numbers`;
 - `constraint-measurement-proof-title-spend-source-family`;
@@ -106,21 +107,42 @@ The scalable pattern is:
 
 1. Run `audit-site-dd-orchestration`.
 2. Read `v_site_dd_orchestration_queue`.
-3. Run title/parcel linking first where needed:
-   - `link-sites-to-ros-parcels`;
-   - `resolve-title-numbers`;
+3. Run title/parcel linking first where needed using the bounded proof command:
+   - `site-title-traceability-proof`;
    - `audit-site-parcel-links`;
    - `audit-title-number-control`.
-4. Run constraint measurement only through bounded source-family or layer batches:
+4. Use `link-sites-to-ros-parcels` and `resolve-title-numbers` only for an intentional full rebuild window. Those commands are broader rebuild tools; the bounded proof command is the default operating pattern because it preserves existing rows and processes a small priority batch.
+5. Run constraint measurement only through bounded source-family or layer batches:
    - `constraint-measurement-proof-title-spend-source-family`;
    - or `measure-constraints-duckdb` with source family / layer / authority inputs.
-5. Run:
+6. Run:
    - `audit-constraint-measurements`;
    - `audit-site-dd-orchestration`;
    - `audit-source-completion-matrix`.
-6. Repeat source-family by source-family, not all-layer/all-site.
+7. Repeat priority batch by priority batch, source-family by source-family, not all-layer/all-site.
 
 This is how LandIntel scales without drifting into unsafe “grab everything and analyse everything at once” behaviour.
+
+## Bounded Title Traceability Proof
+
+`site-title-traceability-proof` is the safe linking pattern.
+
+It:
+
+- selects a small priority batch, default `title_spend_candidates`;
+- skips sites already holding non-rejected RoS parcel candidates;
+- calls `public.refresh_site_ros_parcel_link_candidates_for_sites`;
+- then calls `public.refresh_site_title_resolution_bridge_for_sites` for the same batch;
+- reports before/after title traceability counts;
+- preserves existing `site_ros_parcel_link_candidates`, `site_title_resolution_candidates` and `site_title_validation` rows.
+
+It does not delete existing candidates. It does not claim ownership. It does not treat RoS parcel references or SCT-like cadastral references as title numbers. The output is traceability evidence so LDN can decide whether title spend or human title review is justified.
+
+GitHub Actions controls:
+
+- `SITE_TITLE_TRACEABILITY_PROOF_SITE_BATCH_SIZE=10`;
+- `SITE_TITLE_TRACEABILITY_PROOF_PRIORITY_BAND=title_spend_candidates`;
+- `SITE_TITLE_TRACEABILITY_PROOF_INCLUDE_TITLE_RESOLUTION=true`.
 
 ## Title Safety Rules
 
@@ -166,8 +188,6 @@ Constraint order:
 
 - It does not upload Google Drive files.
 - It does not ingest new source data.
-- It does not run `link-sites-to-ros-parcels`.
-- It does not run `resolve-title-numbers`.
 - It does not run `measure-constraints-duckdb`.
 - It does not confirm legal ownership.
 - It does not create a physical sourced-sites table.
@@ -178,12 +198,11 @@ Constraint order:
 After merge and migration:
 
 1. Run `audit-site-dd-orchestration`.
-2. If many sites show `needs_ros_parcel_linking`, run `link-sites-to-ros-parcels`.
+2. If many sites show `needs_ros_parcel_linking`, run `site-title-traceability-proof`.
 3. Run `audit-site-parcel-links`.
-4. Run `resolve-title-numbers`.
-5. Run `audit-title-number-control`.
-6. Run one bounded constraint source-family batch from `v_site_dd_orchestration_queue`.
-7. Re-run `audit-site-dd-orchestration` and compare counts.
+4. Run `audit-title-number-control`.
+5. Run one bounded constraint source-family batch from `v_site_dd_orchestration_queue`.
+6. Re-run `audit-site-dd-orchestration` and compare counts.
 
 ## Performance Note
 

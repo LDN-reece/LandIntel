@@ -20,6 +20,7 @@ DOC = (ROOT / "docs" / "source_completion" / "site_title_measurement_orchestrati
 )
 DOC_LOWER = DOC.lower()
 AUDIT_RUNNER = (ROOT / "src" / "site_dd_orchestration_audit.py").read_text(encoding="utf-8").lower()
+SOURCE_RUNNER = (ROOT / "src" / "source_expansion_runner.py").read_text(encoding="utf-8").lower()
 WORKFLOW = (REPO / ".github" / "workflows" / "run-landintel-sources.yml").read_text(
     encoding="utf-8"
 ).lower()
@@ -117,6 +118,8 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
             "constraint outputs remain measured facts",
             "does not create a second constraint measurement system",
             "no broad all-site/all-layer scans",
+            "site-title-traceability-proof",
+            "preserves existing rows",
             "link-sites-to-ros-parcels",
             "resolve-title-numbers",
             "measure-constraints-duckdb",
@@ -134,6 +137,30 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
         self.assertIn("- audit-site-dd-orchestration", WORKFLOW)
         self.assertIn("python -m src.site_dd_orchestration_audit audit-site-dd-orchestration", WORKFLOW)
         self.assertIn("src/site_dd_orchestration_audit.py", WORKFLOW)
+
+    def test_bounded_title_traceability_proof_is_wired_and_non_destructive(self) -> None:
+        self.assertIn("def site_title_traceability_proof", SOURCE_RUNNER)
+        self.assertIn("site_title_traceability_proof_site_batch_size", SOURCE_RUNNER)
+        self.assertIn("site_title_traceability_proof_priority_band", SOURCE_RUNNER)
+        self.assertIn("public.refresh_site_ros_parcel_link_candidates_for_sites", SOURCE_RUNNER)
+        self.assertIn("public.refresh_site_title_resolution_bridge_for_sites", SOURCE_RUNNER)
+        self.assertIn('"site-title-traceability-proof"', SOURCE_RUNNER)
+        self.assertIn("- site-title-traceability-proof", WORKFLOW)
+        self.assertIn("site_title_traceability_proof_site_batch_size: \"10\"", WORKFLOW)
+        self.assertIn("site_title_traceability_proof_priority_band: \"title_spend_candidates\"", WORKFLOW)
+        self.assertIn("python -m src.source_expansion_runner_wfs_paging site-title-traceability-proof", WORKFLOW)
+
+        method_match = re.search(
+            r"def site_title_traceability_proof\(self\).*?\n    def link_sites_to_ros_parcels",
+            SOURCE_RUNNER,
+            flags=re.S,
+        )
+        self.assertIsNotNone(method_match)
+        method_body = method_match.group(0)
+        self.assertNotIn("delete from public.site_ros_parcel_link_candidates", method_body)
+        self.assertNotIn("delete from public.site_title_resolution_candidates", method_body)
+        self.assertNotIn("delete from public.site_title_validation", method_body)
+        self.assertIn("ownership remains unconfirmed unless landintel.title_review_records supports it", method_body)
 
     def test_performance_fix_keeps_views_readable_without_heavy_title_status_join(self) -> None:
         self.assertIn("create or replace view landintel_reporting.v_site_title_traceability_matrix", PERFORMANCE_FIX_LOWER)

@@ -580,6 +580,11 @@ class SourceExpansionRunner:
             return self.audit_source_expansion()
         if command == "site-title-traceability-proof":
             return self.site_title_traceability_proof()
+        if command == "site-title-traceability-proof-outside-registers":
+            return self.site_title_traceability_proof(
+                command_name="site-title-traceability-proof-outside-registers",
+                exclude_register_sources=True,
+            )
         if command == "link-sites-to-ros-parcels":
             return self.link_sites_to_ros_parcels()
         if command == "audit-site-parcel-links":
@@ -756,7 +761,11 @@ class SourceExpansionRunner:
             """
         ) or {}
 
-    def site_title_traceability_proof(self) -> dict[str, Any]:
+    def site_title_traceability_proof(
+        self,
+        command_name: str = "site-title-traceability-proof",
+        exclude_register_sources: bool | None = None,
+    ) -> dict[str, Any]:
         """Run a small non-destructive site-to-parcel/title bridge batch.
 
         This is the safe operational pattern for growing title traceability.
@@ -775,6 +784,10 @@ class SourceExpansionRunner:
         min_overlap_sqm = self._env_float("SITE_PARCEL_LINK_MIN_OVERLAP_SQM", 1.0)
         title_max_candidates = self._env_int("TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE", 10)
         title_min_overlap_sqm = self._env_float("TITLE_RESOLUTION_MIN_OVERLAP_SQM", 1.0)
+        min_operational_area_acres = self._env_float("MIN_OPERATIONAL_AREA_ACRES", 0.0)
+        if exclude_register_sources is None:
+            exclude_register_sources = self._env_bool("SITE_TITLE_TRACEABILITY_EXCLUDE_REGISTER_SOURCES", False)
+        register_scope = "outside_hla_ela_vdl" if exclude_register_sources else "all_sources"
 
         before_counts = self._site_title_traceability_direct_counts()
         if requested_priority_band in {"", "all", "all_priority_bands"}:
@@ -816,6 +829,10 @@ class SourceExpansionRunner:
                       on priority_sites.canonical_site_id = site.id
                     where site.geometry is not null
                       and site.authority_name is not null
+                      and (
+                          cast(:min_operational_area_acres as numeric) <= 0
+                          or coalesce(site.area_acres, 0) >= cast(:min_operational_area_acres as numeric)
+                      )
                       and exists (
                           select 1
                           from public.ros_cadastral_parcels as parcel_coverage
@@ -833,6 +850,32 @@ class SourceExpansionRunner:
                           where link.site_id = site.id::text
                             and link.link_status <> 'rejected'
                       )
+                      and (
+                          not cast(:exclude_register_sources as boolean)
+                          or (
+                              not exists (
+                                  select 1
+                                  from landintel.hla_site_records as hla
+                                  where hla.canonical_site_id = site.id
+                              )
+                              and not exists (
+                                  select 1
+                                  from landintel.ela_site_records as ela
+                                  where ela.canonical_site_id = site.id
+                              )
+                              and not exists (
+                                  select 1
+                                  from landintel.vdl_site_records as vdl
+                                  where vdl.canonical_site_id = site.id
+                              )
+                              and not exists (
+                                  select 1
+                                  from landintel.site_source_links as source_link
+                                  where source_link.canonical_site_id = site.id
+                                    and lower(source_link.source_family) in ('hla', 'ela', 'vdl')
+                              )
+                          )
+                      )
                     order by
                         coalesce(priority_sites.site_priority_rank, 5),
                         site.authority_name nulls last,
@@ -843,7 +886,12 @@ class SourceExpansionRunner:
                 select *
                 from candidates
                 """,
-                {"priority_band": candidate_priority_band, "batch_size": batch_size},
+                {
+                    "priority_band": candidate_priority_band,
+                    "batch_size": batch_size,
+                    "min_operational_area_acres": min_operational_area_acres,
+                    "exclude_register_sources": exclude_register_sources,
+                },
             )
             selected_priority_band = candidate_priority_band or "all_priority_bands"
             if selected_rows:
@@ -927,13 +975,17 @@ class SourceExpansionRunner:
             summary = "Bounded traceability proof processed sites but found no RoS parcel candidates."
 
         result = {
-            "command": "site-title-traceability-proof",
+            "command": command_name,
             "source_family": "title_number",
             "status": status,
             "summary": summary,
             "requested_priority_band": requested_priority_band or "all_priority_bands",
             "selected_priority_band": selected_priority_band,
             "batch_size": batch_size,
+            "register_scope": register_scope,
+            "exclude_register_sources": exclude_register_sources,
+            "excluded_register_source_families": ["hla", "ela", "vdl"] if exclude_register_sources else [],
+            "min_operational_area_acres": min_operational_area_acres,
             "selected_site_count": selected_site_count,
             "selected_sites": selected_rows,
             "site_location_ids": site_location_ids,
@@ -971,8 +1023,12 @@ class SourceExpansionRunner:
                 result,
             )
         self._record_expansion_event(
-            command_name="site-title-traceability-proof",
-            source_key="ros_cadastral_site_title_traceability_proof",
+            command_name=command_name,
+            source_key=(
+                "ros_cadastral_site_title_traceability_outside_registers_proof"
+                if exclude_register_sources
+                else "ros_cadastral_site_title_traceability_proof"
+            ),
             source_family="title_number",
             status=status,
             raw_rows=generated_parcel_rows,
@@ -7225,6 +7281,7 @@ def build_parser() -> argparse.ArgumentParser:
             "audit-source-expansion",
             "audit-open-location-spine-completion",
             "site-title-traceability-proof",
+            "site-title-traceability-proof-outside-registers",
             "link-sites-to-ros-parcels",
             "audit-site-parcel-links",
             "resolve-title-numbers",

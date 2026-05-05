@@ -140,9 +140,21 @@ It:
 
 It does not delete existing candidates. It does not claim ownership. It does not treat RoS parcel references or SCT-like cadastral references as title numbers. The output is traceability evidence so LDN can decide whether title spend or human title review is justified.
 
+`site-title-traceability-proof-outside-registers` is the accelerated LDN sourcing variant.
+
+It uses the same non-destructive title traceability functions, but spends the batch only on sites that are:
+
+- outside HLA, ELA and VDL register-origin records;
+- at least `MIN_OPERATIONAL_AREA_ACRES`, currently 4 acres;
+- in an authority where RoS cadastral parcel coverage is already loaded;
+- still missing a non-rejected RoS parcel candidate.
+
+This is the correct indexing path for non-register sourcing. HLA, ELA and VDL remain useful context layers, but they should not consume the priority traceability batch when the target is privately controlled, overlooked land outside the registers.
+
 GitHub Actions controls:
 
 - `SITE_TITLE_TRACEABILITY_PROOF_SITE_BATCH_SIZE=10`;
+- `SITE_TITLE_TRACEABILITY_OUTSIDE_REGISTER_BATCH_SIZE=25`;
 - `SITE_TITLE_TRACEABILITY_PROOF_PRIORITY_BAND=auto`;
 - `SITE_TITLE_TRACEABILITY_PROOF_INCLUDE_TITLE_RESOLUTION=true`.
 

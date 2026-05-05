@@ -27,6 +27,9 @@ def collect_site_dd_orchestration_proof(database: Database) -> dict[str, Any]:
             from (
                 values
                     ('landintel_reporting.v_site_title_traceability_matrix'),
+                    ('landintel_reporting.v_site_title_traceability_scan_state'),
+                    ('landintel_reporting.v_site_title_no_candidate_diagnostics'),
+                    ('landintel_reporting.v_site_title_no_candidate_diagnostic_summary'),
                     ('landintel_reporting.v_site_measurement_readiness_matrix'),
                     ('landintel_reporting.v_site_dd_orchestration_queue'),
                     ('landintel_reporting.v_site_dd_orchestration_summary')
@@ -66,6 +69,47 @@ def collect_site_dd_orchestration_proof(database: Database) -> dict[str, Any]:
                     select count(*)::integer
                     from landintel.title_order_workflow
                 ) as title_order_workflow_rows
+            """
+        ),
+        "title_traceability_scan_state_counts": database.fetch_all(
+            """
+            select
+                scan_scope,
+                scan_status,
+                count(*)::integer as row_count,
+                count(distinct canonical_site_id)::integer as site_count,
+                max(scanned_at) as latest_scanned_at
+            from landintel_store.site_title_traceability_scan_state
+            group by scan_scope, scan_status
+            order by scan_scope, scan_status
+            """
+        ),
+        "title_no_candidate_diagnostic_summary": database.fetch_all(
+            """
+            select *
+            from landintel_reporting.v_site_title_no_candidate_diagnostic_summary
+            order by site_count desc, scan_scope, site_priority_band, diagnostic_reason
+            limit 20
+            """
+        ),
+        "latest_title_no_candidate_diagnostics": database.fetch_all(
+            """
+            select
+                canonical_site_id,
+                site_label,
+                scan_scope,
+                site_priority_band,
+                authority_name,
+                area_acres,
+                nearest_centroid_distance_m,
+                nearest_geometry_distance_m,
+                parcel_centroid_bbox_hits_250m,
+                parcel_geometry_within_250m,
+                diagnostic_reason,
+                recommended_action
+            from landintel_reporting.v_site_title_no_candidate_diagnostics
+            order by scanned_at desc, site_priority_rank nulls last, area_acres desc nulls last
+            limit 20
             """
         ),
         "direct_measurement_counts": database.fetch_one(

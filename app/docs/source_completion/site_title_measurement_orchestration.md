@@ -131,6 +131,7 @@ It:
 
 - selects a small priority batch, default `auto`;
 - in `auto` mode it tries `title_spend_candidates`, then `review_queue`, then `ldn_candidate_screen`, then `prove_it_candidates`, then `wider_canonical_sites`;
+- skips authorities where `public.ros_cadastral_parcels` has no loaded parcel coverage;
 - skips sites already holding non-rejected RoS parcel candidates;
 - calls `public.refresh_site_ros_parcel_link_candidates_for_sites`;
 - then calls `public.refresh_site_title_resolution_bridge_for_sites` for the same batch;

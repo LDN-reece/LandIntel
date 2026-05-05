@@ -15,84 +15,102 @@ from src.logging_config import configure_logging
 def collect_site_dd_orchestration_proof(database: Database) -> dict[str, Any]:
     """Return bounded proof rows from the site DD orchestration surfaces."""
 
+    database.fetch_one("select set_config('statement_timeout', '30s', false) as statement_timeout")
+
     return {
         "message": "site_dd_orchestration_workflow_proof",
-        "traceability_status_counts": database.fetch_all(
+        "reporting_view_presence": database.fetch_all(
             """
             select
-                title_traceability_status,
-                count(*)::integer as site_count
-            from landintel_reporting.v_site_title_traceability_matrix
-            group by title_traceability_status
-            order by title_traceability_status
+                view_name,
+                to_regclass(view_name)::text as resolved_relation
+            from (
+                values
+                    ('landintel_reporting.v_site_title_traceability_matrix'),
+                    ('landintel_reporting.v_site_measurement_readiness_matrix'),
+                    ('landintel_reporting.v_site_dd_orchestration_queue'),
+                    ('landintel_reporting.v_site_dd_orchestration_summary')
+            ) as required(view_name)
             """
         ),
-        "measurement_status_counts": database.fetch_all(
+        "direct_title_traceability_counts": database.fetch_one(
             """
             select
-                coalesce(site_priority_band, 'unprioritised') as site_priority_band,
-                measurement_readiness_status,
-                count(*)::integer as site_count
-            from landintel_reporting.v_site_measurement_readiness_matrix
-            group by coalesce(site_priority_band, 'unprioritised'), measurement_readiness_status
-            order by
-                case coalesce(site_priority_band, 'unprioritised')
-                    when 'title_spend_candidates' then 1
-                    when 'review_queue' then 2
-                    when 'ldn_candidate_screen' then 3
-                    when 'prove_it_candidates' then 4
-                    when 'wider_canonical_sites' then 5
-                    else 9
-                end,
-                measurement_readiness_status
+                (select count(*)::integer from landintel.canonical_sites) as canonical_site_count,
+                (select count(*)::integer from landintel.canonical_sites where geometry is not null) as sites_with_geometry,
+                (
+                    select count(distinct site_id)::integer
+                    from public.site_ros_parcel_link_candidates
+                    where link_status <> 'rejected'
+                ) as sites_with_ros_parcel_candidate,
+                (
+                    select count(*)::integer
+                    from public.site_ros_parcel_link_candidates
+                    where link_status <> 'rejected'
+                ) as ros_parcel_candidate_rows,
+                (
+                    select count(distinct site_id)::integer
+                    from public.site_title_resolution_candidates
+                    where resolution_status <> 'rejected'
+                ) as sites_with_title_resolution_candidate,
+                (
+                    select count(*)::integer
+                    from public.site_title_resolution_candidates
+                    where resolution_status = 'needs_licensed_bridge'
+                ) as licensed_bridge_required_rows,
+                (
+                    select count(distinct canonical_site_id)::integer
+                    from landintel.title_review_records
+                ) as sites_with_human_title_review,
+                (
+                    select count(*)::integer
+                    from landintel.title_order_workflow
+                ) as title_order_workflow_rows
             """
         ),
-        "orchestration_summary": database.fetch_all(
+        "direct_measurement_counts": database.fetch_one(
             """
             select
-                site_priority_band,
-                title_traceability_status,
-                measurement_readiness_status,
-                site_count,
-                sites_with_safe_title_candidate,
-                sites_with_ros_parcel_candidate,
-                sites_with_constraint_scan_state,
-                sites_with_constraint_measurements,
-                unscanned_priority_pair_count
-            from landintel_reporting.v_site_dd_orchestration_summary
-            order by
-                case site_priority_band
-                    when 'title_spend_candidates' then 1
-                    when 'review_queue' then 2
-                    when 'ldn_candidate_screen' then 3
-                    when 'prove_it_candidates' then 4
-                    when 'wider_canonical_sites' then 5
-                    else 9
-                end,
-                title_traceability_status,
-                measurement_readiness_status
-            limit 50
+                (
+                    select count(distinct site_location_id)::integer
+                    from public.site_constraint_measurement_scan_state
+                    where scan_scope = 'canonical_site_geometry'
+                ) as sites_with_constraint_scan_state,
+                (
+                    select count(*)::integer
+                    from public.site_constraint_measurement_scan_state
+                    where scan_scope = 'canonical_site_geometry'
+                ) as constraint_scan_state_rows,
+                (
+                    select count(distinct site_location_id)::integer
+                    from public.site_constraint_measurements
+                ) as sites_with_constraint_measurements,
+                (
+                    select count(*)::integer
+                    from public.site_constraint_measurements
+                ) as constraint_measurement_rows,
+                (
+                    select count(*)::integer
+                    from public.site_commercial_friction_facts
+                ) as commercial_friction_fact_rows
             """
         ),
-        "next_queue_sample": database.fetch_all(
+        "constraint_priority_queue_sample": database.fetch_all(
             """
             select
-                orchestration_queue_rank,
                 canonical_site_id,
                 site_label,
                 authority_name,
-                gross_area_acres,
                 site_priority_band,
-                title_traceability_status,
-                measurement_readiness_status,
-                orchestration_step,
+                constraint_priority_family,
+                source_family,
+                layer_key,
+                layer_name,
+                queue_rank,
                 recommended_workflow_command,
-                recommended_workflow_input_hint,
-                next_constraint_source_family,
-                next_constraint_layer_key,
-                orchestration_reason
-            from landintel_reporting.v_site_dd_orchestration_queue
-            order by orchestration_queue_rank
+                bounded_run_guidance
+            from landintel_reporting.v_constraint_priority_measurement_queue
+            order by queue_rank
             limit 30
             """
         ),

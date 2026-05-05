@@ -184,3 +184,7 @@ After merge and migration:
 5. Run `audit-title-number-control`.
 6. Run one bounded constraint source-family batch from `v_site_dd_orchestration_queue`.
 7. Re-run `audit-site-dd-orchestration` and compare counts.
+
+## Performance Note
+
+`audit-site-dd-orchestration` is intentionally bounded. It proves that the views exist, reports direct title/parcel and measurement counts from the source tables, and samples the existing constraint priority queue. It does not force full all-site summary counts through the orchestration views because that would recreate the broad-scan behaviour this layer is designed to prevent.

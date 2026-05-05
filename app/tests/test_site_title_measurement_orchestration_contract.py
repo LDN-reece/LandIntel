@@ -22,7 +22,14 @@ SCAN_STATE_MIGRATION_LOWER = SCAN_STATE_MIGRATION.lower()
 NO_CANDIDATE_DIAGNOSTIC_MIGRATION = (
     ROOT / "sql" / "080_site_title_no_candidate_diagnostics.sql"
 ).read_text(encoding="utf-8")
-NO_CANDIDATE_DIAGNOSTIC_MIGRATION_LOWER = NO_CANDIDATE_DIAGNOSTIC_MIGRATION.lower()
+NO_CANDIDATE_DIAGNOSTIC_TIMEOUT_FIX = (
+    ROOT / "sql" / "081_site_title_no_candidate_diagnostics_timeout_fix.sql"
+).read_text(encoding="utf-8")
+NO_CANDIDATE_DIAGNOSTIC_MIGRATION_LOWER = (
+    NO_CANDIDATE_DIAGNOSTIC_MIGRATION
+    + "\n"
+    + NO_CANDIDATE_DIAGNOSTIC_TIMEOUT_FIX
+).lower()
 NO_CANDIDATE_DIAGNOSTIC_DOC = (
     ROOT / "docs" / "source_completion" / "title_traceability_no_candidate_diagnostics.md"
 ).read_text(encoding="utf-8")
@@ -117,9 +124,12 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
             "diagnostic_reason",
             "recommended_action",
             "diagnostic only. this does not prove ownership",
+            "no_default_parcel_nearest_scan",
         ):
             self.assertIn(required_phrase, NO_CANDIDATE_DIAGNOSTIC_MIGRATION_LOWER)
 
+        self.assertNotIn("st_dwithin(", NO_CANDIDATE_DIAGNOSTIC_TIMEOUT_FIX.lower())
+        self.assertNotIn("st_distance(", NO_CANDIDATE_DIAGNOSTIC_TIMEOUT_FIX.lower())
         self.assertNotIn("create table if not exists public.site_title", NO_CANDIDATE_DIAGNOSTIC_MIGRATION_LOWER)
         self.assertNotIn("refresh_site_ros_parcel_link_candidates", NO_CANDIDATE_DIAGNOSTIC_MIGRATION_LOWER)
         for pattern in (
@@ -198,6 +208,8 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
             "candidate-window failures",
             "ros coverage",
             "canonical site geometry",
+            "audit-safe",
+            "bounded per-site spot check",
         ):
             self.assertIn(required_phrase, NO_CANDIDATE_DIAGNOSTIC_DOC_LOWER)
 

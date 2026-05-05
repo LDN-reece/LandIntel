@@ -1,0 +1,280 @@
+name: Run LandIntel Measure Link Completion
+
+on:
+  workflow_dispatch:
+    inputs:
+      completion_cycles:
+        description: Number of serial completion cycles to run
+        required: false
+        default: "3"
+      step_timeout_minutes:
+        description: Hard timeout for each bounded write step
+        required: false
+        default: "20"
+      title_traceability_site_batch_size:
+        description: Sites per title/parcel traceability batch
+        required: false
+        default: "25"
+      include_outside_register_title_traceability:
+        description: Also run the outside-HLA/ELA/VDL title traceability proof
+        required: false
+        type: boolean
+        default: true
+      reconcile_batch_limit:
+        description: Existing source reconcile batch size per cycle
+        required: false
+        default: "500"
+      reconcile_runtime_minutes:
+        description: Runtime budget for each reconcile step
+        required: false
+        default: "8"
+      constraint_site_priority_bands:
+        description: Comma-separated priority bands to measure
+        required: false
+        default: "title_spend_candidates,review_queue,ldn_candidate_screen"
+      constraint_source_families:
+        description: Comma-separated constraint source families to measure
+        required: false
+        default: "sepa_flood,coal_authority,greenbelt,contaminated_land,culverts,hes,conservation_areas,naturescot,tpo"
+      constraint_pair_batch_size:
+        description: Site-layer pairs per bounded constraint proof batch, capped by runner
+        required: false
+        default: "25"
+      include_open_location_context:
+        description: Run bounded open-location landing/context refresh each cycle
+        required: false
+        type: boolean
+        default: true
+      open_location_max_download_bytes:
+        description: Max bytes per OS bulk download asset
+        required: false
+        default: "90000000"
+      open_location_max_features_per_source:
+        description: Max open-location rows landed per source per cycle
+        required: false
+        default: "2500"
+      open_location_site_context_batch_size:
+        description: Canonical site batch size for light open-location context refresh
+        required: false
+        default: "25"
+      include_phase2_context_refresh:
+        description: Refresh amenity, demographic, market, power and abnormal-risk contexts each cycle
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: "landintel-measure-link-completion-${{ github.ref }}"
+  cancel-in-progress: false
+
+jobs:
+  measure-link-completion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: app
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}/app
+      SUPABASE_URL: https://icmgcxujqoiyzxqonwca.supabase.co
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}
+      IMPROVEMENT_SERVICE_AUTHKEY: ${{ secrets.IMPROVEMENT_SERVICE_AUTHKEY }}
+      BOUNDARY_GEOJSON_URL: ${{ secrets.BOUNDARY_GEOJSON_URL }}
+      OS_PROJECT_API: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
+      OS_PROJECT_API_SECRET: ${{ secrets.OS_PROJECT_API_SECRET }}
+      OS_API_KEY: ${{ secrets.OS_PROJECT_API || secrets.OS_API_KEY }}
+      OS_PLACES_API: ${{ secrets.OS_PLACES_API }}
+      OS_PLACES_API_KEY: ${{ secrets.OS_PLACES_API_KEY }}
+      OS_DOWNLOADS_API: ${{ secrets.OS_DOWNLOADS_API }}
+      OS_FEATURES_API: ${{ secrets.OS_FEATURES_API }}
+      OS_LINKED_IDENTIFIERS_API: ${{ secrets.OS_LINKED_IDENTIFIERS_API }}
+      OS_LINKED_IDENTIFIERS_API_KEY: ${{ secrets.OS_LINKED_IDENTIFIERS_API_KEY }}
+      COMPANIES_HOUSE_API: ${{ secrets.COMPANIES_HOUSE_API }}
+      FCA_API: ${{ secrets.FCA_API }}
+      AUDIT_ARTIFACT_BACKEND: none
+      PERSIST_STAGING_ROWS: "false"
+      SOURCE_EXPANSION_COMMAND_TIMEOUT: ${{ inputs.step_timeout_minutes || '20' }}m
+      SITE_TITLE_TRACEABILITY_PROOF_SITE_BATCH_SIZE: ${{ inputs.title_traceability_site_batch_size || '25' }}
+      SITE_TITLE_TRACEABILITY_OUTSIDE_REGISTER_BATCH_SIZE: ${{ inputs.title_traceability_site_batch_size || '25' }}
+      SITE_TITLE_TRACEABILITY_PROOF_PRIORITY_BAND: auto
+      SITE_TITLE_TRACEABILITY_PROOF_INCLUDE_TITLE_RESOLUTION: "true"
+      SITE_TITLE_TRACEABILITY_SCAN_STATE_MAX_AGE_DAYS: "30"
+      RECONCILE_BATCH_LIMIT: ${{ inputs.reconcile_batch_limit || '500' }}
+      RECONCILE_RUNTIME_MINUTES: ${{ inputs.reconcile_runtime_minutes || '8' }}
+      CONSTRAINT_PROOF_PAIR_BATCH_SIZE: ${{ inputs.constraint_pair_batch_size || '25' }}
+      CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT: "1"
+      CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"
+      OPEN_LOCATION_SPINE_MAX_DOWNLOAD_BYTES: ${{ inputs.open_location_max_download_bytes || '90000000' }}
+      OPEN_LOCATION_SPINE_MAX_FEATURES_PER_SOURCE: ${{ inputs.open_location_max_features_per_source || '2500' }}
+      OPEN_LOCATION_SPINE_MAX_CSV_SCAN_ROWS: "500000"
+      OPEN_LOCATION_SPINE_SITE_CONTEXT_BATCH_SIZE: ${{ inputs.open_location_site_context_batch_size || '25' }}
+      OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE: "5"
+      OPEN_LOCATION_SPINE_CONTEXT_REFRESH_MODE: light
+      OPEN_LOCATION_SPINE_MAX_CONTEXT_FEATURE_TYPES: "2"
+      OPEN_LOCATION_SPINE_FORCE_LARGE_DOWNLOADS: "false"
+      OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE: "10"
+      OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: "10"
+      OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT: "2000"
+      PHASE2_BATCH_SIZE: "250"
+      PHASE2_RUNTIME_MINUTES: "8"
+      PHASE2_DRY_RUN: "false"
+      PHASE2_FORCE_REFRESH: "false"
+      PHASE2_AUDIT_ONLY: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || { echo "Missing GitHub secret: SUPABASE_DB_URL"; exit 1; }
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing GitHub secret: SUPABASE_SERVICE_ROLE_KEY"; exit 1; }
+
+      - name: Install geospatial system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev proj-bin postgresql-client
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile completion runners
+        run: python -m py_compile src/source_phase_runner.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py src/source_reconcile_catchup.py src/source_reconcile_incremental.py src/constraint_measurement_execution_proof.py src/phase2_source_runner.py src/source_completion_audit.py src/site_dd_orchestration_audit.py
+
+      - name: Run measure/link completion cycles
+        env:
+          COMPLETION_CYCLES: ${{ inputs.completion_cycles || '3' }}
+          INCLUDE_OUTSIDE_REGISTER_TITLE_TRACEABILITY: ${{ inputs.include_outside_register_title_traceability }}
+          CONSTRAINT_SITE_PRIORITY_BANDS: ${{ inputs.constraint_site_priority_bands }}
+          CONSTRAINT_SOURCE_FAMILIES: ${{ inputs.constraint_source_families }}
+          INCLUDE_OPEN_LOCATION_CONTEXT: ${{ inputs.include_open_location_context }}
+          INCLUDE_PHASE2_CONTEXT_REFRESH: ${{ inputs.include_phase2_context_refresh }}
+        run: |
+          set -euo pipefail
+
+          clamp_positive_int() {
+            local raw="$1"
+            local fallback="$2"
+            if [[ "$raw" =~ ^[0-9]+$ ]] && [ "$raw" -gt 0 ]; then
+              echo "$raw"
+            else
+              echo "$fallback"
+            fi
+          }
+
+          run_step() {
+            local label="$1"
+            shift
+            echo "::group::${label}"
+            echo "### ${label}" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            printf '%q ' "$@" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            "$@"
+            echo "- completed" >> "$GITHUB_STEP_SUMMARY"
+            echo "::endgroup::"
+          }
+
+          run_bounded_step() {
+            local label="$1"
+            shift
+            run_step "$label" timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" "$@"
+          }
+
+          cycles="$(clamp_positive_int "${COMPLETION_CYCLES:-3}" 3)"
+          if [ "$cycles" -gt 24 ]; then
+            echo "completion_cycles is capped at 24 per workflow run to avoid runaway GitHub Actions jobs."
+            cycles=24
+          fi
+
+          echo "# LandIntel Measure/Link Completion" >> "$GITHUB_STEP_SUMMARY"
+          echo "- cycles: ${cycles}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- title batch: ${SITE_TITLE_TRACEABILITY_PROOF_SITE_BATCH_SIZE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- constraint pair batch: ${CONSTRAINT_PROOF_PAIR_BATCH_SIZE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- priority bands: ${CONSTRAINT_SITE_PRIORITY_BANDS}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- constraint source families: ${CONSTRAINT_SOURCE_FAMILIES}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- caveat: serial bounded completion loop; no unbounded all-site/all-layer scan" >> "$GITHUB_STEP_SUMMARY"
+
+          run_step "Run migrations" python -m src.source_phase_runner run-migrations
+          run_step "Register source estate" python -m src.source_estate_registry register-source-estate
+          run_step "Register supplemental sources" python -m src.source_policy_discovery register-supplemental-sources
+          run_step "Initial DD orchestration audit" python -m src.site_dd_orchestration_audit audit-site-dd-orchestration
+          run_step "Initial source completion matrix audit" python -m src.source_completion_audit audit-source-completion-matrix
+
+          IFS=',' read -ra priority_bands <<< "${CONSTRAINT_SITE_PRIORITY_BANDS}"
+          IFS=',' read -ra source_families <<< "${CONSTRAINT_SOURCE_FAMILIES}"
+
+          cycle=1
+          while [ "$cycle" -le "$cycles" ]; do
+            echo "## Completion cycle ${cycle}" >> "$GITHUB_STEP_SUMMARY"
+
+            run_bounded_step "Cycle ${cycle}: title/parcel traceability proof" python -m src.source_expansion_runner_wfs_paging site-title-traceability-proof
+
+            if [ "${INCLUDE_OUTSIDE_REGISTER_TITLE_TRACEABILITY}" = "true" ]; then
+              run_bounded_step "Cycle ${cycle}: outside-register title/parcel traceability proof" env SITE_TITLE_TRACEABILITY_EXCLUDE_REGISTER_SOURCES=true python -m src.source_expansion_runner_wfs_paging site-title-traceability-proof-outside-registers
+            fi
+
+            run_step "Cycle ${cycle}: audit site parcel links" python -m src.source_expansion_runner_wfs_paging audit-site-parcel-links
+            run_step "Cycle ${cycle}: audit title number control" python -m src.source_expansion_runner_wfs_paging audit-title-number-control
+
+            run_bounded_step "Cycle ${cycle}: reconcile catchup scan" python -m src.source_reconcile_catchup reconcile-catchup-scan --runtime-minutes "${RECONCILE_RUNTIME_MINUTES}" --batch-limit "${RECONCILE_BATCH_LIMIT}"
+            run_bounded_step "Cycle ${cycle}: process reconcile queue" python -m src.source_reconcile_incremental process-reconcile-queue --limit "${RECONCILE_BATCH_LIMIT}" --runtime-minutes "${RECONCILE_RUNTIME_MINUTES}"
+            run_bounded_step "Cycle ${cycle}: refresh affected sites" python -m src.source_reconcile_incremental refresh-affected-sites --limit "${RECONCILE_BATCH_LIMIT}" --runtime-minutes "${RECONCILE_RUNTIME_MINUTES}"
+
+            if [ "${INCLUDE_OPEN_LOCATION_CONTEXT}" = "true" ]; then
+              run_bounded_step "Cycle ${cycle}: complete open-location universe batch" python -m src.source_expansion_runner_wfs_paging complete-open-data-universe
+              run_step "Cycle ${cycle}: audit open-location completion" python -m src.source_expansion_runner_wfs_paging audit-open-location-spine-completion
+            fi
+
+            for priority_band in "${priority_bands[@]}"; do
+              priority_band="$(echo "$priority_band" | xargs)"
+              if [ -z "$priority_band" ]; then
+                continue
+              fi
+              for source_family in "${source_families[@]}"; do
+                source_family="$(echo "$source_family" | xargs)"
+                if [ -z "$source_family" ]; then
+                  continue
+                fi
+                run_bounded_step "Cycle ${cycle}: measure ${source_family} for ${priority_band}" env CONSTRAINT_PROOF_SITE_PRIORITY_BAND="$priority_band" CONSTRAINT_MEASURE_SOURCE_FAMILY="$source_family" python -m src.constraint_measurement_execution_proof constraint-measurement-proof-title-spend-source-family
+              done
+            done
+
+            run_step "Cycle ${cycle}: constraint scaler proof" python -m src.constraint_scaler_proof print-constraint-scaler-proof
+            run_step "Cycle ${cycle}: audit constraint measurements" python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
+
+            if [ "${INCLUDE_PHASE2_CONTEXT_REFRESH}" = "true" ]; then
+              run_bounded_step "Cycle ${cycle}: refresh site amenity context" python -m src.phase2_source_runner refresh-site-amenity-context
+              run_bounded_step "Cycle ${cycle}: refresh site demographic context" python -m src.phase2_source_runner refresh-site-demographic-context
+              run_bounded_step "Cycle ${cycle}: refresh site market context" python -m src.phase2_source_runner refresh-site-market-context
+              run_bounded_step "Cycle ${cycle}: refresh site power context" python -m src.phase2_source_runner refresh-site-power-context
+              run_bounded_step "Cycle ${cycle}: refresh site abnormal risk" python -m src.phase2_source_runner refresh-site-abnormal-risk
+            fi
+
+            run_step "Cycle ${cycle}: audit DD orchestration" python -m src.site_dd_orchestration_audit audit-site-dd-orchestration
+            run_step "Cycle ${cycle}: audit source completion matrix" python -m src.source_completion_audit audit-source-completion-matrix
+            cycle=$((cycle + 1))
+          done
+
+          run_step "Final source expansion audit" python -m src.source_expansion_runner_wfs_paging audit-source-expansion
+          run_step "Final full source estate audit" python -m src.phase2_source_runner audit-full-source-estate
+
+          echo "## Completion Position" >> "$GITHUB_STEP_SUMMARY"
+          echo "This run advances measurement/linkage in bounded serial batches. If queue counts remain, rerun this workflow with more cycles until audit queues reach zero." >> "$GITHUB_STEP_SUMMARY"

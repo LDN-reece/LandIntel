@@ -225,13 +225,24 @@ class IncrementalReconcileContractTests(unittest.TestCase):
     def test_workflow_runs_incremental_worker_commands(self) -> None:
         for snippet in (
             'python -m src.source_reconcile_audit audit-source-footprint',
-            'python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000',
-            'python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000',
+            'run_phase2_bounded python -m src.source_reconcile_incremental process-reconcile-queue --limit',
+            'run_phase2_bounded python -m src.source_reconcile_incremental refresh-affected-sites --limit',
             'python -m src.source_reconcile_catchup reconcile-catchup-scan',
             'python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning',
             'python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family hla',
             'python -m src.source_reconcile_incremental weekly-reconcile-maintenance',
             'python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_reconcile_incremental.py src/source_reconcile_catchup.py src/source_reconcile_audit.py',
+        ):
+            self.assertIn(snippet, WORKFLOW)
+
+    def test_workflow_wraps_reconcile_workers_in_outer_timeout(self) -> None:
+        for snippet in (
+            "phase2_timeout_window()",
+            'echo "$((minutes + 2))m"',
+            "run_phase2_bounded()",
+            'timeout "$(phase2_timeout_window)" "$@"',
+            'run_phase2_bounded python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"',
+            'run_phase2_bounded python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"',
         ):
             self.assertIn(snippet, WORKFLOW)
 

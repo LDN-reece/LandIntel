@@ -452,6 +452,18 @@ jobs:
             done
           }
 
+          phase2_timeout_window() {
+            local minutes="${PHASE2_RUNTIME_MINUTES:-10}"
+            if ! [[ "$minutes" =~ ^[0-9]+$ ]]; then
+              minutes=10
+            fi
+            echo "$((minutes + 2))m"
+          }
+
+          run_phase2_bounded() {
+            timeout "$(phase2_timeout_window)" "$@"
+          }
+
           is_source_expansion_ingest() {
             case "$1" in
               resolve-title-numbers|ingest-ldp|ingest-settlement-boundaries|ingest-ela|ingest-vdl|ingest-sepa-flood|ingest-coal-authority|ingest-hes-designations|ingest-naturescot|ingest-contaminated-land|ingest-tpo|ingest-culverts|ingest-conservation-areas|ingest-greenbelt|ingest-os-topography|ingest-os-places|ingest-os-features|ingest-os-linked-identifiers|ingest-os-openmap-local|ingest-os-open-roads|ingest-os-open-rivers|ingest-os-boundary-line|ingest-os-open-names|ingest-os-open-greenspace|ingest-os-open-zoomstack|ingest-os-open-toid|ingest-os-open-built-up-areas|ingest-os-open-uprn|ingest-os-open-usrn|ingest-osm-overpass|ingest-open-location-spine|complete-open-data-universe|ingest-naptan|ingest-statistics-gov-scot|ingest-opentopography-srtm|ingest-bulk-download-universe|probe-open-location-spine|audit-open-location-spine-completion)
@@ -653,13 +665,13 @@ jobs:
             esac
           elif [ "$SELECTED_COMMAND" = "process-reconcile-queue" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
+            run_phase2_bounded python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
           elif [ "$SELECTED_COMMAND" = "reconcile-catchup-scan" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_reconcile_catchup reconcile-catchup-scan --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
+            run_phase2_bounded python -m src.source_reconcile_catchup reconcile-catchup-scan --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
           elif [ "$SELECTED_COMMAND" = "refresh-affected-sites" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
+            run_phase2_bounded python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
           elif [ "$SELECTED_COMMAND" = "weekly-reconcile-maintenance" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_reconcile_incremental weekly-reconcile-maintenance
@@ -669,15 +681,15 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "publish-planning-links" ]; then
             python -m src.source_phase_runner run-migrations
             echo "Publishing existing planning records into the canonical-site reconcile queue with bounded runtime and batch controls. No full SpatialHub planning pull is being run."
-            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
-            python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
-            python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
+            run_phase2_bounded python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
+            run_phase2_bounded python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
+            run_phase2_bounded python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
           elif [ "$SELECTED_COMMAND" = "ingest-planning-history" ]; then
             python -m src.source_phase_runner run-migrations
             echo "Planning applications are already populated. Skipping full SpatialHub planning ingest and publishing existing records instead."
-            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
-            python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
-            python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
+            run_phase2_bounded python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family planning --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
+            run_phase2_bounded python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
+            run_phase2_bounded python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
           elif [ "$SELECTED_COMMAND" = "full-ingest-planning-history" ]; then
             python -m src.source_phase_runner run-migrations
             echo "Full SpatialHub planning ingest explicitly requested. This is the only planning command allowed to run the long WFS pull."
@@ -688,9 +700,9 @@ jobs:
           elif [ "$SELECTED_COMMAND" = "ingest-hla" ]; then
             python -m src.source_phase_runner run-migrations
             timeout "${SOURCE_EXPANSION_COMMAND_TIMEOUT:-45m}" python -m src.source_phase_runner ingest-hla
-            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family hla --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
-            python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
-            python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
+            run_phase2_bounded python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family hla --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
+            run_phase2_bounded python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
+            run_phase2_bounded python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
             python -m src.register_context_audit audit-register-context
           elif [ "$SELECTED_COMMAND" = "ingest-bgs" ]; then
             python -m src.source_phase_runner run-migrations

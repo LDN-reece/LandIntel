@@ -148,7 +148,7 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Compile data loaders
-        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py src/phase2_source_runner.py src/drive_source_sync.py
+        run: python -m py_compile src/source_phase_runner.py src/source_catalog_sync.py src/source_estate_registry.py src/source_policy_discovery.py src/source_expansion_runner.py src/source_expansion_runner_wfs_paging.py src/phase2_source_runner.py src/drive_source_sync.py src/register_context_audit.py
 
       - name: Load DD source estate into Supabase
         env:
@@ -211,6 +211,10 @@ jobs:
             run_optional "$1" python -m src.source_expansion_runner_wfs_paging "$2"
           }
 
+          core_phase() {
+            run_optional "$1" python -m src.source_phase_runner "$2"
+          }
+
           phase2() {
             run_optional "$1" python -m src.phase2_source_runner "$2"
           }
@@ -236,7 +240,7 @@ jobs:
           if [ "$DD_SOURCE_SCOPE" = "all" ] || [ "$DD_SOURCE_SCOPE" = "planning_policy_registers" ]; then
             source_phase "Ingest LDP source data" ingest-ldp
             source_phase "Ingest settlement boundary source data" ingest-settlement-boundaries
-            source_phase "Ingest HLA source data" ingest-hla
+            core_phase "Ingest HLA source data" ingest-hla
             source_phase "Ingest ELA source data" ingest-ela
             source_phase "Ingest VDL source data" ingest-vdl
           fi
@@ -280,6 +284,7 @@ jobs:
           run_optional "Audit source expansion" python -m src.source_expansion_runner_wfs_paging audit-source-expansion
           run_optional "Audit full source estate" python -m src.phase2_source_runner audit-full-source-estate
           run_optional "Audit source completion matrix" python -m src.source_completion_audit audit-source-completion-matrix
+          run_optional "Audit register context merge" python -m src.register_context_audit audit-register-context
 
           echo "## Source Load Status JSONL" >> "$GITHUB_STEP_SUMMARY"
           echo "\`\`\`json" >> "$GITHUB_STEP_SUMMARY"

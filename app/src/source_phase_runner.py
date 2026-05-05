@@ -1721,16 +1721,22 @@ class SourcePhaseRunner:
         site_frame: gpd.GeoDataFrame | None,
         geometry: BaseGeometry | None,
     ) -> str | None:
+        geometry = _polygonize_geometry(geometry)
         if geometry is None or site_frame is None or site_frame.empty:
             return None
         try:
             candidate_indexes = list(site_frame.sindex.query(geometry, predicate="intersects"))
         except Exception:
-            candidate_indexes = [
-                index
-                for index, candidate_geometry in enumerate(site_frame.geometry)
-                if candidate_geometry is not None and candidate_geometry.intersects(geometry)
-            ]
+            candidate_indexes = []
+            for index, candidate_geometry in enumerate(site_frame.geometry):
+                candidate_polygon = _polygonize_geometry(candidate_geometry)
+                if candidate_polygon is None:
+                    continue
+                try:
+                    if candidate_polygon.intersects(geometry):
+                        candidate_indexes.append(index)
+                except Exception:
+                    continue
         if not candidate_indexes:
             return None
 
@@ -1738,9 +1744,14 @@ class SourcePhaseRunner:
         best_overlap_area = -1.0
         for candidate in site_frame.iloc[candidate_indexes].itertuples(index=False):
             candidate_geometry = _polygonize_geometry(candidate.geometry)
-            if candidate_geometry is None or not candidate_geometry.intersects(geometry):
+            if candidate_geometry is None:
                 continue
-            overlap = candidate_geometry.intersection(geometry)
+            try:
+                if not candidate_geometry.intersects(geometry):
+                    continue
+                overlap = candidate_geometry.intersection(geometry)
+            except Exception:
+                continue
             overlap_area = float(overlap.area) if not overlap.is_empty else 0.0
             if overlap_area > best_overlap_area:
                 best_overlap_area = overlap_area
@@ -1941,14 +1952,35 @@ def _geometry_hex(geometry: BaseGeometry | None) -> str | None:
     return geometry.wkb_hex
 
 
+def _repair_polygonal_geometry(geometry: BaseGeometry | None) -> BaseGeometry | None:
+    if geometry is None or getattr(geometry, "is_empty", False):
+        return None
+    if getattr(geometry, "is_valid", True):
+        return geometry
+    try:
+        repaired = geometry.buffer(0)
+    except Exception:
+        return None
+    if repaired is None or getattr(repaired, "is_empty", False):
+        return None
+    return repaired
+
+
 def _polygonize_geometry(geometry: BaseGeometry | None) -> BaseGeometry | None:
+    geometry = _repair_polygonal_geometry(geometry)
     if geometry is None or getattr(geometry, "is_empty", False):
         return None
     if isinstance(geometry, MultiPolygon):
         return geometry
     if isinstance(geometry, Polygon):
         return MultiPolygon([geometry])
-    buffered = geometry.buffer(1)
+    try:
+        buffered = geometry.buffer(1)
+    except Exception:
+        return None
+    buffered = _repair_polygonal_geometry(buffered)
+    if buffered is None:
+        return None
     if isinstance(buffered, Polygon):
         return MultiPolygon([buffered])
     if isinstance(buffered, MultiPolygon):

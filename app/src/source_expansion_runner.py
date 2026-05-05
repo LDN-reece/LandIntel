@@ -768,7 +768,7 @@ class SourceExpansionRunner:
             self._upsert_source_estate(source)
 
         batch_size = max(self._env_int("SITE_TITLE_TRACEABILITY_PROOF_SITE_BATCH_SIZE", 10), 1)
-        priority_band = os.getenv("SITE_TITLE_TRACEABILITY_PROOF_PRIORITY_BAND", "title_spend_candidates").strip()
+        requested_priority_band = os.getenv("SITE_TITLE_TRACEABILITY_PROOF_PRIORITY_BAND", "auto").strip()
         include_title_resolution = self._env_bool("SITE_TITLE_TRACEABILITY_PROOF_INCLUDE_TITLE_RESOLUTION", True)
         max_candidates = self._env_int("SITE_PARCEL_LINK_MAX_CANDIDATES_PER_SITE", 10)
         max_distance_m = self._env_float("SITE_PARCEL_LINK_MAX_DISTANCE_M", 250.0)
@@ -777,52 +777,71 @@ class SourceExpansionRunner:
         title_min_overlap_sqm = self._env_float("TITLE_RESOLUTION_MIN_OVERLAP_SQM", 1.0)
 
         before_counts = self._site_title_traceability_direct_counts()
-        selected_rows = self.database.fetch_all(
-            """
-            with priority_sites as (
-                select
-                    canonical_site_id,
-                    site_priority_band,
-                    site_priority_rank,
-                    priority_source
-                from landintel_reporting.v_constraint_priority_sites
-            ),
-            candidates as (
-                select
-                    site.id::text as site_location_id,
-                    coalesce(priority_sites.site_priority_band, 'wider_canonical_sites') as site_priority_band,
-                    coalesce(priority_sites.site_priority_rank, 5) as site_priority_rank,
-                    coalesce(priority_sites.priority_source, 'landintel.canonical_sites') as priority_source,
-                    site.authority_name,
-                    site.area_acres
-                from landintel.canonical_sites as site
-                left join priority_sites
-                  on priority_sites.canonical_site_id = site.id
-                where site.geometry is not null
-                  and site.authority_name is not null
-                  and (
-                      cast(:priority_band as text) = ''
-                      or coalesce(priority_sites.site_priority_band, 'wider_canonical_sites') = cast(:priority_band as text)
-                  )
-                  and site.primary_ros_parcel_id is null
-                  and not exists (
-                      select 1
-                      from public.site_ros_parcel_link_candidates as link
-                      where link.site_id = site.id::text
-                        and link.link_status <> 'rejected'
-                  )
-                order by
-                    coalesce(priority_sites.site_priority_rank, 5),
-                    site.authority_name nulls last,
-                    site.area_acres desc nulls last,
-                    site.id
-                limit cast(:batch_size as integer)
+        if requested_priority_band in {"", "all", "all_priority_bands"}:
+            priority_bands = [""]
+        elif requested_priority_band == "auto":
+            priority_bands = [
+                "title_spend_candidates",
+                "review_queue",
+                "ldn_candidate_screen",
+                "prove_it_candidates",
+                "wider_canonical_sites",
+            ]
+        else:
+            priority_bands = [requested_priority_band]
+
+        selected_rows: list[dict[str, Any]] = []
+        selected_priority_band = priority_bands[0] if priority_bands else requested_priority_band
+        for candidate_priority_band in priority_bands:
+            selected_rows = self.database.fetch_all(
+                """
+                with priority_sites as (
+                    select
+                        canonical_site_id,
+                        site_priority_band,
+                        site_priority_rank,
+                        priority_source
+                    from landintel_reporting.v_constraint_priority_sites
+                ),
+                candidates as (
+                    select
+                        site.id::text as site_location_id,
+                        coalesce(priority_sites.site_priority_band, 'wider_canonical_sites') as site_priority_band,
+                        coalesce(priority_sites.site_priority_rank, 5) as site_priority_rank,
+                        coalesce(priority_sites.priority_source, 'landintel.canonical_sites') as priority_source,
+                        site.authority_name,
+                        site.area_acres
+                    from landintel.canonical_sites as site
+                    left join priority_sites
+                      on priority_sites.canonical_site_id = site.id
+                    where site.geometry is not null
+                      and site.authority_name is not null
+                      and (
+                          cast(:priority_band as text) = ''
+                          or coalesce(priority_sites.site_priority_band, 'wider_canonical_sites') = cast(:priority_band as text)
+                      )
+                      and site.primary_ros_parcel_id is null
+                      and not exists (
+                          select 1
+                          from public.site_ros_parcel_link_candidates as link
+                          where link.site_id = site.id::text
+                            and link.link_status <> 'rejected'
+                      )
+                    order by
+                        coalesce(priority_sites.site_priority_rank, 5),
+                        site.authority_name nulls last,
+                        site.area_acres desc nulls last,
+                        site.id
+                    limit cast(:batch_size as integer)
+                )
+                select *
+                from candidates
+                """,
+                {"priority_band": candidate_priority_band, "batch_size": batch_size},
             )
-            select *
-            from candidates
-            """,
-            {"priority_band": priority_band, "batch_size": batch_size},
-        )
+            selected_priority_band = candidate_priority_band or "all_priority_bands"
+            if selected_rows:
+                break
         site_location_ids = [
             str(row["site_location_id"])
             for row in selected_rows
@@ -906,7 +925,8 @@ class SourceExpansionRunner:
             "source_family": "title_number",
             "status": status,
             "summary": summary,
-            "priority_band": priority_band or "all_priority_bands",
+            "requested_priority_band": requested_priority_band or "all_priority_bands",
+            "selected_priority_band": selected_priority_band,
             "batch_size": batch_size,
             "selected_site_count": selected_site_count,
             "selected_sites": selected_rows,

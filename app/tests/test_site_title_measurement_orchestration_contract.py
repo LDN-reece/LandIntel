@@ -142,12 +142,15 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
         self.assertIn("def site_title_traceability_proof", SOURCE_RUNNER)
         self.assertIn("site_title_traceability_proof_site_batch_size", SOURCE_RUNNER)
         self.assertIn("site_title_traceability_proof_priority_band", SOURCE_RUNNER)
+        self.assertIn("requested_priority_band == \"auto\"", SOURCE_RUNNER)
+        self.assertIn("review_queue", SOURCE_RUNNER)
+        self.assertIn("wider_canonical_sites", SOURCE_RUNNER)
         self.assertIn("public.refresh_site_ros_parcel_link_candidates_for_sites", SOURCE_RUNNER)
         self.assertIn("public.refresh_site_title_resolution_bridge_for_sites", SOURCE_RUNNER)
         self.assertIn('"site-title-traceability-proof"', SOURCE_RUNNER)
         self.assertIn("- site-title-traceability-proof", WORKFLOW)
         self.assertIn("site_title_traceability_proof_site_batch_size: \"10\"", WORKFLOW)
-        self.assertIn("site_title_traceability_proof_priority_band: \"title_spend_candidates\"", WORKFLOW)
+        self.assertIn("site_title_traceability_proof_priority_band: \"auto\"", WORKFLOW)
         self.assertIn("python -m src.source_expansion_runner_wfs_paging site-title-traceability-proof", WORKFLOW)
 
         method_match = re.search(

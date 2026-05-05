@@ -19,6 +19,14 @@ SCAN_STATE_MIGRATION = (ROOT / "sql" / "079_site_title_traceability_scan_state.s
     encoding="utf-8"
 )
 SCAN_STATE_MIGRATION_LOWER = SCAN_STATE_MIGRATION.lower()
+NO_CANDIDATE_DIAGNOSTIC_MIGRATION = (
+    ROOT / "sql" / "080_site_title_no_candidate_diagnostics.sql"
+).read_text(encoding="utf-8")
+NO_CANDIDATE_DIAGNOSTIC_MIGRATION_LOWER = NO_CANDIDATE_DIAGNOSTIC_MIGRATION.lower()
+NO_CANDIDATE_DIAGNOSTIC_DOC = (
+    ROOT / "docs" / "source_completion" / "title_traceability_no_candidate_diagnostics.md"
+).read_text(encoding="utf-8")
+NO_CANDIDATE_DIAGNOSTIC_DOC_LOWER = NO_CANDIDATE_DIAGNOSTIC_DOC.lower()
 DOC = (ROOT / "docs" / "source_completion" / "site_title_measurement_orchestration.md").read_text(
     encoding="utf-8"
 )
@@ -94,6 +102,34 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
         ):
             self.assertIsNone(re.search(pattern, SCAN_STATE_MIGRATION_LOWER), pattern)
 
+    def test_no_candidate_diagnostic_views_are_reporting_only(self) -> None:
+        for view_name in (
+            "landintel_reporting.v_site_title_no_candidate_diagnostics",
+            "landintel_reporting.v_site_title_no_candidate_diagnostic_summary",
+        ):
+            self.assertIn(f"create or replace view {view_name}", NO_CANDIDATE_DIAGNOSTIC_MIGRATION_LOWER)
+
+        for required_phrase in (
+            "landintel_store.site_title_traceability_scan_state",
+            "public.ros_cadastral_parcels",
+            "nearest_centroid_distance_m",
+            "nearest_geometry_distance_m",
+            "diagnostic_reason",
+            "recommended_action",
+            "diagnostic only. this does not prove ownership",
+        ):
+            self.assertIn(required_phrase, NO_CANDIDATE_DIAGNOSTIC_MIGRATION_LOWER)
+
+        self.assertNotIn("create table if not exists public.site_title", NO_CANDIDATE_DIAGNOSTIC_MIGRATION_LOWER)
+        self.assertNotIn("refresh_site_ros_parcel_link_candidates", NO_CANDIDATE_DIAGNOSTIC_MIGRATION_LOWER)
+        for pattern in (
+            r"\bdrop\s+table\b",
+            r"\btruncate\b",
+            r"\bdelete\s+from\s+(landintel|public|analytics|landintel_store)\b",
+            r"\balter\s+table\s+\S+\s+rename\b",
+        ):
+            self.assertIsNone(re.search(pattern, NO_CANDIDATE_DIAGNOSTIC_MIGRATION_LOWER), pattern)
+
     def test_no_spatial_measurement_runs_in_migration(self) -> None:
         for forbidden_pattern in (
             r"\bst_intersects\s*\(",
@@ -154,9 +190,23 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
         ):
             self.assertIn(required_phrase, DOC_LOWER)
 
+        for required_phrase in (
+            "v_site_title_no_candidate_diagnostics",
+            "v_site_title_no_candidate_diagnostic_summary",
+            "indexing blockers",
+            "not negative sourcing verdicts",
+            "candidate-window failures",
+            "ros coverage",
+            "canonical site geometry",
+        ):
+            self.assertIn(required_phrase, NO_CANDIDATE_DIAGNOSTIC_DOC_LOWER)
+
     def test_read_only_audit_command_is_wired_to_actions(self) -> None:
         self.assertIn("site_dd_orchestration_workflow_proof", AUDIT_RUNNER)
         self.assertIn("landintel_reporting.v_site_dd_orchestration_queue", AUDIT_RUNNER)
+        self.assertIn("landintel_reporting.v_site_title_no_candidate_diagnostics", AUDIT_RUNNER)
+        self.assertIn("landintel_reporting.v_site_title_no_candidate_diagnostic_summary", AUDIT_RUNNER)
+        self.assertIn("title_no_candidate_diagnostic_summary", AUDIT_RUNNER)
         self.assertIn("constraint_source_family_direct_counts", AUDIT_RUNNER)
         self.assertIn("public.constraint_layer_registry", AUDIT_RUNNER)
         self.assertIn("set_config('statement_timeout', '30s', false)", AUDIT_RUNNER)

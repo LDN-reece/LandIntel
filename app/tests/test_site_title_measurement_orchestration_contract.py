@@ -11,6 +11,10 @@ MIGRATION = (ROOT / "sql" / "077_site_title_measurement_orchestration.sql").read
     encoding="utf-8"
 )
 MIGRATION_LOWER = MIGRATION.lower()
+PERFORMANCE_FIX = (ROOT / "sql" / "078_site_dd_orchestration_performance_fix.sql").read_text(
+    encoding="utf-8"
+)
+PERFORMANCE_FIX_LOWER = PERFORMANCE_FIX.lower()
 DOC = (ROOT / "docs" / "source_completion" / "site_title_measurement_orchestration.md").read_text(
     encoding="utf-8"
 )
@@ -123,10 +127,27 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
     def test_read_only_audit_command_is_wired_to_actions(self) -> None:
         self.assertIn("site_dd_orchestration_workflow_proof", AUDIT_RUNNER)
         self.assertIn("landintel_reporting.v_site_dd_orchestration_queue", AUDIT_RUNNER)
+        self.assertIn("landintel_reporting.v_constraint_priority_measurement_queue", AUDIT_RUNNER)
+        self.assertIn("set_config('statement_timeout', '30s', false)", AUDIT_RUNNER)
         self.assertIn('"audit-site-dd-orchestration"', AUDIT_RUNNER)
         self.assertIn("- audit-site-dd-orchestration", WORKFLOW)
         self.assertIn("python -m src.site_dd_orchestration_audit audit-site-dd-orchestration", WORKFLOW)
         self.assertIn("src/site_dd_orchestration_audit.py", WORKFLOW)
+
+    def test_performance_fix_keeps_views_readable_without_heavy_title_status_join(self) -> None:
+        self.assertIn("create or replace view landintel_reporting.v_site_title_traceability_matrix", PERFORMANCE_FIX_LOWER)
+        self.assertIn("create or replace view landintel_reporting.v_site_dd_orchestration_queue", PERFORMANCE_FIX_LOWER)
+        self.assertNotIn("landintel_reporting.v_title_control_status", PERFORMANCE_FIX_LOWER)
+        self.assertNotIn("row_number() over", PERFORMANCE_FIX_LOWER)
+        self.assertIn("performance-fixed", PERFORMANCE_FIX_LOWER)
+        self.assertIn("deterministic guidance only", PERFORMANCE_FIX_LOWER)
+
+    def test_audit_runner_avoids_full_all_site_summary_queries(self) -> None:
+        self.assertNotIn("from landintel_reporting.v_site_dd_orchestration_summary", AUDIT_RUNNER)
+        self.assertNotIn("from landintel_reporting.v_site_measurement_readiness_matrix", AUDIT_RUNNER)
+        self.assertNotIn("from landintel_reporting.v_site_dd_orchestration_queue", AUDIT_RUNNER)
+        self.assertIn("direct_title_traceability_counts", AUDIT_RUNNER)
+        self.assertIn("direct_measurement_counts", AUDIT_RUNNER)
 
 
 if __name__ == "__main__":

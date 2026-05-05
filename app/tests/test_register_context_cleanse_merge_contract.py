@@ -8,6 +8,9 @@ MIGRATION = (ROOT / "sql" / "076_register_context_cleanse_merge.sql").read_text(
 PREFLIGHT = (ROOT / "sql" / "032z_rerunnable_analytics_dependency_drops.sql").read_text(
     encoding="utf-8"
 ).lower()
+SOURCE_COMPLETION_MATRIX = (ROOT / "sql" / "069_source_completion_matrix.sql").read_text(
+    encoding="utf-8"
+).lower()
 DOC = (ROOT / "docs" / "source_completion" / "register_context_cleanse_merge.md").read_text(
     encoding="utf-8"
 ).lower()
@@ -81,6 +84,24 @@ class RegisterContextCleanseMergeContractTests(unittest.TestCase):
         ):
             self.assertIn(required_drop, PREFLIGHT)
             self.assertLess(PREFLIGHT.index(required_drop), parent_index)
+
+    def test_source_completion_matrix_uses_loaded_register_counts_once(self) -> None:
+        for required_phrase in (
+            "register_context_rollup",
+            "from landintel.hla_site_records",
+            "from landintel.ela_site_records",
+            "from landintel.vdl_site_records",
+            "from landintel.ldp_site_records",
+            "from landintel.settlement_boundary_records",
+            "'housing_land_supply_spatialhub'",
+            "'employment_land_supply_spatialhub'",
+            "'vacant_derelict_land_spatialhub'",
+            "'ldp_spatialhub_package'",
+            "'nrs_settlement_boundaries'",
+            "greatest(coalesce(row_count, 0), coalesce(register_row_count, 0))",
+            "trust_block_reason = 'no_source_rows' then null",
+        ):
+            self.assertIn(required_phrase, SOURCE_COMPLETION_MATRIX)
 
     def test_docs_explain_loaded_registers_and_no_duplicate_uploads(self) -> None:
         for required_phrase in (

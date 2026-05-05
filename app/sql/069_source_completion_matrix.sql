@@ -257,6 +257,37 @@ workflow_mapping as (
         end as workflow_command
     from combined_sources
 ),
+register_context_rollup as (
+    select
+        'hla'::text as source_family,
+        count(*)::bigint as register_row_count,
+        count(distinct canonical_site_id) filter (where canonical_site_id is not null)::bigint as register_linked_site_count
+    from landintel.hla_site_records
+    union all
+    select
+        'ela'::text as source_family,
+        count(*)::bigint as register_row_count,
+        count(distinct canonical_site_id) filter (where canonical_site_id is not null)::bigint as register_linked_site_count
+    from landintel.ela_site_records
+    union all
+    select
+        'vdl'::text as source_family,
+        count(*)::bigint as register_row_count,
+        count(distinct canonical_site_id) filter (where canonical_site_id is not null)::bigint as register_linked_site_count
+    from landintel.vdl_site_records
+    union all
+    select
+        'ldp'::text as source_family,
+        count(*)::bigint as register_row_count,
+        count(distinct canonical_site_id) filter (where canonical_site_id is not null)::bigint as register_linked_site_count
+    from landintel.ldp_site_records
+    union all
+    select
+        'settlement'::text as source_family,
+        count(*)::bigint as register_row_count,
+        0::bigint as register_linked_site_count
+    from landintel.settlement_boundary_records
+),
 matrix as (
     select
         combined_sources.*,
@@ -280,7 +311,27 @@ matrix as (
         coalesce(legacy_public_sources.legacy_registry_rows, 0)::bigint as legacy_registry_rows,
         legacy_public_sources.legacy_latest_updated_at,
         legacy_public_sources.legacy_latest_success_at,
-        legacy_public_sources.legacy_freshness_status
+        legacy_public_sources.legacy_freshness_status,
+        case
+            when combined_sources.source_key in (
+                'housing_land_supply_spatialhub',
+                'employment_land_supply_spatialhub',
+                'vacant_derelict_land_spatialhub',
+                'ldp_spatialhub_package',
+                'nrs_settlement_boundaries'
+            ) then coalesce(register_context_rollup.register_row_count, 0)::bigint
+            else 0::bigint
+        end as register_row_count,
+        case
+            when combined_sources.source_key in (
+                'housing_land_supply_spatialhub',
+                'employment_land_supply_spatialhub',
+                'vacant_derelict_land_spatialhub',
+                'ldp_spatialhub_package',
+                'nrs_settlement_boundaries'
+            ) then coalesce(register_context_rollup.register_linked_site_count, 0)::bigint
+            else 0::bigint
+        end as register_linked_site_count
     from combined_sources
     left join analytics.v_landintel_source_estate_matrix as live
       on live.source_key = combined_sources.source_key
@@ -292,6 +343,8 @@ matrix as (
       on workflow_commands.command_name = workflow_mapping.workflow_command
     left join legacy_public_sources
       on legacy_public_sources.legacy_source_key = (combined_sources.metadata ->> 'metadata_uuid')
+    left join register_context_rollup
+      on register_context_rollup.source_family = combined_sources.source_family
 )
 select
     source_key,
@@ -308,8 +361,8 @@ select
           or source_key = 'title_review_manual'
           or orchestration_mode ilike '%%manual%%' then 'manual_only'
         when coalesce(live_trusted_for_review, false) then 'live_complete'
-        when coalesce(row_count, 0) > 0
-          or coalesce(linked_site_count, 0) > 0
+        when greatest(coalesce(row_count, 0), coalesce(register_row_count, 0)) > 0
+          or greatest(coalesce(linked_site_count, 0), coalesce(register_linked_site_count, 0)) > 0
           or coalesce(measured_site_count, 0) > 0
           or coalesce(freshness_record_count, 0) > 0
           or phase_one_operational_status in ('live_wired', 'static_registered')
@@ -357,6 +410,7 @@ select
         else false
     end as tests_present,
     case
+        when coalesce(register_row_count, 0) > 0 and trust_block_reason = 'no_source_rows' then null
         when trust_block_reason is not null then trust_block_reason
         when limitation_notes is not null and btrim(limitation_notes) <> '' then limitation_notes
         when critical_notes is not null and btrim(critical_notes) <> '' then critical_notes
@@ -380,8 +434,8 @@ select
         when target_table like 'landintel.%%' then 'landintel'
         else 'source_catalog_or_registry'
     end as owner_layer,
-    coalesce(row_count, 0)::bigint as row_count,
-    coalesce(linked_site_count, 0)::bigint as linked_site_count,
+    greatest(coalesce(row_count, 0), coalesce(register_row_count, 0))::bigint as row_count,
+    greatest(coalesce(linked_site_count, 0), coalesce(register_linked_site_count, 0))::bigint as linked_site_count,
     coalesce(measured_site_count, 0)::bigint as measured_site_count,
     coalesce(evidence_count, 0)::bigint as evidence_count,
     coalesce(signal_count, 0)::bigint as signal_count,

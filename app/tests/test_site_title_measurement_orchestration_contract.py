@@ -124,6 +124,7 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
             "resolve-title-numbers",
             "measure-constraints-duckdb",
             "audit-site-dd-orchestration",
+            "site-title-traceability-proof-outside-registers",
         ):
             self.assertIn(required_phrase, DOC_LOWER)
 
@@ -142,6 +143,11 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
         self.assertIn("def site_title_traceability_proof", SOURCE_RUNNER)
         self.assertIn("site_title_traceability_proof_site_batch_size", SOURCE_RUNNER)
         self.assertIn("site_title_traceability_proof_priority_band", SOURCE_RUNNER)
+        self.assertIn("min_operational_area_acres", SOURCE_RUNNER)
+        self.assertIn("exclude_register_sources", SOURCE_RUNNER)
+        self.assertIn("landintel.hla_site_records as hla", SOURCE_RUNNER)
+        self.assertIn("landintel.ela_site_records as ela", SOURCE_RUNNER)
+        self.assertIn("landintel.vdl_site_records as vdl", SOURCE_RUNNER)
         self.assertIn("requested_priority_band == \"auto\"", SOURCE_RUNNER)
         self.assertIn("review_queue", SOURCE_RUNNER)
         self.assertIn("wider_canonical_sites", SOURCE_RUNNER)
@@ -149,13 +155,21 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
         self.assertIn("public.refresh_site_ros_parcel_link_candidates_for_sites", SOURCE_RUNNER)
         self.assertIn("public.refresh_site_title_resolution_bridge_for_sites", SOURCE_RUNNER)
         self.assertIn('"site-title-traceability-proof"', SOURCE_RUNNER)
+        self.assertIn('"site-title-traceability-proof-outside-registers"', SOURCE_RUNNER)
         self.assertIn("- site-title-traceability-proof", WORKFLOW)
+        self.assertIn("- site-title-traceability-proof-outside-registers", WORKFLOW)
         self.assertIn("site_title_traceability_proof_site_batch_size: \"10\"", WORKFLOW)
+        self.assertIn("site_title_traceability_outside_register_batch_size: \"25\"", WORKFLOW)
         self.assertIn("site_title_traceability_proof_priority_band: \"auto\"", WORKFLOW)
         self.assertIn("python -m src.source_expansion_runner_wfs_paging site-title-traceability-proof", WORKFLOW)
+        self.assertIn(
+            "python -m src.source_expansion_runner_wfs_paging site-title-traceability-proof-outside-registers",
+            WORKFLOW,
+        )
+        self.assertIn("site_title_traceability_exclude_register_sources=\"true\"", WORKFLOW)
 
         method_match = re.search(
-            r"def site_title_traceability_proof\(self\).*?\n    def link_sites_to_ros_parcels",
+            r"def site_title_traceability_proof\(.*?\n    def link_sites_to_ros_parcels",
             SOURCE_RUNNER,
             flags=re.S,
         )

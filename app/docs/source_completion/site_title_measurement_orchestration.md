@@ -151,12 +151,15 @@ It uses the same non-destructive title traceability functions, but spends the ba
 
 This is the correct indexing path for non-register sourcing. HLA, ELA and VDL remain useful context layers, but they should not consume the priority traceability batch when the target is privately controlled, overlooked land outside the registers.
 
+`landintel_store.site_title_traceability_scan_state` records bounded title indexing memory. If a site has already been checked and no RoS parcel candidate was found, the next run skips that no-hit for the configured freshness window instead of spending another batch on the same site. This is operational memory only. It is not ownership evidence and it does not reject the site.
+
 GitHub Actions controls:
 
 - `SITE_TITLE_TRACEABILITY_PROOF_SITE_BATCH_SIZE=10`;
 - `SITE_TITLE_TRACEABILITY_OUTSIDE_REGISTER_BATCH_SIZE=25`;
 - `SITE_TITLE_TRACEABILITY_PROOF_PRIORITY_BAND=auto`;
-- `SITE_TITLE_TRACEABILITY_PROOF_INCLUDE_TITLE_RESOLUTION=true`.
+- `SITE_TITLE_TRACEABILITY_PROOF_INCLUDE_TITLE_RESOLUTION=true`;
+- `SITE_TITLE_TRACEABILITY_SCAN_STATE_MAX_AGE_DAYS=30`.
 
 ## Title Safety Rules
 

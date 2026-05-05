@@ -129,6 +129,17 @@ class RegisterContextCleanseMergeContractTests(unittest.TestCase):
         self.assertIn("python -m src.register_context_audit audit-register-context", SOURCES_WORKFLOW)
         self.assertIn("src/register_context_audit.py", SOURCES_WORKFLOW)
 
+    def test_hla_workflow_uses_bounded_reconcile_controls(self) -> None:
+        hla_branch = SOURCES_WORKFLOW.split('elif [ "$selected_command" = "ingest-hla" ]; then', 1)[1]
+        hla_branch = hla_branch.split('elif [ "$selected_command" = "ingest-bgs" ]; then', 1)[0]
+
+        self.assertIn('timeout "${source_expansion_command_timeout:-45m}" python -m src.source_phase_runner ingest-hla', hla_branch)
+        self.assertIn('--source-family hla --runtime-minutes "${phase2_runtime_minutes:-10}" --batch-limit "${phase2_batch_size:-250}"', hla_branch)
+        self.assertIn('process-reconcile-queue --limit "${phase2_batch_size:-250}" --runtime-minutes "${phase2_runtime_minutes:-10}"', hla_branch)
+        self.assertIn('refresh-affected-sites --limit "${phase2_batch_size:-250}" --runtime-minutes "${phase2_runtime_minutes:-10}"', hla_branch)
+        self.assertNotIn("process-reconcile-queue --limit 50000", hla_branch)
+        self.assertNotIn("refresh-affected-sites --limit 10000", hla_branch)
+
     def test_audit_runner_is_read_only_and_targets_register_views(self) -> None:
         self.assertIn("audit-register-context", AUDIT_RUNNER)
         for required_view in (

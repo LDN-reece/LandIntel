@@ -381,7 +381,7 @@ with register_status as (
 freshness as (
     select distinct on (source_family)
         source_family,
-        source_key,
+        source_scope_key as source_key,
         freshness_status,
         last_checked_at,
         last_success_at,

@@ -145,6 +145,7 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
         self.assertIn("requested_priority_band == \"auto\"", SOURCE_RUNNER)
         self.assertIn("review_queue", SOURCE_RUNNER)
         self.assertIn("wider_canonical_sites", SOURCE_RUNNER)
+        self.assertIn("parcel_coverage.authority_name = site.authority_name", SOURCE_RUNNER)
         self.assertIn("public.refresh_site_ros_parcel_link_candidates_for_sites", SOURCE_RUNNER)
         self.assertIn("public.refresh_site_title_resolution_bridge_for_sites", SOURCE_RUNNER)
         self.assertIn('"site-title-traceability-proof"', SOURCE_RUNNER)

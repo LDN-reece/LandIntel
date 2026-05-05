@@ -816,6 +816,12 @@ class SourceExpansionRunner:
                       on priority_sites.canonical_site_id = site.id
                     where site.geometry is not null
                       and site.authority_name is not null
+                      and exists (
+                          select 1
+                          from public.ros_cadastral_parcels as parcel_coverage
+                          where parcel_coverage.authority_name = site.authority_name
+                          limit 1
+                      )
                       and (
                           cast(:priority_band as text) = ''
                           or coalesce(priority_sites.site_priority_band, 'wider_canonical_sites') = cast(:priority_band as text)

@@ -127,7 +127,8 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
     def test_read_only_audit_command_is_wired_to_actions(self) -> None:
         self.assertIn("site_dd_orchestration_workflow_proof", AUDIT_RUNNER)
         self.assertIn("landintel_reporting.v_site_dd_orchestration_queue", AUDIT_RUNNER)
-        self.assertIn("landintel_reporting.v_constraint_priority_measurement_queue", AUDIT_RUNNER)
+        self.assertIn("constraint_source_family_direct_counts", AUDIT_RUNNER)
+        self.assertIn("public.constraint_layer_registry", AUDIT_RUNNER)
         self.assertIn("set_config('statement_timeout', '30s', false)", AUDIT_RUNNER)
         self.assertIn('"audit-site-dd-orchestration"', AUDIT_RUNNER)
         self.assertIn("- audit-site-dd-orchestration", WORKFLOW)
@@ -146,6 +147,7 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
         self.assertNotIn("from landintel_reporting.v_site_dd_orchestration_summary", AUDIT_RUNNER)
         self.assertNotIn("from landintel_reporting.v_site_measurement_readiness_matrix", AUDIT_RUNNER)
         self.assertNotIn("from landintel_reporting.v_site_dd_orchestration_queue", AUDIT_RUNNER)
+        self.assertNotIn("from landintel_reporting.v_constraint_priority_measurement_queue", AUDIT_RUNNER)
         self.assertIn("direct_title_traceability_counts", AUDIT_RUNNER)
         self.assertIn("direct_measurement_counts", AUDIT_RUNNER)
 

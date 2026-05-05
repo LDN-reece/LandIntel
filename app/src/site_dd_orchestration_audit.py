@@ -95,23 +95,50 @@ def collect_site_dd_orchestration_proof(database: Database) -> dict[str, Any]:
                 ) as commercial_friction_fact_rows
             """
         ),
-        "constraint_priority_queue_sample": database.fetch_all(
+        "constraint_source_family_direct_counts": database.fetch_all(
             """
+            with feature_counts as (
+                select
+                    constraint_layer_id,
+                    count(*)::integer as source_feature_count
+                from public.constraint_source_features
+                group by constraint_layer_id
+            ),
+            scan_counts as (
+                select
+                    constraint_layer_id,
+                    count(*)::integer as scan_state_rows,
+                    count(distinct site_location_id)::integer as scanned_site_count
+                from public.site_constraint_measurement_scan_state
+                where scan_scope = 'canonical_site_geometry'
+                group by constraint_layer_id
+            ),
+            measurement_counts as (
+                select
+                    constraint_layer_id,
+                    count(*)::integer as measurement_rows,
+                    count(distinct site_location_id)::integer as measured_site_count
+                from public.site_constraint_measurements
+                group by constraint_layer_id
+            )
             select
-                canonical_site_id,
-                site_label,
-                authority_name,
-                site_priority_band,
-                constraint_priority_family,
-                source_family,
-                layer_key,
-                layer_name,
-                queue_rank,
-                recommended_workflow_command,
-                bounded_run_guidance
-            from landintel_reporting.v_constraint_priority_measurement_queue
-            order by queue_rank
-            limit 30
+                layer.source_family,
+                count(*)::integer as active_layer_count,
+                coalesce(sum(feature_counts.source_feature_count), 0)::integer as source_feature_count,
+                coalesce(sum(scan_counts.scan_state_rows), 0)::integer as scan_state_rows,
+                coalesce(sum(scan_counts.scanned_site_count), 0)::integer as scanned_site_count,
+                coalesce(sum(measurement_counts.measurement_rows), 0)::integer as measurement_rows,
+                coalesce(sum(measurement_counts.measured_site_count), 0)::integer as measured_site_count
+            from public.constraint_layer_registry as layer
+            left join feature_counts
+              on feature_counts.constraint_layer_id = layer.id
+            left join scan_counts
+              on scan_counts.constraint_layer_id = layer.id
+            left join measurement_counts
+              on measurement_counts.constraint_layer_id = layer.id
+            where layer.is_active = true
+            group by layer.source_family
+            order by layer.source_family
             """
         ),
     }

@@ -687,10 +687,10 @@ jobs:
             python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
           elif [ "$SELECTED_COMMAND" = "ingest-hla" ]; then
             python -m src.source_phase_runner run-migrations
-            python -m src.source_phase_runner ingest-hla
-            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family hla
-            python -m src.source_reconcile_incremental process-reconcile-queue --limit 50000
-            python -m src.source_reconcile_incremental refresh-affected-sites --limit 10000
+            timeout "${SOURCE_EXPANSION_COMMAND_TIMEOUT:-45m}" python -m src.source_phase_runner ingest-hla
+            python -m src.source_reconcile_catchup reconcile-catchup-scan --source-family hla --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}" --batch-limit "${PHASE2_BATCH_SIZE:-250}"
+            python -m src.source_reconcile_incremental process-reconcile-queue --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
+            python -m src.source_reconcile_incremental refresh-affected-sites --limit "${PHASE2_BATCH_SIZE:-250}" --runtime-minutes "${PHASE2_RUNTIME_MINUTES:-10}"
             python -m src.register_context_audit audit-register-context
           elif [ "$SELECTED_COMMAND" = "ingest-bgs" ]; then
             python -m src.source_phase_runner run-migrations

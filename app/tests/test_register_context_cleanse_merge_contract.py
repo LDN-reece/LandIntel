@@ -5,6 +5,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = (ROOT / "sql" / "076_register_context_cleanse_merge.sql").read_text(encoding="utf-8").lower()
+PREFLIGHT = (ROOT / "sql" / "032z_rerunnable_analytics_dependency_drops.sql").read_text(
+    encoding="utf-8"
+).lower()
 DOC = (ROOT / "docs" / "source_completion" / "register_context_cleanse_merge.md").read_text(
     encoding="utf-8"
 ).lower()
@@ -64,6 +67,20 @@ class RegisterContextCleanseMergeContractTests(unittest.TestCase):
         )
         for pattern in forbidden_patterns:
             self.assertIsNone(re.search(pattern, MIGRATION), pattern)
+
+    def test_rerunnable_preflight_drops_register_dependent_views_before_parent_matrix(self) -> None:
+        parent_index = PREFLIGHT.index("drop view if exists landintel_reporting.v_source_completion_matrix")
+        for required_drop in (
+            "drop view if exists landintel_sourced.v_site_register_context",
+            "drop view if exists landintel_reporting.v_register_context_freshness",
+            "drop view if exists landintel_reporting.v_register_context_source_completion_overlay",
+            "drop view if exists landintel_reporting.v_register_context_duplicate_diagnostics",
+            "drop view if exists landintel_reporting.v_register_context_merge_status",
+            "drop view if exists landintel_store.v_register_context_records_current",
+            "drop view if exists landintel_store.v_register_context_records_clean",
+        ):
+            self.assertIn(required_drop, PREFLIGHT)
+            self.assertLess(PREFLIGHT.index(required_drop), parent_index)
 
     def test_docs_explain_loaded_registers_and_no_duplicate_uploads(self) -> None:
         for required_phrase in (

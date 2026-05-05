@@ -34,10 +34,10 @@ jobs:
           cache: pip
           cache-dependency-path: app/requirements.txt
 
-      - name: Install system packages
+      - name: Use Python geospatial wheels for CI
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gdal-bin libgdal-dev libgeos-dev libproj-dev libspatialindex-dev proj-bin
+          echo "CI unit tests use Python wheels from requirements.txt."
+          echo "Live geospatial ingest workflows install system GDAL/GEOS/PROJ packages when required."
 
       - name: Install Python dependencies
         run: |

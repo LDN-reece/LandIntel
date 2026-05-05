@@ -15,6 +15,10 @@ PERFORMANCE_FIX = (ROOT / "sql" / "078_site_dd_orchestration_performance_fix.sql
     encoding="utf-8"
 )
 PERFORMANCE_FIX_LOWER = PERFORMANCE_FIX.lower()
+SCAN_STATE_MIGRATION = (ROOT / "sql" / "079_site_title_traceability_scan_state.sql").read_text(
+    encoding="utf-8"
+)
+SCAN_STATE_MIGRATION_LOWER = SCAN_STATE_MIGRATION.lower()
 DOC = (ROOT / "docs" / "source_completion" / "site_title_measurement_orchestration.md").read_text(
     encoding="utf-8"
 )
@@ -69,6 +73,26 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
         self.assertNotIn("create table if not exists landintel_reporting.site", MIGRATION_LOWER)
         self.assertNotIn("create table if not exists landintel.site_title_traceability", MIGRATION_LOWER)
         self.assertNotIn("create table if not exists public.site_title_traceability", MIGRATION_LOWER)
+
+    def test_traceability_scan_state_migration_is_additive_memory_not_truth(self) -> None:
+        self.assertIn(
+            "create table if not exists landintel_store.site_title_traceability_scan_state",
+            SCAN_STATE_MIGRATION_LOWER,
+        )
+        self.assertIn(
+            "create or replace view landintel_reporting.v_site_title_traceability_scan_state",
+            SCAN_STATE_MIGRATION_LOWER,
+        )
+        self.assertIn("prevents repeated no-hit title indexing", SCAN_STATE_MIGRATION_LOWER)
+        self.assertIn("not legal ownership evidence", SCAN_STATE_MIGRATION_LOWER)
+        self.assertNotIn("create table if not exists public.site_title_traceability", SCAN_STATE_MIGRATION_LOWER)
+        for pattern in (
+            r"\bdrop\s+table\b",
+            r"\btruncate\b",
+            r"\bdelete\s+from\s+(landintel|public|analytics|landintel_store)\b",
+            r"\balter\s+table\s+\S+\s+rename\b",
+        ):
+            self.assertIsNone(re.search(pattern, SCAN_STATE_MIGRATION_LOWER), pattern)
 
     def test_no_spatial_measurement_runs_in_migration(self) -> None:
         for forbidden_pattern in (
@@ -125,6 +149,8 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
             "measure-constraints-duckdb",
             "audit-site-dd-orchestration",
             "site-title-traceability-proof-outside-registers",
+            "site_title_traceability_scan_state",
+            "not ownership evidence",
         ):
             self.assertIn(required_phrase, DOC_LOWER)
 
@@ -145,6 +171,9 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
         self.assertIn("site_title_traceability_proof_priority_band", SOURCE_RUNNER)
         self.assertIn("min_operational_area_acres", SOURCE_RUNNER)
         self.assertIn("exclude_register_sources", SOURCE_RUNNER)
+        self.assertIn("site_title_traceability_scan_state", SOURCE_RUNNER)
+        self.assertIn("scan_state_max_age_days", SOURCE_RUNNER)
+        self.assertIn("scan_status = 'no_candidate'", SOURCE_RUNNER)
         self.assertIn("landintel.hla_site_records as hla", SOURCE_RUNNER)
         self.assertIn("landintel.ela_site_records as ela", SOURCE_RUNNER)
         self.assertIn("landintel.vdl_site_records as vdl", SOURCE_RUNNER)
@@ -160,6 +189,7 @@ class SiteTitleMeasurementOrchestrationContractTests(unittest.TestCase):
         self.assertIn("- site-title-traceability-proof-outside-registers", WORKFLOW)
         self.assertIn("site_title_traceability_proof_site_batch_size: \"10\"", WORKFLOW)
         self.assertIn("site_title_traceability_outside_register_batch_size: \"25\"", WORKFLOW)
+        self.assertIn("site_title_traceability_scan_state_max_age_days: \"30\"", WORKFLOW)
         self.assertIn("site_title_traceability_proof_priority_band: \"auto\"", WORKFLOW)
         self.assertIn("python -m src.source_expansion_runner_wfs_paging site-title-traceability-proof", WORKFLOW)
         self.assertIn(

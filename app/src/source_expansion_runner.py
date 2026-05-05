@@ -788,6 +788,7 @@ class SourceExpansionRunner:
         if exclude_register_sources is None:
             exclude_register_sources = self._env_bool("SITE_TITLE_TRACEABILITY_EXCLUDE_REGISTER_SOURCES", False)
         register_scope = "outside_hla_ela_vdl" if exclude_register_sources else "all_sources"
+        scan_state_max_age_days = max(self._env_int("SITE_TITLE_TRACEABILITY_SCAN_STATE_MAX_AGE_DAYS", 30), 1)
 
         before_counts = self._site_title_traceability_direct_counts()
         if requested_priority_band in {"", "all", "all_priority_bands"}:
@@ -846,6 +847,14 @@ class SourceExpansionRunner:
                       and site.primary_ros_parcel_id is null
                       and not exists (
                           select 1
+                          from landintel_store.site_title_traceability_scan_state as scan_state
+                          where scan_state.canonical_site_id = site.id
+                            and scan_state.scan_scope = cast(:register_scope as text)
+                            and scan_state.scan_status = 'no_candidate'
+                            and scan_state.scanned_at >= now() - make_interval(days => cast(:scan_state_max_age_days as integer))
+                      )
+                      and not exists (
+                          select 1
                           from public.site_ros_parcel_link_candidates as link
                           where link.site_id = site.id::text
                             and link.link_status <> 'rejected'
@@ -891,6 +900,8 @@ class SourceExpansionRunner:
                     "batch_size": batch_size,
                     "min_operational_area_acres": min_operational_area_acres,
                     "exclude_register_sources": exclude_register_sources,
+                    "register_scope": register_scope,
+                    "scan_state_max_age_days": scan_state_max_age_days,
                 },
             )
             selected_priority_band = candidate_priority_band or "all_priority_bands"
@@ -953,6 +964,141 @@ class SourceExpansionRunner:
                     },
                 ) or title_resolution_proof
 
+        scan_state_proof: dict[str, Any] = {
+            "scan_state_rows_upserted": 0,
+            "scan_status_counts": {},
+        }
+        if selected_rows:
+            selected_scan_rows = [
+                {
+                    "site_location_id": str(row.get("site_location_id")),
+                    "site_priority_band": row.get("site_priority_band"),
+                    "site_priority_rank": row.get("site_priority_rank"),
+                    "priority_source": row.get("priority_source"),
+                    "authority_name": row.get("authority_name"),
+                    "area_acres": _to_float(row.get("area_acres")),
+                }
+                for row in selected_rows
+                if row.get("site_location_id") is not None
+            ]
+            scan_state_rows = self.database.fetch_all(
+                """
+                with selected_sites as (
+                    select *
+                    from jsonb_to_recordset(cast(:selected_sites as jsonb)) as selected_site (
+                        site_location_id text,
+                        site_priority_band text,
+                        site_priority_rank integer,
+                        priority_source text,
+                        authority_name text,
+                        area_acres numeric
+                    )
+                ),
+                parcel_counts as (
+                    select
+                        link.site_id,
+                        count(*) filter (where link.link_status <> 'rejected')::integer as parcel_candidate_rows,
+                        count(*) filter (where link.link_status = 'primary')::integer as primary_link_rows
+                    from public.site_ros_parcel_link_candidates as link
+                    join selected_sites as selected_site
+                      on selected_site.site_location_id = link.site_id
+                    group by link.site_id
+                ),
+                title_counts as (
+                    select
+                        candidate.site_id,
+                        count(*) filter (where candidate.resolution_status <> 'rejected')::integer as title_candidate_rows,
+                        count(*) filter (where candidate.resolution_status = 'needs_licensed_bridge')::integer as licensed_bridge_required_rows
+                    from public.site_title_resolution_candidates as candidate
+                    join selected_sites as selected_site
+                      on selected_site.site_location_id = candidate.site_id
+                    group by candidate.site_id
+                ),
+                upserted as (
+                    insert into landintel_store.site_title_traceability_scan_state (
+                        canonical_site_id,
+                        scan_scope,
+                        site_priority_band,
+                        site_priority_rank,
+                        priority_source,
+                        authority_name,
+                        area_acres,
+                        scan_status,
+                        parcel_candidate_rows,
+                        primary_link_rows,
+                        title_candidate_rows,
+                        licensed_bridge_required_rows,
+                        metadata,
+                        scanned_at,
+                        updated_at
+                    )
+                    select
+                        selected_site.site_location_id::uuid,
+                        cast(:register_scope as text),
+                        selected_site.site_priority_band,
+                        selected_site.site_priority_rank,
+                        selected_site.priority_source,
+                        selected_site.authority_name,
+                        selected_site.area_acres,
+                        case
+                            when coalesce(title_counts.title_candidate_rows, 0) > 0 then 'title_candidate_available'
+                            when coalesce(parcel_counts.parcel_candidate_rows, 0) > 0 then 'parcel_candidate_available'
+                            else 'no_candidate'
+                        end,
+                        coalesce(parcel_counts.parcel_candidate_rows, 0),
+                        coalesce(parcel_counts.primary_link_rows, 0),
+                        coalesce(title_counts.title_candidate_rows, 0),
+                        coalesce(title_counts.licensed_bridge_required_rows, 0),
+                        jsonb_build_object(
+                            'command', cast(:command_name as text),
+                            'source_family', 'title_number',
+                            'not_ownership_truth', true
+                        ),
+                        now(),
+                        now()
+                    from selected_sites as selected_site
+                    left join parcel_counts
+                      on parcel_counts.site_id = selected_site.site_location_id
+                    left join title_counts
+                      on title_counts.site_id = selected_site.site_location_id
+                    on conflict (canonical_site_id, scan_scope) do update set
+                        site_priority_band = excluded.site_priority_band,
+                        site_priority_rank = excluded.site_priority_rank,
+                        priority_source = excluded.priority_source,
+                        authority_name = excluded.authority_name,
+                        area_acres = excluded.area_acres,
+                        scan_status = excluded.scan_status,
+                        parcel_candidate_rows = excluded.parcel_candidate_rows,
+                        primary_link_rows = excluded.primary_link_rows,
+                        title_candidate_rows = excluded.title_candidate_rows,
+                        licensed_bridge_required_rows = excluded.licensed_bridge_required_rows,
+                        last_error = null,
+                        metadata = excluded.metadata,
+                        scanned_at = now(),
+                        updated_at = now()
+                    returning scan_status
+                )
+                select
+                    scan_status,
+                    count(*)::integer as row_count
+                from upserted
+                group by scan_status
+                order by scan_status
+                """,
+                {
+                    "selected_sites": json.dumps(selected_scan_rows),
+                    "register_scope": register_scope,
+                    "command_name": command_name,
+                },
+            )
+            scan_state_proof = {
+                "scan_state_rows_upserted": sum(int(row.get("row_count") or 0) for row in scan_state_rows),
+                "scan_status_counts": {
+                    str(row.get("scan_status")): int(row.get("row_count") or 0)
+                    for row in scan_state_rows
+                },
+            }
+
         after_counts = self._site_title_traceability_direct_counts()
 
         selected_site_count = len(site_location_ids)
@@ -986,6 +1132,7 @@ class SourceExpansionRunner:
             "exclude_register_sources": exclude_register_sources,
             "excluded_register_source_families": ["hla", "ela", "vdl"] if exclude_register_sources else [],
             "min_operational_area_acres": min_operational_area_acres,
+            "scan_state_max_age_days": scan_state_max_age_days,
             "selected_site_count": selected_site_count,
             "selected_sites": selected_rows,
             "site_location_ids": site_location_ids,
@@ -994,6 +1141,7 @@ class SourceExpansionRunner:
             "after_counts": after_counts,
             "parcel_link_proof": parcel_link_proof,
             "title_resolution_proof": title_resolution_proof,
+            "scan_state_proof": scan_state_proof,
             "delta": {
                 "sites_with_ros_parcel_candidate": int(after_counts.get("sites_with_ros_parcel_candidate") or 0)
                 - int(before_counts.get("sites_with_ros_parcel_candidate") or 0),

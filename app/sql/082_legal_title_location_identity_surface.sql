@@ -154,10 +154,10 @@ with latest_ldn_screen as (
         lower(coalesce(base_sites.site_metadata ->> 'external_focus_area', '')) in ('true', 'yes', '1')
         or lower(coalesce(base_sites.ldn_metadata ->> 'external_focus_area', '')) in ('true', 'yes', '1')
         or lower(coalesce(base_sites.pack_metadata ->> 'external_focus_area', '')) in ('true', 'yes', '1')
-        or lower(coalesce(base_sites.site_metadata ->> 'source_route', '')) like '%external_focus_area%'
-        or lower(coalesce(base_sites.ldn_metadata ->> 'source_route', '')) like '%external_focus_area%'
-        or lower(coalesce(base_sites.pack_metadata ->> 'source_route', '')) like '%external_focus_area%'
-        or lower(coalesce(base_sites.source_route, '')) like '%external_focus_area%'
+        or lower(coalesce(base_sites.site_metadata ->> 'source_route', '')) like '%%external_focus_area%%'
+        or lower(coalesce(base_sites.ldn_metadata ->> 'source_route', '')) like '%%external_focus_area%%'
+        or lower(coalesce(base_sites.pack_metadata ->> 'source_route', '')) like '%%external_focus_area%%'
+        or lower(coalesce(base_sites.source_route, '')) like '%%external_focus_area%%'
     )
 )
 select
@@ -175,7 +175,7 @@ select
     coalesce(filtered_sites.authority_name, 'LOCAL AUTHORITY NOT HELD') as local_authority,
     case
         when filtered_sites.authority_name is null then 'LOCAL COUNCIL NOT HELD'
-        when filtered_sites.authority_name ilike '%council%' then filtered_sites.authority_name
+        when filtered_sites.authority_name ilike '%%council%%' then filtered_sites.authority_name
         else filtered_sites.authority_name || ' Council'
     end as local_council,
     filtered_sites.area_acres,

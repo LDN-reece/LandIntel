@@ -34,6 +34,7 @@ on:
           - audit-register-context
           - audit-source-expansion
           - ingest-ros-cadastral
+          - site-title-traceability-proof
           - link-sites-to-ros-parcels
           - audit-site-parcel-links
           - resolve-title-numbers
@@ -352,6 +353,9 @@ jobs:
       TITLE_RESOLUTION_MIN_OVERLAP_SQM: "1"
       TITLE_RESOLUTION_PARCEL_TITLE_BATCH_SIZE: "0"
       TITLE_RESOLUTION_SITE_BATCH_SIZE: "500"
+      SITE_TITLE_TRACEABILITY_PROOF_SITE_BATCH_SIZE: "10"
+      SITE_TITLE_TRACEABILITY_PROOF_PRIORITY_BAND: "title_spend_candidates"
+      SITE_TITLE_TRACEABILITY_PROOF_INCLUDE_TITLE_RESOLUTION: "true"
       SITE_PARCEL_LINK_MAX_CANDIDATES_PER_SITE: "10"
       SITE_PARCEL_LINK_MAX_DISTANCE_M: "250"
       SITE_PARCEL_LINK_MIN_OVERLAP_SQM: "1"
@@ -393,7 +397,7 @@ jobs:
           fi
           echo "SELECTED_COMMAND=${selected_command}" >> "$GITHUB_ENV"
           case "$selected_command" in
-            validate-only|run-migrations|sync-source-catalog|audit-source-footprint|audit-source-freshness|register-source-estate|probe-source-estate|audit-source-estate|audit-source-completion-matrix|audit-site-dd-orchestration|audit-register-context|process-reconcile-queue|reconcile-catchup-scan|refresh-affected-sites|weekly-reconcile-maintenance|discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|audit-full-source-estate|refresh-planning-decisions|audit-planning-decisions|refresh-title-readiness|refresh-title-reviews|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|refresh-site-bgs-borehole-context|audit-site-bgs-borehole-context|refresh-bgs-borehole-scan-registry|queue-bgs-borehole-scans|audit-bgs-borehole-scan-queue|fetch-bgs-borehole-scans|audit-bgs-borehole-scan-assets|refresh-site-assessments|refresh-site-prove-it-assessments|audit-site-prove-it-assessments|refresh-ldn-candidate-screen|audit-ldn-candidate-screen|refresh-urgent-address-title-pack|audit-urgent-address-title-pack|refresh-scotland-parcel-use-context|audit-scotland-parcel-use-context|constraint-measurement-proof-flood-title-spend|constraint-measurement-proof-title-spend-source-family|ingest-companies-house|ingest-fca-entities)
+            validate-only|run-migrations|sync-source-catalog|audit-source-footprint|audit-source-freshness|register-source-estate|probe-source-estate|audit-source-estate|audit-source-completion-matrix|audit-site-dd-orchestration|audit-register-context|site-title-traceability-proof|process-reconcile-queue|reconcile-catchup-scan|refresh-affected-sites|weekly-reconcile-maintenance|discover-phase2-sources|ingest-planning-appeals|ingest-power-infrastructure|ingest-amenities|ingest-demographics|ingest-market-context|ingest-planning-documents|ingest-intelligence-events|audit-full-source-estate|refresh-planning-decisions|audit-planning-decisions|refresh-title-readiness|refresh-title-reviews|refresh-site-market-context|refresh-site-amenity-context|refresh-site-demographic-context|refresh-site-power-context|refresh-site-abnormal-risk|refresh-site-bgs-borehole-context|audit-site-bgs-borehole-context|refresh-bgs-borehole-scan-registry|queue-bgs-borehole-scans|audit-bgs-borehole-scan-queue|fetch-bgs-borehole-scans|audit-bgs-borehole-scan-assets|refresh-site-assessments|refresh-site-prove-it-assessments|audit-site-prove-it-assessments|refresh-ldn-candidate-screen|audit-ldn-candidate-screen|refresh-urgent-address-title-pack|audit-urgent-address-title-pack|refresh-scotland-parcel-use-context|audit-scotland-parcel-use-context|constraint-measurement-proof-flood-title-spend|constraint-measurement-proof-title-spend-source-family|ingest-companies-house|ingest-fca-entities)
               system_package_profile="minimal"
               ;;
             *)
@@ -507,6 +511,14 @@ jobs:
             python -m src.source_phase_runner run-migrations
             python -m src.main ingest-ros-cadastral
             python -m src.source_expansion_runner_wfs_paging audit-title-number-control
+          elif [ "$SELECTED_COMMAND" = "site-title-traceability-proof" ]; then
+            python -m src.source_phase_runner run-migrations
+            python -m src.source_estate_registry register-source-estate
+            python -m src.source_policy_discovery register-supplemental-sources
+            run_with_retries 1 30 timeout "$SOURCE_EXPANSION_COMMAND_TIMEOUT" python -m src.source_expansion_runner_wfs_paging site-title-traceability-proof
+            python -m src.source_expansion_runner_wfs_paging audit-site-parcel-links
+            python -m src.source_expansion_runner_wfs_paging audit-title-number-control
+            python -m src.site_dd_orchestration_audit audit-site-dd-orchestration
           elif [ "$SELECTED_COMMAND" = "link-sites-to-ros-parcels" ]; then
             python -m src.source_phase_runner run-migrations
             python -m src.source_estate_registry register-source-estate

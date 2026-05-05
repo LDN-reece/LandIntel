@@ -578,6 +578,8 @@ class SourceExpansionRunner:
     def run_command(self, command: str) -> dict[str, Any]:
         if command == "audit-source-expansion":
             return self.audit_source_expansion()
+        if command == "site-title-traceability-proof":
+            return self.site_title_traceability_proof()
         if command == "link-sites-to-ros-parcels":
             return self.link_sites_to_ros_parcels()
         if command == "audit-site-parcel-links":
@@ -706,6 +708,255 @@ class SourceExpansionRunner:
         )
         self.logger.info("open_location_spine_completion_audit", extra=payload)
         return payload
+
+    def _site_title_traceability_direct_counts(self) -> dict[str, Any]:
+        return self.database.fetch_one(
+            """
+            select
+                (select count(*)::bigint from landintel.canonical_sites) as canonical_site_count,
+                (
+                    select count(*)::bigint
+                    from landintel.canonical_sites
+                    where geometry is not null
+                ) as sites_with_geometry,
+                (
+                    select count(*)::bigint
+                    from landintel.canonical_sites
+                    where primary_ros_parcel_id is not null
+                ) as sites_with_primary_ros_parcel,
+                (
+                    select count(distinct site_id)::bigint
+                    from public.site_ros_parcel_link_candidates
+                    where link_status <> 'rejected'
+                ) as sites_with_ros_parcel_candidate,
+                (
+                    select count(*)::bigint
+                    from public.site_ros_parcel_link_candidates
+                    where link_status <> 'rejected'
+                ) as ros_parcel_candidate_rows,
+                (
+                    select count(distinct site_id)::bigint
+                    from public.site_title_resolution_candidates
+                    where resolution_status <> 'rejected'
+                ) as sites_with_title_resolution_candidate,
+                (
+                    select count(*)::bigint
+                    from public.site_title_resolution_candidates
+                    where resolution_status <> 'rejected'
+                ) as title_resolution_candidate_rows,
+                (
+                    select count(*)::bigint
+                    from public.site_title_resolution_candidates
+                    where resolution_status = 'needs_licensed_bridge'
+                ) as licensed_bridge_required_rows,
+                (
+                    select count(distinct canonical_site_id)::bigint
+                    from landintel.title_review_records
+                ) as sites_with_human_title_review
+            """
+        ) or {}
+
+    def site_title_traceability_proof(self) -> dict[str, Any]:
+        """Run a small non-destructive site-to-parcel/title bridge batch.
+
+        This is the safe operational pattern for growing title traceability.
+        It preserves existing candidates and only upserts a small priority batch.
+        """
+
+        sources = self._sources_for_family("title_number")
+        for source in sources:
+            self._upsert_source_estate(source)
+
+        batch_size = max(self._env_int("SITE_TITLE_TRACEABILITY_PROOF_SITE_BATCH_SIZE", 10), 1)
+        priority_band = os.getenv("SITE_TITLE_TRACEABILITY_PROOF_PRIORITY_BAND", "title_spend_candidates").strip()
+        include_title_resolution = self._env_bool("SITE_TITLE_TRACEABILITY_PROOF_INCLUDE_TITLE_RESOLUTION", True)
+        max_candidates = self._env_int("SITE_PARCEL_LINK_MAX_CANDIDATES_PER_SITE", 10)
+        max_distance_m = self._env_float("SITE_PARCEL_LINK_MAX_DISTANCE_M", 250.0)
+        min_overlap_sqm = self._env_float("SITE_PARCEL_LINK_MIN_OVERLAP_SQM", 1.0)
+        title_max_candidates = self._env_int("TITLE_RESOLUTION_MAX_CANDIDATES_PER_SITE", 10)
+        title_min_overlap_sqm = self._env_float("TITLE_RESOLUTION_MIN_OVERLAP_SQM", 1.0)
+
+        before_counts = self._site_title_traceability_direct_counts()
+        selected_rows = self.database.fetch_all(
+            """
+            with priority_sites as (
+                select
+                    canonical_site_id,
+                    site_priority_band,
+                    site_priority_rank,
+                    priority_source
+                from landintel_reporting.v_constraint_priority_sites
+            ),
+            candidates as (
+                select
+                    site.id::text as site_location_id,
+                    coalesce(priority_sites.site_priority_band, 'wider_canonical_sites') as site_priority_band,
+                    coalesce(priority_sites.site_priority_rank, 5) as site_priority_rank,
+                    coalesce(priority_sites.priority_source, 'landintel.canonical_sites') as priority_source,
+                    site.authority_name,
+                    site.area_acres
+                from landintel.canonical_sites as site
+                left join priority_sites
+                  on priority_sites.canonical_site_id = site.id
+                where site.geometry is not null
+                  and site.authority_name is not null
+                  and (
+                      cast(:priority_band as text) = ''
+                      or coalesce(priority_sites.site_priority_band, 'wider_canonical_sites') = cast(:priority_band as text)
+                  )
+                  and site.primary_ros_parcel_id is null
+                  and not exists (
+                      select 1
+                      from public.site_ros_parcel_link_candidates as link
+                      where link.site_id = site.id::text
+                        and link.link_status <> 'rejected'
+                  )
+                order by
+                    coalesce(priority_sites.site_priority_rank, 5),
+                    site.authority_name nulls last,
+                    site.area_acres desc nulls last,
+                    site.id
+                limit cast(:batch_size as integer)
+            )
+            select *
+            from candidates
+            """,
+            {"priority_band": priority_band, "batch_size": batch_size},
+        )
+        site_location_ids = [
+            str(row["site_location_id"])
+            for row in selected_rows
+            if row.get("site_location_id") is not None
+        ]
+
+        parcel_link_proof: dict[str, Any] = {
+            "candidate_rows": 0,
+            "candidate_site_count": 0,
+            "primary_link_rows": 0,
+            "exact_overlap_candidate_rows": 0,
+            "nearest_candidate_rows": 0,
+        }
+        title_resolution_proof: dict[str, Any] = {
+            "candidate_rows": 0,
+            "candidate_site_count": 0,
+            "promoted_title_rows": 0,
+            "probable_title_rows": 0,
+            "licensed_bridge_required_rows": 0,
+        }
+
+        if site_location_ids:
+            parcel_link_proof = self.database.fetch_one(
+                """
+                select *
+                from public.refresh_site_ros_parcel_link_candidates_for_sites(
+                    cast(:max_candidates_per_site as integer),
+                    cast(:max_distance_m as numeric),
+                    cast(:min_overlap_sqm as numeric),
+                    cast(:site_location_ids as jsonb)
+                )
+                """,
+                {
+                    "max_candidates_per_site": max_candidates,
+                    "max_distance_m": max_distance_m,
+                    "min_overlap_sqm": min_overlap_sqm,
+                    "site_location_ids": json.dumps(site_location_ids),
+                },
+            ) or parcel_link_proof
+
+            if include_title_resolution:
+                title_resolution_proof = self.database.fetch_one(
+                    """
+                    select *
+                    from public.refresh_site_title_resolution_bridge_for_sites(
+                        cast(:max_candidates_per_site as integer),
+                        cast(:min_overlap_sqm as numeric),
+                        cast(:site_location_ids as jsonb)
+                    )
+                    """,
+                    {
+                        "max_candidates_per_site": title_max_candidates,
+                        "min_overlap_sqm": title_min_overlap_sqm,
+                        "site_location_ids": json.dumps(site_location_ids),
+                    },
+                ) or title_resolution_proof
+
+        after_counts = self._site_title_traceability_direct_counts()
+
+        selected_site_count = len(site_location_ids)
+        generated_parcel_rows = int(parcel_link_proof.get("candidate_rows") or 0)
+        generated_title_rows = int(title_resolution_proof.get("candidate_rows") or 0)
+        primary_link_rows = int(parcel_link_proof.get("primary_link_rows") or 0)
+        licensed_bridge_required_rows = int(title_resolution_proof.get("licensed_bridge_required_rows") or 0)
+
+        if selected_site_count == 0:
+            status = "site_title_traceability_no_priority_sites_waiting"
+            summary = "No sites in the selected priority band need RoS parcel linking."
+        elif primary_link_rows > 0 or generated_title_rows > 0:
+            status = "site_title_traceability_advanced"
+            summary = "Bounded traceability proof upserted RoS parcel/title bridge candidates without deleting existing rows."
+        elif generated_parcel_rows > 0:
+            status = "site_title_traceability_candidates_need_review"
+            summary = "Bounded traceability proof found RoS parcel candidates but no promoted title bridge rows."
+        else:
+            status = "site_title_traceability_no_candidates"
+            summary = "Bounded traceability proof processed sites but found no RoS parcel candidates."
+
+        result = {
+            "command": "site-title-traceability-proof",
+            "source_family": "title_number",
+            "status": status,
+            "summary": summary,
+            "priority_band": priority_band or "all_priority_bands",
+            "batch_size": batch_size,
+            "selected_site_count": selected_site_count,
+            "selected_sites": selected_rows,
+            "site_location_ids": site_location_ids,
+            "include_title_resolution": include_title_resolution,
+            "before_counts": before_counts,
+            "after_counts": after_counts,
+            "parcel_link_proof": parcel_link_proof,
+            "title_resolution_proof": title_resolution_proof,
+            "delta": {
+                "sites_with_ros_parcel_candidate": int(after_counts.get("sites_with_ros_parcel_candidate") or 0)
+                - int(before_counts.get("sites_with_ros_parcel_candidate") or 0),
+                "ros_parcel_candidate_rows": int(after_counts.get("ros_parcel_candidate_rows") or 0)
+                - int(before_counts.get("ros_parcel_candidate_rows") or 0),
+                "sites_with_title_resolution_candidate": int(
+                    after_counts.get("sites_with_title_resolution_candidate") or 0
+                )
+                - int(before_counts.get("sites_with_title_resolution_candidate") or 0),
+                "title_resolution_candidate_rows": int(after_counts.get("title_resolution_candidate_rows") or 0)
+                - int(before_counts.get("title_resolution_candidate_rows") or 0),
+                "licensed_bridge_required_rows": int(after_counts.get("licensed_bridge_required_rows") or 0)
+                - int(before_counts.get("licensed_bridge_required_rows") or 0),
+            },
+            "caveat": (
+                "RoS parcel links and title bridge candidates are traceability evidence only. "
+                "Ownership remains unconfirmed unless landintel.title_review_records supports it."
+            ),
+        }
+
+        if sources:
+            self._record_source_freshness(
+                sources[0],
+                "current" if generated_parcel_rows or generated_title_rows else "partial",
+                "reachable",
+                generated_parcel_rows + generated_title_rows,
+                result,
+            )
+        self._record_expansion_event(
+            command_name="site-title-traceability-proof",
+            source_key="ros_cadastral_site_title_traceability_proof",
+            source_family="title_number",
+            status=status,
+            raw_rows=generated_parcel_rows,
+            linked_rows=primary_link_rows,
+            measured_rows=generated_title_rows,
+            summary=summary,
+            metadata=result,
+        )
+        self.logger.info("site_title_traceability_proof", extra=result)
+        return result
 
     def link_sites_to_ros_parcels(self) -> dict[str, Any]:
         sources = self._sources_for_family("title_number")
@@ -6810,6 +7061,12 @@ class SourceExpansionRunner:
         except ValueError:
             return default
 
+    def _env_bool(self, name: str, default: bool) -> bool:
+        value = os.getenv(name)
+        if value is None or value == "":
+            return default
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
 
 def _pick_text(row: dict[str, Any], candidates: tuple[str, ...] | list[str]) -> str | None:
     lowered_lookup = {str(key).lower(): key for key in row.keys()}
@@ -6941,6 +7198,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=(
             "audit-source-expansion",
             "audit-open-location-spine-completion",
+            "site-title-traceability-proof",
             "link-sites-to-ros-parcels",
             "audit-site-parcel-links",
             "resolve-title-numbers",

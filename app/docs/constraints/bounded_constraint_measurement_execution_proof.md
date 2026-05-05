@@ -22,6 +22,19 @@ Selection surface:
 
 `landintel_reporting.v_constraint_priority_measurement_queue`
 
+Runtime selection correction:
+
+The reporting queue remains useful for operators, audits and backlog visibility, but live proof runs no longer select
+directly from the full queue view. The first completion run proved the view is too expensive to sort repeatedly at
+execution time. The runner now uses the same underlying priority surfaces:
+
+- `landintel_reporting.v_constraint_priority_sites`;
+- `landintel_reporting.v_constraint_priority_layers`;
+- `public.site_constraint_measurement_scan_state`.
+
+It filters those by one site-priority band and one source family or layer before joining. That preserves the same
+commercial ordering and scan-state safeguards while avoiding a national queue sort for every 25-pair batch.
+
 Queue correction:
 
 The first source-family proof run showed that the global 5,000-pair queue cap was commercially too narrow. Flood backlog consumed the queue, which meant `coal_authority` had backlog in `v_constraint_measurement_backlog` but zero queued rows in `v_constraint_priority_measurement_queue`.
@@ -97,7 +110,7 @@ The GitHub Actions command uses the existing `SOURCE_EXPANSION_COMMAND_TIMEOUT` 
 
 The command itself:
 
-- reads a capped batch from `v_constraint_priority_measurement_queue`;
+- reads a capped batch from filtered priority sites and filtered priority layers;
 - runs only flood/title-spend pairs;
 - for the reusable command, runs only explicitly filtered title-spend source-family or layer pairs;
 - groups by layer key;

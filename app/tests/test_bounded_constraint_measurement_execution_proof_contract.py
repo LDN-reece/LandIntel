@@ -27,10 +27,12 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         self.assertIn("constraint_measurement_proof_title_spend_source_family", RUNNER)
 
     def test_runner_uses_existing_truth_tables_and_finalizer_only(self) -> None:
-        self.assertIn("landintel_reporting.v_constraint_priority_measurement_queue", RUNNER)
+        self.assertIn("landintel_reporting.v_constraint_priority_sites", RUNNER)
+        self.assertIn("landintel_reporting.v_constraint_priority_layers", RUNNER)
         self.assertIn("public.refresh_constraint_measurements_for_layer_sites", RUNNER)
         self.assertIn("public.site_constraint_measurements", RUNNER)
         self.assertIn("public.site_constraint_measurement_scan_state", RUNNER)
+        self.assertNotIn("from landintel_reporting.v_constraint_priority_measurement_queue", RUNNER)
         self.assertNotIn("create table", RUNNER_LOWER)
         self.assertNotIn("site_constraint_measurements_new", RUNNER_LOWER)
         self.assertNotIn("constraint_measurement_truth", RUNNER_LOWER)
@@ -47,8 +49,9 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         self.assertIn("CONSTRAINT_MEASURE_LAYER_KEY", RUNNER)
         self.assertIn("requires source family or layer key", RUNNER_LOWER)
         self.assertIn("This guard prevents broad all-layer runs.", RUNNER)
-        self.assertIn("source_family = :source_family", RUNNER)
-        self.assertIn("layer_key = :layer_key", RUNNER)
+        self.assertIn("priority_layers.source_family = :source_family", RUNNER)
+        self.assertIn("priority_layers.layer_key = :layer_key", RUNNER)
+        self.assertIn("priority_sites.site_priority_band = :site_priority_band", RUNNER)
 
     def test_runner_contains_no_destructive_sql(self) -> None:
         forbidden_patterns = (

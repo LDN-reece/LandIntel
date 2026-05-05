@@ -79,6 +79,7 @@ class MeasureLinkCompletionOrchestratorContractTests(unittest.TestCase):
         self.assertIn('constraint_proof_site_priority_band="$priority_band"', WORKFLOW_LOWER)
         self.assertIn('constraint_measure_source_family="$source_family"', WORKFLOW_LOWER)
         self.assertIn("constraint_proof_pair_batch_size", WORKFLOW_LOWER)
+        self.assertIn("constraint_proof_allow_layer_errors", WORKFLOW_LOWER)
 
     def test_workflow_avoids_unbounded_or_destructive_paths(self) -> None:
         forbidden_phrases = (
@@ -108,6 +109,7 @@ class MeasureLinkCompletionOrchestratorContractTests(unittest.TestCase):
             "not one heroic unsafe full-table scan",
             "does not create a second constraint engine",
             "does not confirm ownership",
+            "continue past isolated layer timeouts",
         ):
             self.assertIn(required_phrase, DOC_LOWER)
 

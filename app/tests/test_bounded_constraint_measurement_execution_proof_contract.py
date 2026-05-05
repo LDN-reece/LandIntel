@@ -61,6 +61,12 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         for pattern in forbidden_patterns:
             self.assertIsNone(re.search(pattern, RUNNER_LOWER), pattern)
 
+    def test_runner_logs_layer_errors_without_reserved_message_collision(self) -> None:
+        self.assertIn("LOG_RECORD_RESERVED_KEYS", RUNNER)
+        self.assertIn('"message"', RUNNER)
+        self.assertIn("_safe_log_extra(proof)", RUNNER)
+        self.assertIn("CONSTRAINT_PROOF_ALLOW_LAYER_ERRORS", RUNNER)
+
     def test_docs_explain_operational_bounds(self) -> None:
         for required_phrase in (
             "flood only",

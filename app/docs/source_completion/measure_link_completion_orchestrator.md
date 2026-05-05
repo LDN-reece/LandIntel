@@ -73,20 +73,24 @@ The workflow:
 - uses `constraint-measurement-proof-title-spend-source-family`;
 - preserves scan-state logic;
 - records no-hit scans as progress;
-- fails closed on measurement errors;
+- records source-family layer errors in the proof output;
+- allows the orchestrator to continue past isolated layer timeouts while leaving the failed layer in the audit trail;
 - audits after each cycle.
 
 It does not:
 
-- create a second constraint engine;
 - does not create a second constraint engine;
 - run an unbounded all-site/all-layer scan;
 - delete data;
 - move data;
-- confirm ownership;
 - does not confirm ownership;
 - treat RoS parcel references as title numbers;
 - score sites as pass/fail.
+
+Manual constraint proof commands still fail closed by default. The completion workflow sets
+`CONSTRAINT_PROOF_ALLOW_LAYER_ERRORS=true` so a heavy layer such as SAC/SPA ecology timing out does not stop flood,
+coal, access/context and other DD measurement from continuing. Those errors must be reviewed from the workflow log and
+backlog/audit views before calling the relevant source family fully complete.
 
 ## How To Run
 
@@ -113,3 +117,5 @@ Completion is proven when:
 ## Known Limitation
 
 This workflow is bounded by GitHub Actions runtime. If the estate still has backlog at the end of a run, rerun it. That is deliberate: repeated bounded runs are safer than a single unbounded database-wide scan.
+
+Some very heavy constraint layers may need narrower layer-specific batches or indexing work before they can be treated as cleanly operational. They should not block all other DD measurement.

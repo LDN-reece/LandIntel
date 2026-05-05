@@ -23,6 +23,30 @@ ALLOWED_SOURCE_FAMILY_SITE_PRIORITY_BANDS = {
     "review_queue",
     "ldn_candidate_screen",
 }
+LOG_RECORD_RESERVED_KEYS = {
+    "args",
+    "asctime",
+    "created",
+    "exc_info",
+    "exc_text",
+    "filename",
+    "funcName",
+    "levelname",
+    "levelno",
+    "lineno",
+    "message",
+    "module",
+    "msecs",
+    "msg",
+    "name",
+    "pathname",
+    "process",
+    "processName",
+    "relativeCreated",
+    "stack_info",
+    "thread",
+    "threadName",
+}
 
 
 def _env_int(name: str, default: int) -> int:
@@ -47,6 +71,17 @@ def _env_float(name: str, default: float) -> float:
 
 def _env_text(name: str, default: str = "") -> str:
     return str(os.getenv(name) or default).strip()
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw_value = str(os.getenv(name) or "").strip().lower()
+    if not raw_value:
+        return default
+    return raw_value in {"1", "true", "yes", "y", "on"}
+
+
+def _safe_log_extra(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if key not in LOG_RECORD_RESERVED_KEYS}
 
 
 def _bounded_batch_size() -> tuple[int, int]:
@@ -473,8 +508,8 @@ def main() -> int:
             proof = run_flood_title_spend_measurement_proof(database)
         print(json.dumps(proof, default=str, ensure_ascii=False), flush=True)
         if proof["errors"]:
-            logger.warning("constraint_measurement_proof_completed_with_errors", extra=proof)
-            return 1
+            logger.warning("constraint_measurement_proof_completed_with_errors", extra=_safe_log_extra(proof))
+            return 0 if _env_bool("CONSTRAINT_PROOF_ALLOW_LAYER_ERRORS") else 1
         logger.info("constraint_measurement_proof_completed", extra={"command": args.command})
         return 0
     except Exception:

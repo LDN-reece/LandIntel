@@ -18,6 +18,9 @@ from src.logging_config import configure_logging
 DEFAULT_MAX_PROOF_PAIR_BATCH_SIZE = 25
 ABSOLUTE_MAX_PROOF_PAIR_BATCH_SIZE = 250
 DEFAULT_PROOF_PAIR_BATCH_SIZE = 10
+DEFAULT_DRAIN_MAX_BATCHES = 5
+ABSOLUTE_DRAIN_MAX_BATCHES = 25
+DEFAULT_DRAIN_RUNTIME_MINUTES = 35
 DEFAULT_LAYER_SITE_BATCH_SIZE = 25
 DEFAULT_HEAVY_LAYER_SITE_BATCH_SIZE = 1
 DEFAULT_HEAVY_LAYER_KEYS = (
@@ -881,6 +884,121 @@ def run_title_spend_source_family_measurement_proof(database: Database) -> dict[
     }
 
 
+def run_source_family_measurement_drain(database: Database) -> dict[str, Any]:
+    """Run repeated bounded source-family batches inside one guarded workflow run."""
+
+    started_at = time.monotonic()
+    max_batches = min(
+        max(_env_int("CONSTRAINT_PROOF_DRAIN_MAX_BATCHES", DEFAULT_DRAIN_MAX_BATCHES), 1),
+        ABSOLUTE_DRAIN_MAX_BATCHES,
+    )
+    runtime_minutes = max(_env_int("CONSTRAINT_PROOF_DRAIN_RUNTIME_MINUTES", DEFAULT_DRAIN_RUNTIME_MINUTES), 1)
+    max_runtime_seconds = runtime_minutes * 60
+    site_priority_band = _env_text(
+        "CONSTRAINT_PROOF_SITE_PRIORITY_BAND",
+        DEFAULT_SOURCE_FAMILY_SITE_PRIORITY_BAND,
+    )
+    source_family = _env_text("CONSTRAINT_MEASURE_SOURCE_FAMILY") or None
+    layer_key = _env_text("CONSTRAINT_MEASURE_LAYER_KEY") or None
+
+    if site_priority_band not in ALLOWED_SOURCE_FAMILY_SITE_PRIORITY_BANDS:
+        raise ValueError(
+            "CONSTRAINT_PROOF_SITE_PRIORITY_BAND must be one of "
+            f"{sorted(ALLOWED_SOURCE_FAMILY_SITE_PRIORITY_BANDS)}"
+        )
+    if not source_family and not layer_key:
+        raise ValueError(
+            "constraint-measurement-drain-source-family requires source family or layer key via "
+            "CONSTRAINT_MEASURE_SOURCE_FAMILY or CONSTRAINT_MEASURE_LAYER_KEY. "
+            "This guard prevents broad all-layer runs."
+        )
+
+    before_counts = _collect_source_family_counts(
+        database,
+        site_priority_band=site_priority_band,
+        source_family=source_family,
+        layer_key=layer_key,
+    )
+    batch_results: list[dict[str, Any]] = []
+    total_pairs_processed = 0
+    total_candidate_sites_selected = 0
+    total_errors: list[dict[str, Any]] = []
+    exhausted = False
+    stopped_for_runtime = False
+
+    for batch_index in range(1, max_batches + 1):
+        elapsed_seconds = time.monotonic() - started_at
+        if elapsed_seconds >= max_runtime_seconds:
+            stopped_for_runtime = True
+            break
+        proof = run_title_spend_source_family_measurement_proof(database)
+        candidate_pairs = int(proof.get("candidate_site_layer_pairs_selected") or 0)
+        processed_pairs = int(proof.get("site_layer_pairs_processed") or 0)
+        errors = list(proof.get("errors") or [])
+        total_pairs_processed += processed_pairs
+        total_candidate_sites_selected += int(proof.get("candidate_sites_selected") or 0)
+        total_errors.extend(errors)
+        batch_results.append(
+            {
+                "batch_index": batch_index,
+                "candidate_site_layer_pairs_selected": candidate_pairs,
+                "site_layer_pairs_processed": processed_pairs,
+                "candidate_sites_selected": proof.get("candidate_sites_selected", 0),
+                "candidate_layers_selected": proof.get("candidate_layers_selected", 0),
+                "constraint_source_families_selected": proof.get("constraint_source_families_selected", []),
+                "constraint_priority_families_selected": proof.get("constraint_priority_families_selected", []),
+                "measurement_rows_before": proof.get("measurement_rows_before", 0),
+                "measurement_rows_after": proof.get("measurement_rows_after", 0),
+                "scan_state_rows_before": proof.get("scan_state_rows_before", 0),
+                "scan_state_rows_after": proof.get("scan_state_rows_after", 0),
+                "runtime_seconds": proof.get("runtime_seconds", 0),
+                "error_count": len(errors),
+            }
+        )
+        if errors:
+            break
+        if candidate_pairs == 0 or processed_pairs == 0:
+            exhausted = True
+            break
+
+    after_counts = _collect_source_family_counts(
+        database,
+        site_priority_band=site_priority_band,
+        source_family=source_family,
+        layer_key=layer_key,
+    )
+    runtime_seconds = round(time.monotonic() - started_at, 3)
+    return {
+        "message": "constraint_measurement_drain_source_family",
+        "command": "constraint-measurement-drain-source-family",
+        "cohort": site_priority_band,
+        "constraint_source_family": source_family,
+        "constraint_layer_key": layer_key,
+        "max_batches": max_batches,
+        "max_runtime_minutes": runtime_minutes,
+        "batches_attempted": len(batch_results),
+        "site_layer_pairs_processed": total_pairs_processed,
+        "candidate_sites_selected_total": total_candidate_sites_selected,
+        "candidate_sites_in_cohort": before_counts.get("candidate_sites_in_cohort", 0),
+        "filtered_layer_count": before_counts.get("filtered_layer_count", 0),
+        "measurement_rows_before": before_counts.get("measurement_rows", 0),
+        "scan_state_rows_before": before_counts.get("scan_state_rows", 0),
+        "measurement_rows_after": after_counts.get("measurement_rows", 0),
+        "scan_state_rows_after": after_counts.get("scan_state_rows", 0),
+        "exhausted": exhausted,
+        "stopped_for_runtime": stopped_for_runtime,
+        "batch_results": batch_results,
+        "errors": total_errors,
+        "runtime_seconds": runtime_seconds,
+        "safety_caveat": (
+            "Bounded source-family drain. Requires explicit CONSTRAINT_MEASURE_SOURCE_FAMILY "
+            "or CONSTRAINT_MEASURE_LAYER_KEY and an allowed site priority band. Reuses the existing "
+            "public.refresh_constraint_measurements_for_layer_sites finalizer and scan-state logic; "
+            "does not run broad all-layer or wider canonical scans."
+        ),
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run bounded constraint measurement execution proof commands.")
     parser.add_argument(
@@ -888,6 +1006,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=(
             "constraint-measurement-proof-flood-title-spend",
             "constraint-measurement-proof-title-spend-source-family",
+            "constraint-measurement-drain-source-family",
         ),
     )
     return parser
@@ -901,6 +1020,8 @@ def main() -> int:
     try:
         if args.command == "constraint-measurement-proof-title-spend-source-family":
             proof = run_title_spend_source_family_measurement_proof(database)
+        elif args.command == "constraint-measurement-drain-source-family":
+            proof = run_source_family_measurement_drain(database)
         else:
             proof = run_flood_title_spend_measurement_proof(database)
         print(json.dumps(proof, default=str, ensure_ascii=False), flush=True)

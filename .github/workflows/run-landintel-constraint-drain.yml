@@ -62,6 +62,8 @@ jobs:
       SUPABASE_URL: https://icmgcxujqoiyzxqonwca.supabase.co
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}
+      IMPROVEMENT_SERVICE_AUTHKEY: ${{ secrets.IMPROVEMENT_SERVICE_AUTHKEY }}
       AUDIT_ARTIFACT_BACKEND: none
       PERSIST_STAGING_ROWS: "false"
       CONSTRAINT_PROOF_PAIR_BATCH_SIZE: ${{ inputs.pair_batch_size || '250' }}
@@ -92,6 +94,7 @@ jobs:
           set -euo pipefail
           test -n "$SUPABASE_DB_URL" || { echo "Missing GitHub secret: SUPABASE_DB_URL"; exit 1; }
           test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing GitHub secret: SUPABASE_SERVICE_ROLE_KEY"; exit 1; }
+          test -n "$BOUNDARY_AUTHKEY" || { echo "Missing GitHub secret: BOUNDARY_AUTHKEY"; exit 1; }
 
       - name: Install Python dependencies
         run: |

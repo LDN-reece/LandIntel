@@ -18,6 +18,7 @@ class ConstraintOnlyDrainWorkflowContractTests(unittest.TestCase):
         self.assertIn("drain_cycles is capped at 48", WORKFLOW)
         self.assertIn("serial bounded constraint drain only", WORKFLOW)
         self.assertIn("no broad all-site/all-layer scan", WORKFLOW)
+        self.assertIn("BOUNDARY_AUTHKEY: ${{ secrets.BOUNDARY_AUTHKEY }}", WORKFLOW)
 
     def test_workflow_supports_cohort_source_and_layer_exclusions(self) -> None:
         self.assertIn("priority_bands:", WORKFLOW)

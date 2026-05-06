@@ -77,6 +77,8 @@ one GitHub Actions run. It is for draining a known safe source-family backlog wi
 migration preflight cost for every 250 site-layer pairs. It remains bounded by:
 
 - explicit `constraint_measure_source_family` or `constraint_measure_layer_key`;
+- optional `constraint_measure_exclude_layer_keys` when one known-hard layer must be left visible in backlog while the
+  rest of a source family is drained;
 - allowed site-priority band only;
 - `CONSTRAINT_PROOF_PAIR_BATCH_SIZE`;
 - `CONSTRAINT_PROOF_DRAIN_MAX_BATCHES`;

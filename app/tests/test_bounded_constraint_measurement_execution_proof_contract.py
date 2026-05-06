@@ -109,6 +109,8 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         self.assertIn("ABSOLUTE_DRAIN_MAX_BATCHES = 25", RUNNER)
         self.assertIn("single_site_retry_after_chunk_timeout", RUNNER)
         self.assertIn("parent_chunk_error", RUNNER)
+        self.assertIn("CONSTRAINT_MEASURE_EXCLUDE_LAYER_KEYS", RUNNER)
+        self.assertIn("excluded_layer_keys", RUNNER)
 
     def test_docs_explain_operational_bounds(self) -> None:
         for required_phrase in (
@@ -147,6 +149,8 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         self.assertIn('CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE: "250"', WORKFLOW)
         self.assertIn("CONSTRAINT_PROOF_DRAIN_MAX_BATCHES: ${{ inputs.constraint_measure_max_batches || '4' }}", WORKFLOW)
         self.assertIn("CONSTRAINT_PROOF_DRAIN_RUNTIME_MINUTES: ${{ inputs.constraint_measure_runtime_minutes || '10' }}", WORKFLOW)
+        self.assertIn("constraint_measure_exclude_layer_keys", WORKFLOW)
+        self.assertIn("CONSTRAINT_MEASURE_EXCLUDE_LAYER_KEYS", WORKFLOW)
         self.assertIn('CONSTRAINT_PROOF_HEAVY_LAYER_SITE_BATCH_SIZE: "1"', WORKFLOW)
         self.assertIn('CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE: "250"', MEASURE_LINK_WORKFLOW)
         self.assertIn('CONSTRAINT_PROOF_HEAVY_LAYER_SITE_BATCH_SIZE: "1"', MEASURE_LINK_WORKFLOW)

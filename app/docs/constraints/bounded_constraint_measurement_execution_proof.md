@@ -118,9 +118,22 @@ The command itself:
 - runs only flood/title-spend pairs;
 - for the reusable command, runs only explicitly filtered title-spend source-family or layer pairs;
 - groups by layer key;
+- chunks heavy layers into narrower site batches before calling the finalizer;
 - calls the existing `public.refresh_constraint_measurements_for_layer_sites` finalizer;
 - prints before/after proof;
 - exits non-zero if any layer batch errors.
+
+Heavy layer safeguard:
+
+The review-queue proof runs showed that NatureScot SAC and SPA layers can time out when 13 candidate sites are passed
+to the finalizer in one call. The runner now keeps the same source-family/cohort filters, but splits configured heavy
+layers into one-site chunks by default:
+
+- `naturescot:protectedareas_sac`;
+- `naturescot:protectedareas_spa`.
+
+This is still bounded measurement. It does not add a second constraint engine, a new truth table, RAG scoring or a broad
+scan. It simply reduces the per-call work for expensive ecology layers so scan-state can advance safely.
 
 ## Measurement Path
 
@@ -166,6 +179,7 @@ The command prints:
 - sites measured in the run;
 - site-layer pairs processed;
 - per-layer finalizer results;
+- chunk index and chunk count for heavy layers;
 - sites with flood measurements after;
 - flood measurement rows after;
 - sites with flood scan state after;

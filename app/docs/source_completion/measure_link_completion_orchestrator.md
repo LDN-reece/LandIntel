@@ -111,6 +111,15 @@ the full canonical site anchor before filtering back to the requested batch. Mig
 not run measurement during migration. This keeps the measurement engine intact but removes the avoidable full-spine scan
 from bounded proof runs.
 
+For surgical constraint retries, `Run LandIntel Sources` exposes the same proof runner directly through:
+
+- `constraint_measure_source_family`
+- `constraint_measure_site_batch_size`
+- `constraint_measure_authority` as the proof site-priority band for this command
+
+Use that direct path when only one source family and one cohort needs draining. Use the full measure/link completion
+workflow when title traceability, reconcile, open-location and Phase 2 context refreshes also need to run.
+
 ## How To Run
 
 Start with:

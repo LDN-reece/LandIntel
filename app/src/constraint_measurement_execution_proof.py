@@ -352,42 +352,89 @@ def _measure_layer_site_chunks(
                 "measurement_method": "exact_spatial_no_hit_prefilter",
             }
         )
+    def run_finalizer_chunk(
+        site_location_chunk: list[str],
+        *,
+        chunk_index: int,
+        chunk_count: int,
+        measurement_method: str | None = None,
+    ) -> dict[str, Any]:
+        result = database.fetch_one(
+            """
+            select *
+            from public.refresh_constraint_measurements_for_layer_sites(
+                :layer_key,
+                cast(:site_location_ids as text[]),
+                cast(:overlap_delta_pct as numeric),
+                cast(:distance_delta_m as numeric)
+            )
+            """,
+            {
+                "layer_key": layer_key,
+                "site_location_ids": site_location_chunk,
+                "overlap_delta_pct": overlap_delta_pct,
+                "distance_delta_m": distance_delta_m,
+            },
+        ) or {}
+        result = dict(result)
+        result.setdefault("layer_key", layer_key)
+        result.setdefault("site_location_count", len(site_location_chunk))
+        result.setdefault("chunk_index", chunk_index)
+        result.setdefault("chunk_count", chunk_count)
+        if measurement_method:
+            result.setdefault("measurement_method", measurement_method)
+        return result
+
     chunks = _layer_site_chunks(layer_key, finalizer_site_ids)
     for chunk_index, site_location_chunk in enumerate(chunks, start=1):
         try:
-            result = database.fetch_one(
-                """
-                select *
-                from public.refresh_constraint_measurements_for_layer_sites(
-                    :layer_key,
-                    cast(:site_location_ids as text[]),
-                    cast(:overlap_delta_pct as numeric),
-                    cast(:distance_delta_m as numeric)
+            measurement_results.append(
+                run_finalizer_chunk(
+                    site_location_chunk,
+                    chunk_index=chunk_index,
+                    chunk_count=len(chunks),
                 )
-                """,
-                {
-                    "layer_key": layer_key,
-                    "site_location_ids": site_location_chunk,
-                    "overlap_delta_pct": overlap_delta_pct,
-                    "distance_delta_m": distance_delta_m,
-                },
-            ) or {}
-            result = dict(result)
-            result.setdefault("layer_key", layer_key)
-            result.setdefault("site_location_count", len(site_location_chunk))
-            result.setdefault("chunk_index", chunk_index)
-            result.setdefault("chunk_count", len(chunks))
-            measurement_results.append(result)
-        except Exception as exc:
-            errors.append(
-                {
-                    "layer_key": layer_key,
-                    "site_location_count": len(site_location_chunk),
-                    "chunk_index": chunk_index,
-                    "chunk_count": len(chunks),
-                    "error": str(exc)[:1000],
-                }
             )
+        except Exception as exc:
+            if len(site_location_chunk) <= 1:
+                errors.append(
+                    {
+                        "layer_key": layer_key,
+                        "site_location_count": len(site_location_chunk),
+                        "chunk_index": chunk_index,
+                        "chunk_count": len(chunks),
+                        "error": str(exc)[:1000],
+                    }
+                )
+                continue
+
+            retry_errors: list[dict[str, Any]] = []
+            for retry_index, site_location_id in enumerate(site_location_chunk, start=1):
+                try:
+                    retry_result = run_finalizer_chunk(
+                        [site_location_id],
+                        chunk_index=chunk_index,
+                        chunk_count=len(chunks),
+                        measurement_method="single_site_retry_after_chunk_timeout",
+                    )
+                    retry_result.setdefault("parent_chunk_site_count", len(site_location_chunk))
+                    retry_result.setdefault("retry_index", retry_index)
+                    measurement_results.append(retry_result)
+                except Exception as retry_exc:
+                    retry_errors.append(
+                        {
+                            "layer_key": layer_key,
+                            "site_location_count": 1,
+                            "site_location_id": site_location_id,
+                            "chunk_index": chunk_index,
+                            "chunk_count": len(chunks),
+                            "retry_index": retry_index,
+                            "parent_chunk_site_count": len(site_location_chunk),
+                            "parent_chunk_error": str(exc)[:500],
+                            "error": str(retry_exc)[:1000],
+                        }
+                    )
+            errors.extend(retry_errors)
     return measurement_results
 
 

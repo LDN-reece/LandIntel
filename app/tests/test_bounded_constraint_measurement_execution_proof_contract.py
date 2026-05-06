@@ -107,6 +107,8 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         self.assertIn("CONSTRAINT_PROOF_DRAIN_MAX_BATCHES", RUNNER)
         self.assertIn("CONSTRAINT_PROOF_DRAIN_RUNTIME_MINUTES", RUNNER)
         self.assertIn("ABSOLUTE_DRAIN_MAX_BATCHES = 25", RUNNER)
+        self.assertIn("single_site_retry_after_chunk_timeout", RUNNER)
+        self.assertIn("parent_chunk_error", RUNNER)
 
     def test_docs_explain_operational_bounds(self) -> None:
         for required_phrase in (

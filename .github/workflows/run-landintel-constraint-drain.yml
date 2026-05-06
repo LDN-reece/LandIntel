@@ -1,0 +1,180 @@
+name: Run LandIntel Constraint Drain
+
+on:
+  workflow_dispatch:
+    inputs:
+      drain_cycles:
+        description: Number of serial drain cycles to run
+        required: false
+        default: "12"
+      priority_bands:
+        description: Comma-separated site priority bands to measure
+        required: false
+        default: "ldn_candidate_screen"
+      source_families:
+        description: Comma-separated constraint source families to measure
+        required: false
+        default: "sepa_flood"
+      exclude_layer_keys:
+        description: Optional comma-separated layer_key values to leave in backlog
+        required: false
+        default: ""
+      pair_batch_size:
+        description: Site-layer pairs per bounded drain batch, capped by runner
+        required: false
+        default: "250"
+      drain_max_batches:
+        description: Bounded drain batches per source-family/cohort step
+        required: false
+        default: "25"
+      drain_runtime_minutes:
+        description: Runtime budget per source-family/cohort drain step
+        required: false
+        default: "45"
+      allow_layer_errors:
+        description: Keep draining other layers if one layer errors
+        required: false
+        type: boolean
+        default: true
+      run_audits:
+        description: Run constraint/source audits after drain cycles
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: "landintel-constraint-drain-${{ github.ref }}"
+  cancel-in-progress: false
+
+jobs:
+  constraint-drain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: app
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: ${{ github.workspace }}/app
+      SUPABASE_URL: https://icmgcxujqoiyzxqonwca.supabase.co
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      AUDIT_ARTIFACT_BACKEND: none
+      PERSIST_STAGING_ROWS: "false"
+      CONSTRAINT_PROOF_PAIR_BATCH_SIZE: ${{ inputs.pair_batch_size || '250' }}
+      CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE: "250"
+      CONSTRAINT_PROOF_DRAIN_MAX_BATCHES: ${{ inputs.drain_max_batches || '25' }}
+      CONSTRAINT_PROOF_DRAIN_RUNTIME_MINUTES: ${{ inputs.drain_runtime_minutes || '45' }}
+      CONSTRAINT_PROOF_LAYER_SITE_BATCH_SIZE: "25"
+      CONSTRAINT_PROOF_HEAVY_LAYER_SITE_BATCH_SIZE: "1"
+      CONSTRAINT_PROOF_HEAVY_LAYER_KEYS: "naturescot:protectedareas_sac,naturescot:protectedareas_spa"
+      CONSTRAINT_PROOF_ALLOW_LAYER_ERRORS: ${{ inputs.allow_layer_errors || true }}
+      CONSTRAINT_MEASURE_EXCLUDE_LAYER_KEYS: ${{ inputs.exclude_layer_keys || '' }}
+      CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT: "1"
+      CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || { echo "Missing GitHub secret: SUPABASE_DB_URL"; exit 1; }
+          test -n "$SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing GitHub secret: SUPABASE_SERVICE_ROLE_KEY"; exit 1; }
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Compile constraint drain runner
+        run: python -m py_compile src/source_phase_runner.py src/source_expansion_runner_wfs_paging.py src/source_completion_audit.py src/constraint_measurement_execution_proof.py
+
+      - name: Run constraint-only drain cycles
+        env:
+          DRAIN_CYCLES: ${{ inputs.drain_cycles || '12' }}
+          PRIORITY_BANDS: ${{ inputs.priority_bands || 'ldn_candidate_screen' }}
+          SOURCE_FAMILIES: ${{ inputs.source_families || 'sepa_flood' }}
+          RUN_AUDITS: ${{ inputs.run_audits || true }}
+        run: |
+          set -euo pipefail
+
+          clamp_positive_int() {
+            local raw="$1"
+            local fallback="$2"
+            if [[ "$raw" =~ ^[0-9]+$ ]] && [ "$raw" -gt 0 ]; then
+              echo "$raw"
+            else
+              echo "$fallback"
+            fi
+          }
+
+          run_step() {
+            local label="$1"
+            shift
+            echo "::group::${label}"
+            echo "### ${label}" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            printf '%q ' "$@" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+            "$@"
+            echo "- completed" >> "$GITHUB_STEP_SUMMARY"
+            echo "::endgroup::"
+          }
+
+          cycles="$(clamp_positive_int "${DRAIN_CYCLES:-12}" 12)"
+          if [ "$cycles" -gt 48 ]; then
+            echo "drain_cycles is capped at 48 per workflow run to avoid runaway jobs."
+            cycles=48
+          fi
+
+          echo "# LandIntel Constraint Drain" >> "$GITHUB_STEP_SUMMARY"
+          echo "- cycles: ${cycles}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- priority bands: ${PRIORITY_BANDS}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- source families: ${SOURCE_FAMILIES}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- exclude layer keys: ${CONSTRAINT_MEASURE_EXCLUDE_LAYER_KEYS}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- pair batch size: ${CONSTRAINT_PROOF_PAIR_BATCH_SIZE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- drain max batches: ${CONSTRAINT_PROOF_DRAIN_MAX_BATCHES}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- caveat: serial bounded constraint drain only; no broad all-site/all-layer scan" >> "$GITHUB_STEP_SUMMARY"
+
+          run_step "Run migrations" python -m src.source_phase_runner run-migrations
+
+          IFS=',' read -ra priority_bands <<< "${PRIORITY_BANDS}"
+          IFS=',' read -ra source_families <<< "${SOURCE_FAMILIES}"
+
+          cycle=1
+          while [ "$cycle" -le "$cycles" ]; do
+            echo "## Constraint drain cycle ${cycle}" >> "$GITHUB_STEP_SUMMARY"
+            for priority_band in "${priority_bands[@]}"; do
+              priority_band="$(echo "$priority_band" | xargs)"
+              if [ -z "$priority_band" ]; then
+                continue
+              fi
+              for source_family in "${source_families[@]}"; do
+                source_family="$(echo "$source_family" | xargs)"
+                if [ -z "$source_family" ]; then
+                  continue
+                fi
+                run_step "Cycle ${cycle}: drain ${source_family} for ${priority_band}" env CONSTRAINT_PROOF_SITE_PRIORITY_BAND="$priority_band" CONSTRAINT_MEASURE_SOURCE_FAMILY="$source_family" python -m src.constraint_measurement_execution_proof constraint-measurement-drain-source-family
+              done
+            done
+            cycle=$((cycle + 1))
+          done
+
+          if [ "${RUN_AUDITS}" = "true" ]; then
+            run_step "Constraint scaler proof" python -m src.constraint_scaler_proof print-constraint-scaler-proof
+            run_step "Audit constraint measurements" python -m src.source_expansion_runner_wfs_paging audit-constraint-measurements
+            run_step "Audit source completion matrix" python -m src.source_completion_audit audit-source-completion-matrix
+          fi

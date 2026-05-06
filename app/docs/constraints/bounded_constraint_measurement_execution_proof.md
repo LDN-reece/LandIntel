@@ -91,6 +91,10 @@ summary to clean up, the runner records scan-state directly with `measurement_me
 Only pairs with a real spatial candidate or existing measurement state go through the full measurement finalizer. This
 keeps negative checks fast without inventing a second constraint truth table.
 
+If a real measurement chunk times out, the runner retries that failed chunk one site at a time with
+`measurement_method=single_site_retry_after_chunk_timeout`. This keeps hard sites moving without widening the cohort,
+suppressing the error, or creating a second measurement path.
+
 Example next run:
 
 - command: `constraint-measurement-proof-title-spend-source-family`

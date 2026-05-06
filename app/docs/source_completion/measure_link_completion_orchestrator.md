@@ -72,7 +72,7 @@ The workflow:
 - keeps `landintel_reporting.v_constraint_priority_measurement_queue` as the operator/audit reporting surface;
 - avoids sorting the full national measurement queue inside every live proof batch;
 - runs one source family and priority band at a time;
-- uses `constraint-measurement-proof-title-spend-source-family`;
+- uses `constraint-measurement-drain-source-family` so each source/cohort step can process repeated bounded batches inside one GitHub job;
 - preserves scan-state logic;
 - records no-hit scans as progress;
 - records source-family layer errors in the proof output;
@@ -117,8 +117,9 @@ For surgical constraint retries, `Run LandIntel Sources` exposes the same proof 
 - `constraint_measure_site_batch_size`
 - `constraint_measure_authority` as the proof site-priority band for this command
 
-Use that direct path when only one source family and one cohort needs draining. Use the full measure/link completion
-workflow when title traceability, reconcile, open-location and Phase 2 context refreshes also need to run.
+Use that direct path when only one source family and one cohort needs draining. The full measure/link completion
+workflow now uses the same drain runner across the configured source families and priority bands when title traceability,
+reconcile, open-location and Phase 2 context refreshes also need to run.
 
 The direct proof runner now has a fast exact no-hit path for heavy constraint layers. If a queued site/layer pair has no
 exact intersecting or within-buffer source feature, and no existing measurement or summary needs removing, the runner
@@ -130,14 +131,17 @@ existing finalizer, so this speeds up negative coverage without changing the con
 Start with:
 
 - `completion_cycles`: `3`
-- `constraint_pair_batch_size`: `25`
+- `constraint_pair_batch_size`: `250`
+- `constraint_drain_max_batches`: `4`
+- `constraint_drain_runtime_minutes`: `35`
 - `title_traceability_site_batch_size`: `25`
 - `include_open_location_context`: `true`
 - `include_phase2_context_refresh`: `true`
 
 If the audits show queues still have backlog, rerun the workflow with more cycles. The completion workflow explicitly
-allows a higher proof cap of `250` site-layer pairs per bounded constraint step, while manual proof commands remain
-conservative by default. The target is zero priority backlog, not one heroic unsafe full-table scan.
+allows a higher proof cap of `250` site-layer pairs per bounded constraint batch, while the drain cap controls how many
+batches a single source/cohort can attempt before moving on. The target is zero priority backlog, not one heroic unsafe
+full-table scan, and explicitly not one heroic unsafe full-table scan.
 
 ## What Complete Means
 

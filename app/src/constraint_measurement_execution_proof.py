@@ -18,6 +18,12 @@ from src.logging_config import configure_logging
 DEFAULT_MAX_PROOF_PAIR_BATCH_SIZE = 25
 ABSOLUTE_MAX_PROOF_PAIR_BATCH_SIZE = 250
 DEFAULT_PROOF_PAIR_BATCH_SIZE = 10
+DEFAULT_LAYER_SITE_BATCH_SIZE = 25
+DEFAULT_HEAVY_LAYER_SITE_BATCH_SIZE = 1
+DEFAULT_HEAVY_LAYER_KEYS = (
+    "naturescot:protectedareas_sac",
+    "naturescot:protectedareas_spa",
+)
 DEFAULT_SOURCE_FAMILY_SITE_PRIORITY_BAND = "title_spend_candidates"
 ALLOWED_SOURCE_FAMILY_SITE_PRIORITY_BANDS = {
     "title_spend_candidates",
@@ -74,6 +80,13 @@ def _env_text(name: str, default: str = "") -> str:
     return str(os.getenv(name) or default).strip()
 
 
+def _env_csv_set(name: str, default: tuple[str, ...]) -> set[str]:
+    raw_value = os.getenv(name)
+    if not raw_value:
+        return set(default)
+    return {value.strip() for value in raw_value.split(",") if value.strip()}
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     raw_value = str(os.getenv(name) or "").strip().lower()
     if not raw_value:
@@ -97,6 +110,66 @@ def _bounded_batch_size() -> tuple[int, int, int]:
     max_batch_size = _max_pair_batch_size()
     batch_size = min(max(requested_batch_size, 1), max_batch_size)
     return requested_batch_size, batch_size, max_batch_size
+
+
+def _layer_site_chunks(layer_key: str, site_location_ids: list[str]) -> list[list[str]]:
+    normal_batch_size = max(_env_int("CONSTRAINT_PROOF_LAYER_SITE_BATCH_SIZE", DEFAULT_LAYER_SITE_BATCH_SIZE), 1)
+    heavy_batch_size = max(
+        _env_int("CONSTRAINT_PROOF_HEAVY_LAYER_SITE_BATCH_SIZE", DEFAULT_HEAVY_LAYER_SITE_BATCH_SIZE),
+        1,
+    )
+    heavy_layer_keys = _env_csv_set("CONSTRAINT_PROOF_HEAVY_LAYER_KEYS", DEFAULT_HEAVY_LAYER_KEYS)
+    batch_size = min(normal_batch_size, heavy_batch_size) if layer_key in heavy_layer_keys else normal_batch_size
+    return [site_location_ids[offset : offset + batch_size] for offset in range(0, len(site_location_ids), batch_size)]
+
+
+def _measure_layer_site_chunks(
+    database: Database,
+    *,
+    layer_key: str,
+    site_location_ids: list[str],
+    overlap_delta_pct: float,
+    distance_delta_m: float,
+    errors: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    measurement_results: list[dict[str, Any]] = []
+    chunks = _layer_site_chunks(layer_key, site_location_ids)
+    for chunk_index, site_location_chunk in enumerate(chunks, start=1):
+        try:
+            result = database.fetch_one(
+                """
+                select *
+                from public.refresh_constraint_measurements_for_layer_sites(
+                    :layer_key,
+                    cast(:site_location_ids as text[]),
+                    cast(:overlap_delta_pct as numeric),
+                    cast(:distance_delta_m as numeric)
+                )
+                """,
+                {
+                    "layer_key": layer_key,
+                    "site_location_ids": site_location_chunk,
+                    "overlap_delta_pct": overlap_delta_pct,
+                    "distance_delta_m": distance_delta_m,
+                },
+            ) or {}
+            result = dict(result)
+            result.setdefault("layer_key", layer_key)
+            result.setdefault("site_location_count", len(site_location_chunk))
+            result.setdefault("chunk_index", chunk_index)
+            result.setdefault("chunk_count", len(chunks))
+            measurement_results.append(result)
+        except Exception as exc:
+            errors.append(
+                {
+                    "layer_key": layer_key,
+                    "site_location_count": len(site_location_chunk),
+                    "chunk_index": chunk_index,
+                    "chunk_count": len(chunks),
+                    "error": str(exc)[:1000],
+                }
+            )
+    return measurement_results
 
 
 def _collect_flood_title_spend_counts(database: Database) -> dict[str, Any]:
@@ -422,33 +495,16 @@ def run_flood_title_spend_measurement_proof(database: Database) -> dict[str, Any
     measurement_results: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     for layer_key, site_location_ids in sorted(pairs_by_layer.items()):
-        try:
-            result = database.fetch_one(
-                """
-                select *
-                from public.refresh_constraint_measurements_for_layer_sites(
-                    :layer_key,
-                    cast(:site_location_ids as text[]),
-                    cast(:overlap_delta_pct as numeric),
-                    cast(:distance_delta_m as numeric)
-                )
-                """,
-                {
-                    "layer_key": layer_key,
-                    "site_location_ids": site_location_ids,
-                    "overlap_delta_pct": overlap_delta_pct,
-                    "distance_delta_m": distance_delta_m,
-                },
-            ) or {}
-            measurement_results.append(result)
-        except Exception as exc:
-            errors.append(
-                {
-                    "layer_key": layer_key,
-                    "site_location_count": len(site_location_ids),
-                    "error": str(exc)[:1000],
-                }
+        measurement_results.extend(
+            _measure_layer_site_chunks(
+                database,
+                layer_key=layer_key,
+                site_location_ids=site_location_ids,
+                overlap_delta_pct=overlap_delta_pct,
+                distance_delta_m=distance_delta_m,
+                errors=errors,
             )
+        )
 
     after_counts = _collect_flood_title_spend_counts(database)
     unique_sites = {str(pair["site_location_id"]) for pair in pairs}
@@ -537,33 +593,16 @@ def run_title_spend_source_family_measurement_proof(database: Database) -> dict[
     measurement_results: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     for pair_layer_key, site_location_ids in sorted(pairs_by_layer.items()):
-        try:
-            result = database.fetch_one(
-                """
-                select *
-                from public.refresh_constraint_measurements_for_layer_sites(
-                    :layer_key,
-                    cast(:site_location_ids as text[]),
-                    cast(:overlap_delta_pct as numeric),
-                    cast(:distance_delta_m as numeric)
-                )
-                """,
-                {
-                    "layer_key": pair_layer_key,
-                    "site_location_ids": site_location_ids,
-                    "overlap_delta_pct": overlap_delta_pct,
-                    "distance_delta_m": distance_delta_m,
-                },
-            ) or {}
-            measurement_results.append(result)
-        except Exception as exc:
-            errors.append(
-                {
-                    "layer_key": pair_layer_key,
-                    "site_location_count": len(site_location_ids),
-                    "error": str(exc)[:1000],
-                }
+        measurement_results.extend(
+            _measure_layer_site_chunks(
+                database,
+                layer_key=pair_layer_key,
+                site_location_ids=site_location_ids,
+                overlap_delta_pct=overlap_delta_pct,
+                distance_delta_m=distance_delta_m,
+                errors=errors,
             )
+        )
 
     after_counts = _collect_source_family_counts(
         database,

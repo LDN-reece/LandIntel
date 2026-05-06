@@ -46,6 +46,13 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         self.assertIn("DEFAULT_MAX_PROOF_PAIR_BATCH_SIZE = 25", RUNNER)
         self.assertIn("ABSOLUTE_MAX_PROOF_PAIR_BATCH_SIZE = 250", RUNNER)
         self.assertIn("CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE", RUNNER)
+        self.assertIn("CONSTRAINT_PROOF_LAYER_SITE_BATCH_SIZE", RUNNER)
+        self.assertIn("CONSTRAINT_PROOF_HEAVY_LAYER_SITE_BATCH_SIZE", RUNNER)
+        self.assertIn("CONSTRAINT_PROOF_HEAVY_LAYER_KEYS", RUNNER)
+        self.assertIn("naturescot:protectedareas_sac", RUNNER)
+        self.assertIn("naturescot:protectedareas_spa", RUNNER)
+        self.assertIn("_measure_layer_site_chunks", RUNNER)
+        self.assertIn("chunk_index", RUNNER)
         self.assertIn("DEFAULT_PROOF_PAIR_BATCH_SIZE = 10", RUNNER)
         self.assertIn("limit :batch_size", RUNNER_LOWER)
 
@@ -89,6 +96,9 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
             "before/after proof",
             "queue correction",
             "caps it per source family",
+            "heavy layer safeguard",
+            "protectedareas_sac",
+            "protectedareas_spa",
             "does not add rag scoring",
             "pass/fail",
             "not a new constraint engine",
@@ -100,6 +110,11 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         self.assertIn("- constraint-measurement-proof-title-spend-source-family", WORKFLOW)
         self.assertIn('CONSTRAINT_PROOF_PAIR_BATCH_SIZE: "10"', WORKFLOW)
         self.assertIn('CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE: "250"', MEASURE_LINK_WORKFLOW)
+        self.assertIn('CONSTRAINT_PROOF_HEAVY_LAYER_SITE_BATCH_SIZE: "1"', MEASURE_LINK_WORKFLOW)
+        self.assertIn(
+            'CONSTRAINT_PROOF_HEAVY_LAYER_KEYS: "naturescot:protectedareas_sac,naturescot:protectedareas_spa"',
+            MEASURE_LINK_WORKFLOW,
+        )
         self.assertIn("constraint_measurement_execution_proof.py", WORKFLOW)
         self.assertIn(
             "python -m src.constraint_measurement_execution_proof constraint-measurement-proof-flood-title-spend",

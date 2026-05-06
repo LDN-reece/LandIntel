@@ -94,6 +94,17 @@ Manual constraint proof commands still fail closed by default. The completion wo
 coal, access/context and other DD measurement from continuing. Those errors must be reviewed from the workflow log and
 backlog/audit views before calling the relevant source family fully complete.
 
+Heavy ecology layer correction:
+
+NatureScot SAC and SPA layers proved too expensive when all remaining review-queue sites were sent to the finalizer in
+one layer call. The completion workflow now sets:
+
+- `CONSTRAINT_PROOF_HEAVY_LAYER_KEYS=naturescot:protectedareas_sac,naturescot:protectedareas_spa`
+- `CONSTRAINT_PROOF_HEAVY_LAYER_SITE_BATCH_SIZE=1`
+
+That keeps the same bounded source-family pattern, but measures those heavy layers one site at a time so the workflow
+can keep draining scan-state without creating a second constraint engine.
+
 ## How To Run
 
 Start with:
@@ -130,4 +141,5 @@ Run `25401595259` completed successfully but proved that queue selection itself 
 therefore tightened to select directly from filtered priority sites and filtered priority layers before applying
 scan-state. This does not change constraint truth. It makes repeated GitHub Actions cycles materially faster and keeps
 the measurement programme commercially usable. The 2026-05-06 follow-up raised the completion workflow cap to `250`
-site-layer pairs while preserving the runner's absolute ceiling and source/cohort filters.
+site-layer pairs while preserving the runner's absolute ceiling and source/cohort filters. The next correction keeps
+that higher cap, but chunks configured heavy layers by site to avoid statement timeouts on SAC/SPA ecology measurements.

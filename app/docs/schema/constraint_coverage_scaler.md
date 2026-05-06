@@ -136,7 +136,7 @@ Then run bounded GitHub Actions using one layer at a time, small site batches, a
 
 Workflow proof and `audit-constraint-measurements` must not expand `v_constraint_priority_measurement_queue` just to print a sample after a run. That queue is useful for bounded execution, but it can be large enough to waste the run after measurement has already completed.
 
-Post-run proof should sample `v_constraint_measurement_backlog` instead. This keeps the measurement loop operational: run the existing measurement engine, update scan-state/measurements, then print cheap backlog evidence.
+Post-run proof should sample `v_constraint_coverage_by_layer` instead of expanding either the full queue or the site-layer backlog view. This keeps the measurement loop operational: run the existing measurement engine, update scan-state/measurements, then print cheap layer-level backlog evidence.
 
 ## Next Phase
 

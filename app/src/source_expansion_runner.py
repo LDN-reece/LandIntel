@@ -3258,20 +3258,22 @@ class SourceExpansionRunner:
             """
             select
                 row_number() over (
-                    order by site_priority_rank, constraint_priority_rank, layer_key
+                    order by constraint_priority_rank, source_family, layer_key
                 ) as queue_rank,
-                site_priority_band,
+                'priority_sites'::text as site_priority_band,
                 constraint_priority_family,
                 layer_key,
                 source_family,
                 null::text as authority_name,
                 null::numeric as area_acres,
-                backlog_site_layer_pairs,
-                recommended_workflow_command,
-                recommended_layer_key
-            from landintel_reporting.v_constraint_measurement_backlog
-            where backlog_site_layer_pairs > 0
-            order by site_priority_rank, constraint_priority_rank, layer_key
+                backlog_site_count as backlog_site_layer_pairs,
+                'constraint-measurement-proof-title-spend-source-family'::text as recommended_workflow_command,
+                layer_key as recommended_layer_key
+            from landintel_reporting.v_constraint_coverage_by_layer
+            where is_active = true
+              and source_feature_count > 0
+              and backlog_site_count > 0
+            order by constraint_priority_rank, source_family, layer_key
             limit 20
             """
         )

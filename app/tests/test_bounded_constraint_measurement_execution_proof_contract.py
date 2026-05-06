@@ -32,6 +32,8 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         self.assertIn("constraint_measurement_proof_flood_title_spend", RUNNER)
         self.assertIn("constraint-measurement-proof-title-spend-source-family", RUNNER)
         self.assertIn("constraint_measurement_proof_title_spend_source_family", RUNNER)
+        self.assertIn("constraint-measurement-drain-source-family", RUNNER)
+        self.assertIn("constraint_measurement_drain_source_family", RUNNER)
 
     def test_runner_uses_existing_truth_tables_and_finalizer_only(self) -> None:
         self.assertIn("landintel_reporting.v_constraint_priority_sites", RUNNER)
@@ -102,6 +104,9 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         self.assertIn('"message"', RUNNER)
         self.assertIn("_safe_log_extra(proof)", RUNNER)
         self.assertIn("CONSTRAINT_PROOF_ALLOW_LAYER_ERRORS", RUNNER)
+        self.assertIn("CONSTRAINT_PROOF_DRAIN_MAX_BATCHES", RUNNER)
+        self.assertIn("CONSTRAINT_PROOF_DRAIN_RUNTIME_MINUTES", RUNNER)
+        self.assertIn("ABSOLUTE_DRAIN_MAX_BATCHES = 25", RUNNER)
 
     def test_docs_explain_operational_bounds(self) -> None:
         for required_phrase in (
@@ -118,6 +123,10 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
             "queue correction",
             "caps it per source family",
             "heavy layer safeguard",
+            "drain command",
+            "constraint-measurement-drain-source-family",
+            "constraint_proof_drain_max_batches",
+            "constraint_proof_drain_runtime_minutes",
             "protectedareas_sac",
             "protectedareas_spa",
             "exact_spatial_no_hit_prefilter",
@@ -130,9 +139,12 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
     def test_workflow_exposes_guarded_command(self) -> None:
         self.assertIn("- constraint-measurement-proof-flood-title-spend", WORKFLOW)
         self.assertIn("- constraint-measurement-proof-title-spend-source-family", WORKFLOW)
+        self.assertIn("- constraint-measurement-drain-source-family", WORKFLOW)
         self.assertIn("CONSTRAINT_PROOF_PAIR_BATCH_SIZE: ${{ inputs.constraint_measure_site_batch_size || '10' }}", WORKFLOW)
         self.assertIn("CONSTRAINT_PROOF_SITE_PRIORITY_BAND: ${{ inputs.constraint_measure_authority || 'title_spend_candidates' }}", WORKFLOW)
         self.assertIn('CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE: "250"', WORKFLOW)
+        self.assertIn("CONSTRAINT_PROOF_DRAIN_MAX_BATCHES: ${{ inputs.constraint_measure_max_batches || '4' }}", WORKFLOW)
+        self.assertIn("CONSTRAINT_PROOF_DRAIN_RUNTIME_MINUTES: ${{ inputs.constraint_measure_runtime_minutes || '10' }}", WORKFLOW)
         self.assertIn('CONSTRAINT_PROOF_HEAVY_LAYER_SITE_BATCH_SIZE: "1"', WORKFLOW)
         self.assertIn('CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE: "250"', MEASURE_LINK_WORKFLOW)
         self.assertIn('CONSTRAINT_PROOF_HEAVY_LAYER_SITE_BATCH_SIZE: "1"', MEASURE_LINK_WORKFLOW)
@@ -147,6 +159,10 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         )
         self.assertIn(
             "python -m src.constraint_measurement_execution_proof constraint-measurement-proof-title-spend-source-family",
+            WORKFLOW,
+        )
+        self.assertIn(
+            "python -m src.constraint_measurement_execution_proof constraint-measurement-drain-source-family",
             WORKFLOW,
         )
         self.assertIn("python -m src.constraint_scaler_proof print-constraint-scaler-proof", WORKFLOW)

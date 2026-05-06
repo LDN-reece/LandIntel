@@ -68,6 +68,23 @@ unless one of these existing workflow filters is provided:
 
 That means coal/mining, green belt, contaminated land, culverts, heritage/conservation, ecology/NatureScot and TPO/landscape can follow the same bounded proof pattern without creating a new constraint engine or a broad all-layer button.
 
+Drain command for operational scale-up:
+
+`constraint-measurement-drain-source-family`
+
+This uses the same source-family/layer guard and the same allowed site-priority bands, but repeats bounded batches inside
+one GitHub Actions run. It is for draining a known safe source-family backlog without paying the full workflow setup and
+migration preflight cost for every 250 site-layer pairs. It remains bounded by:
+
+- explicit `constraint_measure_source_family` or `constraint_measure_layer_key`;
+- allowed site-priority band only;
+- `CONSTRAINT_PROOF_PAIR_BATCH_SIZE`;
+- `CONSTRAINT_PROOF_DRAIN_MAX_BATCHES`;
+- `CONSTRAINT_PROOF_DRAIN_RUNTIME_MINUTES`;
+- the existing scan-state and finalizer logic.
+
+It is still not a broad all-site/all-layer scan.
+
 For heavy layers such as NatureScot SAC/SPA, the runner uses an exact no-hit prefilter before the full finalizer. If a
 site/layer pair has no exact intersecting or within-buffer source feature, and there is no existing measurement or
 summary to clean up, the runner records scan-state directly with `measurement_method=exact_spatial_no_hit_prefilter`.

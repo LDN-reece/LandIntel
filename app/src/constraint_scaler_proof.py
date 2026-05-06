@@ -68,16 +68,21 @@ def collect_constraint_scaler_proof(database: Database) -> dict[str, Any]:
         "priority_measurement_queue_sample": database.fetch_all(
             """
             select
-                queue_rank,
+                row_number() over (
+                    order by site_priority_rank, constraint_priority_rank, layer_key
+                ) as queue_rank,
                 site_priority_band,
                 constraint_priority_family,
                 layer_key,
-                authority_name,
-                area_acres,
+                source_family,
+                null::text as authority_name,
+                null::numeric as area_acres,
+                backlog_site_layer_pairs,
                 recommended_workflow_command,
                 recommended_layer_key
-            from landintel_reporting.v_constraint_priority_measurement_queue
-            order by queue_rank
+            from landintel_reporting.v_constraint_measurement_backlog
+            where backlog_site_layer_pairs > 0
+            order by site_priority_rank, constraint_priority_rank, layer_key
             limit 20
             """
         ),

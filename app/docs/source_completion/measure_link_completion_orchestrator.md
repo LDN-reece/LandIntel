@@ -104,7 +104,9 @@ Start with:
 - `include_open_location_context`: `true`
 - `include_phase2_context_refresh`: `true`
 
-If the audits show queues still have backlog, rerun the workflow with more cycles. The target is zero priority backlog, not one heroic unsafe full-table scan.
+If the audits show queues still have backlog, rerun the workflow with more cycles. The completion workflow explicitly
+allows a higher proof cap of `250` site-layer pairs per bounded constraint step, while manual proof commands remain
+conservative by default. The target is zero priority backlog, not one heroic unsafe full-table scan.
 
 ## What Complete Means
 
@@ -127,4 +129,5 @@ Runtime proof note:
 Run `25401595259` completed successfully but proved that queue selection itself was a scale bottleneck. The runner was
 therefore tightened to select directly from filtered priority sites and filtered priority layers before applying
 scan-state. This does not change constraint truth. It makes repeated GitHub Actions cycles materially faster and keeps
-the measurement programme commercially usable.
+the measurement programme commercially usable. The 2026-05-06 follow-up raised the completion workflow cap to `250`
+site-layer pairs while preserving the runner's absolute ceiling and source/cohort filters.

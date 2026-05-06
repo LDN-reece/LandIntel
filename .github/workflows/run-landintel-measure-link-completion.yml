@@ -10,7 +10,7 @@ on:
       step_timeout_minutes:
         description: Hard timeout for each bounded write step
         required: false
-        default: "20"
+        default: "45"
       title_traceability_site_batch_size:
         description: Sites per title/parcel traceability batch
         required: false
@@ -39,7 +39,15 @@ on:
       constraint_pair_batch_size:
         description: Site-layer pairs per bounded constraint proof batch, capped by runner
         required: false
-        default: "25"
+        default: "250"
+      constraint_drain_max_batches:
+        description: Bounded drain batches per constraint source-family/cohort step
+        required: false
+        default: "4"
+      constraint_drain_runtime_minutes:
+        description: Runtime budget per constraint source-family/cohort drain step
+        required: false
+        default: "35"
       include_open_location_context:
         description: Run bounded open-location landing/context refresh each cycle
         required: false
@@ -107,8 +115,10 @@ jobs:
       SITE_TITLE_TRACEABILITY_SCAN_STATE_MAX_AGE_DAYS: "30"
       RECONCILE_BATCH_LIMIT: ${{ inputs.reconcile_batch_limit || '500' }}
       RECONCILE_RUNTIME_MINUTES: ${{ inputs.reconcile_runtime_minutes || '8' }}
-      CONSTRAINT_PROOF_PAIR_BATCH_SIZE: ${{ inputs.constraint_pair_batch_size || '25' }}
+      CONSTRAINT_PROOF_PAIR_BATCH_SIZE: ${{ inputs.constraint_pair_batch_size || '250' }}
       CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE: "250"
+      CONSTRAINT_PROOF_DRAIN_MAX_BATCHES: ${{ inputs.constraint_drain_max_batches || '4' }}
+      CONSTRAINT_PROOF_DRAIN_RUNTIME_MINUTES: ${{ inputs.constraint_drain_runtime_minutes || '35' }}
       CONSTRAINT_PROOF_LAYER_SITE_BATCH_SIZE: "25"
       CONSTRAINT_PROOF_HEAVY_LAYER_SITE_BATCH_SIZE: "1"
       CONSTRAINT_PROOF_HEAVY_LAYER_KEYS: "naturescot:protectedareas_sac,naturescot:protectedareas_spa"
@@ -213,6 +223,8 @@ jobs:
           echo "- cycles: ${cycles}" >> "$GITHUB_STEP_SUMMARY"
           echo "- title batch: ${SITE_TITLE_TRACEABILITY_PROOF_SITE_BATCH_SIZE}" >> "$GITHUB_STEP_SUMMARY"
           echo "- constraint pair batch: ${CONSTRAINT_PROOF_PAIR_BATCH_SIZE}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- constraint drain batches per source/cohort: ${CONSTRAINT_PROOF_DRAIN_MAX_BATCHES}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- constraint drain runtime minutes: ${CONSTRAINT_PROOF_DRAIN_RUNTIME_MINUTES}" >> "$GITHUB_STEP_SUMMARY"
           echo "- priority bands: ${CONSTRAINT_SITE_PRIORITY_BANDS}" >> "$GITHUB_STEP_SUMMARY"
           echo "- constraint source families: ${CONSTRAINT_SOURCE_FAMILIES}" >> "$GITHUB_STEP_SUMMARY"
           echo "- caveat: serial bounded completion loop; no unbounded all-site/all-layer scan" >> "$GITHUB_STEP_SUMMARY"
@@ -258,7 +270,7 @@ jobs:
                 if [ -z "$source_family" ]; then
                   continue
                 fi
-                run_bounded_step "Cycle ${cycle}: measure ${source_family} for ${priority_band}" env CONSTRAINT_PROOF_SITE_PRIORITY_BAND="$priority_band" CONSTRAINT_MEASURE_SOURCE_FAMILY="$source_family" python -m src.constraint_measurement_execution_proof constraint-measurement-proof-title-spend-source-family
+                run_bounded_step "Cycle ${cycle}: drain ${source_family} for ${priority_band}" env CONSTRAINT_PROOF_SITE_PRIORITY_BAND="$priority_band" CONSTRAINT_MEASURE_SOURCE_FAMILY="$source_family" python -m src.constraint_measurement_execution_proof constraint-measurement-drain-source-family
               done
             done
 

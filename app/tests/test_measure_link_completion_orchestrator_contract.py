@@ -28,6 +28,8 @@ class MeasureLinkCompletionOrchestratorContractTests(unittest.TestCase):
             "constraint_site_priority_bands",
             "constraint_source_families",
             "constraint_pair_batch_size",
+            "constraint_drain_max_batches",
+            "constraint_drain_runtime_minutes",
             "include_open_location_context",
             "include_phase2_context_refresh",
         ):
@@ -43,7 +45,7 @@ class MeasureLinkCompletionOrchestratorContractTests(unittest.TestCase):
             "process-reconcile-queue",
             "refresh-affected-sites",
             "complete-open-data-universe",
-            "constraint-measurement-proof-title-spend-source-family",
+            "constraint-measurement-drain-source-family",
             "audit-constraint-measurements",
             "refresh-site-amenity-context",
             "refresh-site-demographic-context",
@@ -79,6 +81,8 @@ class MeasureLinkCompletionOrchestratorContractTests(unittest.TestCase):
         self.assertIn('constraint_proof_site_priority_band="$priority_band"', WORKFLOW_LOWER)
         self.assertIn('constraint_measure_source_family="$source_family"', WORKFLOW_LOWER)
         self.assertIn("constraint_proof_pair_batch_size", WORKFLOW_LOWER)
+        self.assertIn("constraint_proof_drain_max_batches", WORKFLOW_LOWER)
+        self.assertIn("constraint_proof_drain_runtime_minutes", WORKFLOW_LOWER)
         self.assertIn("constraint_proof_allow_layer_errors", WORKFLOW_LOWER)
 
     def test_workflow_avoids_unbounded_or_destructive_paths(self) -> None:

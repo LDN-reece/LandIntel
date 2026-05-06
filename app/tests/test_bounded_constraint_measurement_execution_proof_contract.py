@@ -39,6 +39,7 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         self.assertIn("public.refresh_constraint_measurements_for_layer_sites", RUNNER)
         self.assertIn("public.site_constraint_measurements", RUNNER)
         self.assertIn("public.site_constraint_measurement_scan_state", RUNNER)
+        self.assertIn("exact_spatial_no_hit_prefilter", RUNNER)
         self.assertNotIn("from landintel_reporting.v_constraint_priority_measurement_queue", RUNNER)
         self.assertNotIn("create table", RUNNER_LOWER)
         self.assertNotIn("site_constraint_measurements_new", RUNNER_LOWER)
@@ -119,6 +120,7 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
             "heavy layer safeguard",
             "protectedareas_sac",
             "protectedareas_spa",
+            "exact_spatial_no_hit_prefilter",
             "does not add rag scoring",
             "pass/fail",
             "not a new constraint engine",

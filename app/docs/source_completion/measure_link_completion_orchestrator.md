@@ -120,6 +120,11 @@ For surgical constraint retries, `Run LandIntel Sources` exposes the same proof 
 Use that direct path when only one source family and one cohort needs draining. Use the full measure/link completion
 workflow when title traceability, reconcile, open-location and Phase 2 context refreshes also need to run.
 
+The direct proof runner now has a fast exact no-hit path for heavy constraint layers. If a queued site/layer pair has no
+exact intersecting or within-buffer source feature, and no existing measurement or summary needs removing, the runner
+records scan-state directly as `exact_spatial_no_hit_prefilter`. Pairs with any real spatial candidate still use the
+existing finalizer, so this speeds up negative coverage without changing the constraint truth tables.
+
 ## How To Run
 
 Start with:

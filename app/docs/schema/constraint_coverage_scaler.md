@@ -132,6 +132,12 @@ select * from landintel_reporting.v_constraint_priority_measurement_queue;
 
 Then run bounded GitHub Actions using one layer at a time, small site batches, and the highest site-priority band first.
 
+## Bounded Proof Caveat
+
+Workflow proof and `audit-constraint-measurements` must not expand `v_constraint_priority_measurement_queue` just to print a sample after a run. That queue is useful for bounded execution, but it can be large enough to waste the run after measurement has already completed.
+
+Post-run proof should sample `v_constraint_measurement_backlog` instead. This keeps the measurement loop operational: run the existing measurement engine, update scan-state/measurements, then print cheap backlog evidence.
+
 ## Next Phase
 
 Phase F should create the source completion matrix and live workflow gap audit.

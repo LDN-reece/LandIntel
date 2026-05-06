@@ -306,7 +306,12 @@ jobs:
       CONSTRAINT_MEASURE_MAX_BATCHES_PER_LAYER: "1"
       CONSTRAINT_MEASURE_MAX_LAYERS_PER_RUN: "1"
       CONSTRAINT_MEASURE_RUNTIME_MINUTES: ${{ inputs.constraint_measure_runtime_minutes || '10' }}
-      CONSTRAINT_PROOF_PAIR_BATCH_SIZE: "10"
+      CONSTRAINT_PROOF_PAIR_BATCH_SIZE: ${{ inputs.constraint_measure_site_batch_size || '10' }}
+      CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE: "250"
+      CONSTRAINT_PROOF_LAYER_SITE_BATCH_SIZE: "25"
+      CONSTRAINT_PROOF_HEAVY_LAYER_SITE_BATCH_SIZE: "1"
+      CONSTRAINT_PROOF_HEAVY_LAYER_KEYS: "naturescot:protectedareas_sac,naturescot:protectedareas_spa"
+      CONSTRAINT_PROOF_SITE_PRIORITY_BAND: ${{ inputs.constraint_measure_authority || 'title_spend_candidates' }}
       CONSTRAINT_MEASURE_MIN_AREA_ACRES: "0"
       CONSTRAINT_MEASURE_SOURCE_FAMILY: ${{ inputs.constraint_measure_source_family || '' }}
       CONSTRAINT_MEASURE_LAYER_KEY: ${{ inputs.constraint_measure_layer_key || '' }}

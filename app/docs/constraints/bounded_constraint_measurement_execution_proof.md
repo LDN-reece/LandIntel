@@ -58,7 +58,10 @@ Reusable source-family command:
 
 `constraint-measurement-proof-title-spend-source-family`
 
-This command is the source completion programme adapter for the rest of the priority constraint estate. It still defaults to the `title_spend_candidates` cohort, but it refuses to run unless one of these existing workflow filters is provided:
+This command is the source completion programme adapter for the rest of the priority constraint estate. It defaults to
+the `title_spend_candidates` cohort, but the direct `Run LandIntel Sources` path can reuse `constraint_measure_authority`
+as the proof site-priority band for bounded `review_queue` and `ldn_candidate_screen` proof runs. It refuses to run
+unless one of these existing workflow filters is provided:
 
 - `constraint_measure_source_family`
 - `constraint_measure_layer_key`
@@ -69,7 +72,7 @@ Example next run:
 
 - command: `constraint-measurement-proof-title-spend-source-family`
 - `constraint_measure_source_family=coal_authority`
-- scope: title-spend candidates only
+- `constraint_measure_authority=title_spend_candidates`
 - batch: 10 site-layer pairs
 
 ## Why Flood First

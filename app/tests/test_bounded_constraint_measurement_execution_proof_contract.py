@@ -128,7 +128,10 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
     def test_workflow_exposes_guarded_command(self) -> None:
         self.assertIn("- constraint-measurement-proof-flood-title-spend", WORKFLOW)
         self.assertIn("- constraint-measurement-proof-title-spend-source-family", WORKFLOW)
-        self.assertIn('CONSTRAINT_PROOF_PAIR_BATCH_SIZE: "10"', WORKFLOW)
+        self.assertIn("CONSTRAINT_PROOF_PAIR_BATCH_SIZE: ${{ inputs.constraint_measure_site_batch_size || '10' }}", WORKFLOW)
+        self.assertIn("CONSTRAINT_PROOF_SITE_PRIORITY_BAND: ${{ inputs.constraint_measure_authority || 'title_spend_candidates' }}", WORKFLOW)
+        self.assertIn('CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE: "250"', WORKFLOW)
+        self.assertIn('CONSTRAINT_PROOF_HEAVY_LAYER_SITE_BATCH_SIZE: "1"', WORKFLOW)
         self.assertIn('CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE: "250"', MEASURE_LINK_WORKFLOW)
         self.assertIn('CONSTRAINT_PROOF_HEAVY_LAYER_SITE_BATCH_SIZE: "1"', MEASURE_LINK_WORKFLOW)
         self.assertIn(

@@ -184,6 +184,11 @@ def _collect_flood_title_spend_counts(database: Database) -> dict[str, Any]:
             from landintel_reporting.v_constraint_priority_layers as priority_layers
             where priority_layers.constraint_priority_family = 'flood'
               and priority_layers.is_active = true
+              and exists (
+                  select 1
+                  from public.constraint_source_features as feature
+                  where feature.constraint_layer_id = priority_layers.constraint_layer_id::uuid
+              )
         )
         select
             (select count(*)::integer from title_sites) as candidate_sites_in_cohort,
@@ -245,6 +250,11 @@ def _collect_source_family_counts(
             where priority_layers.is_active = true
               and (:source_family = '' or priority_layers.source_family = :source_family)
               and (:layer_key = '' or priority_layers.layer_key = :layer_key)
+              and exists (
+                  select 1
+                  from public.constraint_source_features as feature
+                  where feature.constraint_layer_id = priority_layers.constraint_layer_id::uuid
+              )
         )
         select
             (select count(*)::integer from priority_sites) as candidate_sites_in_cohort,

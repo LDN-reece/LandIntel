@@ -19,6 +19,10 @@ WORKFLOW_LOWER = WORKFLOW.lower()
 MEASURE_LINK_WORKFLOW = (
     REPO_ROOT / ".github" / "workflows" / "run-landintel-measure-link-completion.yml"
 ).read_text(encoding="utf-8")
+FINALIZER_MIGRATION = (ROOT / "sql" / "085_constraint_finalizer_requested_anchor.sql").read_text(
+    encoding="utf-8"
+)
+FINALIZER_MIGRATION_LOWER = FINALIZER_MIGRATION.lower()
 
 
 class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase):
@@ -64,6 +68,22 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         self.assertIn("priority_layers.source_family = :source_family", RUNNER)
         self.assertIn("priority_layers.layer_key = :layer_key", RUNNER)
         self.assertIn("priority_sites.site_priority_band = :site_priority_band", RUNNER)
+        self.assertIn("from public.constraint_source_features as feature", RUNNER)
+        self.assertIn("where feature.constraint_layer_id = priority_layers.constraint_layer_id::uuid", RUNNER)
+
+    def test_finalizer_scan_state_anchor_is_requested_site_only(self) -> None:
+        self.assertIn(
+            "create or replace function public.refresh_constraint_measurements_for_layer_sites",
+            FINALIZER_MIGRATION_LOWER,
+        )
+        scan_state_sql = FINALIZER_MIGRATION_LOWER.split(
+            "insert into public.site_constraint_measurement_scan_state", 1
+        )[1]
+        self.assertIn("from landintel.canonical_sites as site", scan_state_sql)
+        self.assertIn("from unnest(p_site_location_ids) as input(site_location_id)", scan_state_sql)
+        self.assertIn("requested.site_location_id = site.id::text", scan_state_sql)
+        self.assertNotIn("from public.constraints_site_anchor() as anchor", scan_state_sql)
+        self.assertIn("does not execute measurement", FINALIZER_MIGRATION_LOWER)
 
     def test_runner_contains_no_destructive_sql(self) -> None:
         forbidden_patterns = (

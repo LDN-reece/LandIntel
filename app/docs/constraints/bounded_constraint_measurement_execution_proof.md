@@ -135,6 +135,16 @@ layers into one-site chunks by default:
 This is still bounded measurement. It does not add a second constraint engine, a new truth table, RAG scoring or a broad
 scan. It simply reduces the per-call work for expensive ecology layers so scan-state can advance safely.
 
+Finalizer performance correction:
+
+The first heavy-layer retry proved a second bottleneck inside the existing PostGIS finalizer: the scan-state write was
+calling `public.constraints_site_anchor()` and expanding every canonical site before filtering back to the requested
+site batch. Migration `085_constraint_finalizer_requested_anchor.sql` keeps the same finalizer and same truth tables, but
+restricts that scan-state anchor to `p_site_location_ids`. It does not execute measurement during migration.
+
+The proof runner also excludes active layers with no source features from candidate selection. Those layers remain in
+the registry for governance, but they are not useful measurement work.
+
 ## Measurement Path
 
 The existing DuckDB command can filter by layer or source family, but it does not currently target the `title_spend_candidates` queue cleanly.

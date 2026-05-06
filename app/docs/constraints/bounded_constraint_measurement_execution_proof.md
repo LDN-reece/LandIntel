@@ -68,6 +68,12 @@ unless one of these existing workflow filters is provided:
 
 That means coal/mining, green belt, contaminated land, culverts, heritage/conservation, ecology/NatureScot and TPO/landscape can follow the same bounded proof pattern without creating a new constraint engine or a broad all-layer button.
 
+For heavy layers such as NatureScot SAC/SPA, the runner uses an exact no-hit prefilter before the full finalizer. If a
+site/layer pair has no exact intersecting or within-buffer source feature, and there is no existing measurement or
+summary to clean up, the runner records scan-state directly with `measurement_method=exact_spatial_no_hit_prefilter`.
+Only pairs with a real spatial candidate or existing measurement state go through the full measurement finalizer. This
+keeps negative checks fast without inventing a second constraint truth table.
+
 Example next run:
 
 - command: `constraint-measurement-proof-title-spend-source-family`

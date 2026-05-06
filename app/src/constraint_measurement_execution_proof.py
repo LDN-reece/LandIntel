@@ -123,6 +123,183 @@ def _layer_site_chunks(layer_key: str, site_location_ids: list[str]) -> list[lis
     return [site_location_ids[offset : offset + batch_size] for offset in range(0, len(site_location_ids), batch_size)]
 
 
+def _classify_layer_site_relationship_candidates(
+    database: Database,
+    *,
+    layer_key: str,
+    site_location_ids: list[str],
+) -> list[dict[str, Any]]:
+    """Split requested sites into exact spatial candidates and safe no-hit rows.
+
+    The full finalizer is intentionally rich, but it is too expensive for large
+    no-hit layers such as NatureScot SAC/SPA. A site can only skip the finalizer
+    when the exact spatial prefilter finds no intersecting/within-buffer source
+    feature and there is no existing measurement or summary to clean up.
+    """
+
+    if not site_location_ids:
+        return []
+    return database.fetch_all(
+        """
+        with layer_row as (
+            select id, layer_key, constraint_group, buffer_distance_m
+            from public.constraint_layer_registry
+            where layer_key = :layer_key
+              and is_active = true
+        ),
+        requested_sites as (
+            select distinct input.site_location_id
+            from unnest(cast(:site_location_ids as text[])) as input(site_location_id)
+        ),
+        site_batch as (
+            select
+                site.id::text as site_id,
+                site.id::text as site_location_id,
+                site.geometry
+            from landintel.canonical_sites as site
+            join requested_sites as requested
+              on requested.site_location_id = site.id::text
+            where site.geometry is not null
+        ),
+        classified as (
+            select
+                site_batch.site_location_id,
+                exists (
+                    select 1
+                    from public.constraint_source_features as feature
+                    where feature.constraint_layer_id = layer_row.id
+                      and feature.geometry is not null
+                      and feature.geometry OPERATOR(extensions.&&)
+                            st_expand(site_batch.geometry, greatest(layer_row.buffer_distance_m, 0)::double precision)
+                      and (
+                            (
+                                layer_row.buffer_distance_m > 0
+                                and st_dwithin(site_batch.geometry, feature.geometry, layer_row.buffer_distance_m)
+                            )
+                            or (
+                                layer_row.buffer_distance_m = 0
+                                and st_intersects(site_batch.geometry, feature.geometry)
+                            )
+                          )
+                ) as has_exact_spatial_candidate,
+                exists (
+                    select 1
+                    from public.site_constraint_measurements as measurement
+                    where measurement.constraint_layer_id = layer_row.id
+                      and measurement.site_location_id = site_batch.site_location_id
+                ) as has_existing_measurement,
+                exists (
+                    select 1
+                    from public.site_constraint_group_summaries as summary
+                    where summary.constraint_layer_id = layer_row.id
+                      and summary.site_location_id = site_batch.site_location_id
+                ) as has_existing_summary
+            from site_batch
+            cross join layer_row
+        )
+        select
+            site_location_id,
+            has_exact_spatial_candidate,
+            has_existing_measurement,
+            has_existing_summary,
+            (
+                has_exact_spatial_candidate
+                or has_existing_measurement
+                or has_existing_summary
+            ) as requires_full_finalizer
+        from classified
+        order by site_location_id
+        """,
+        {
+            "layer_key": layer_key,
+            "site_location_ids": site_location_ids,
+        },
+    )
+
+
+def _mark_no_hit_scan_state(
+    database: Database,
+    *,
+    layer_key: str,
+    site_location_ids: list[str],
+) -> dict[str, Any]:
+    if not site_location_ids:
+        return {"no_hit_scan_state_count": 0}
+    return database.fetch_one(
+        """
+        with layer_row as (
+            select id, layer_key, constraint_group
+            from public.constraint_layer_registry
+            where layer_key = :layer_key
+              and is_active = true
+        ),
+        requested_sites as (
+            select distinct input.site_location_id
+            from unnest(cast(:site_location_ids as text[])) as input(site_location_id)
+        ),
+        anchor as (
+            select
+                site.id::text as site_id,
+                site.id::text as site_location_id
+            from landintel.canonical_sites as site
+            join requested_sites as requested
+              on requested.site_location_id = site.id::text
+            where site.geometry is not null
+        ),
+        upserted as (
+            insert into public.site_constraint_measurement_scan_state (
+                site_id,
+                site_location_id,
+                constraint_layer_id,
+                scan_scope,
+                latest_measurement_count,
+                latest_summary_signature,
+                has_constraint_relationship,
+                scanned_at,
+                updated_at,
+                metadata
+            )
+            select
+                anchor.site_id,
+                anchor.site_location_id,
+                layer_row.id,
+                'canonical_site_geometry',
+                0,
+                null,
+                false,
+                now(),
+                now(),
+                jsonb_build_object(
+                    'constraint_layer_key', layer_row.layer_key,
+                    'constraint_group', layer_row.constraint_group,
+                    'source_expansion_constraint', true,
+                    'has_constraint_relationship', false,
+                    'measurement_method', 'exact_spatial_no_hit_prefilter',
+                    'source_limitation', 'no_exact_intersect_or_buffer_candidate_found'
+                )
+            from anchor
+            cross join layer_row
+            on conflict (constraint_layer_id, site_location_id, scan_scope)
+            do update set
+                site_id = excluded.site_id,
+                latest_measurement_count = excluded.latest_measurement_count,
+                latest_summary_signature = excluded.latest_summary_signature,
+                has_constraint_relationship = excluded.has_constraint_relationship,
+                scanned_at = excluded.scanned_at,
+                updated_at = now(),
+                metadata = excluded.metadata
+            returning site_location_id
+        )
+        select count(*)::integer as no_hit_scan_state_count
+        from upserted
+        """,
+        {
+            "layer_key": layer_key,
+            "site_location_ids": site_location_ids,
+        },
+    ) or {"no_hit_scan_state_count": 0}
+
+
 def _measure_layer_site_chunks(
     database: Database,
     *,
@@ -133,7 +310,46 @@ def _measure_layer_site_chunks(
     errors: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     measurement_results: list[dict[str, Any]] = []
-    chunks = _layer_site_chunks(layer_key, site_location_ids)
+    classified_rows = _classify_layer_site_relationship_candidates(
+        database,
+        layer_key=layer_key,
+        site_location_ids=site_location_ids,
+    )
+    classified_by_site = {str(row["site_location_id"]): row for row in classified_rows}
+    no_hit_site_ids = [
+        site_location_id
+        for site_location_id, row in classified_by_site.items()
+        if not row.get("requires_full_finalizer")
+    ]
+    finalizer_site_ids = [
+        site_location_id
+        for site_location_id in site_location_ids
+        if site_location_id not in classified_by_site
+        or classified_by_site[site_location_id].get("requires_full_finalizer")
+    ]
+    if no_hit_site_ids:
+        no_hit_result = _mark_no_hit_scan_state(
+            database,
+            layer_key=layer_key,
+            site_location_ids=no_hit_site_ids,
+        )
+        measurement_results.append(
+            {
+                "layer_key": layer_key,
+                "site_location_count": len(no_hit_site_ids),
+                "measurement_count": 0,
+                "summary_count": 0,
+                "friction_fact_count": 0,
+                "evidence_count": 0,
+                "signal_count": 0,
+                "change_event_count": 0,
+                "affected_site_count": 0,
+                "material_change_count": 0,
+                "no_hit_scan_state_count": no_hit_result.get("no_hit_scan_state_count", 0),
+                "measurement_method": "exact_spatial_no_hit_prefilter",
+            }
+        )
+    chunks = _layer_site_chunks(layer_key, finalizer_site_ids)
     for chunk_index, site_location_chunk in enumerate(chunks, start=1):
         try:
             result = database.fetch_one(

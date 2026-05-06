@@ -105,6 +105,12 @@ one layer call. The completion workflow now sets:
 That keeps the same bounded source-family pattern, but measures those heavy layers one site at a time so the workflow
 can keep draining scan-state without creating a second constraint engine.
 
+The follow-up live proof also showed that the finalizer itself was doing too much work at the scan-state write: it used
+the full canonical site anchor before filtering back to the requested batch. Migration
+`085_constraint_finalizer_requested_anchor.sql` restricts that final scan-state anchor to the requested site IDs and does
+not run measurement during migration. This keeps the measurement engine intact but removes the avoidable full-spine scan
+from bounded proof runs.
+
 ## How To Run
 
 Start with:
@@ -143,3 +149,4 @@ scan-state. This does not change constraint truth. It makes repeated GitHub Acti
 the measurement programme commercially usable. The 2026-05-06 follow-up raised the completion workflow cap to `250`
 site-layer pairs while preserving the runner's absolute ceiling and source/cohort filters. The next correction keeps
 that higher cap, but chunks configured heavy layers by site to avoid statement timeouts on SAC/SPA ecology measurements.
+The finalizer anchor correction then removes the full-canonical scan-state step that blocked those one-site chunks.

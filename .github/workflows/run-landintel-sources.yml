@@ -231,11 +231,6 @@ on:
         description: Max OSM elements landed per OSM open location run
         required: false
         default: "2000"
-      open_location_spine_context_fallback_batch_size:
-        description: Smaller site batch used if open location context refresh hits statement timeout
-        required: false
-        default: "5"
-
 concurrency:
   group: "landintel-sources-${{ github.ref }}"
   cancel-in-progress: false
@@ -337,7 +332,7 @@ jobs:
       OPEN_LOCATION_SPINE_OSM_SITE_BATCH_SIZE: ${{ inputs.open_location_spine_osm_site_batch_size || '10' }}
       OPEN_LOCATION_SPINE_OSM_CONTEXT_BATCH_SIZE: ${{ inputs.open_location_spine_osm_context_batch_size || '10' }}
       OPEN_LOCATION_SPINE_OSM_ELEMENT_LIMIT: ${{ inputs.open_location_spine_osm_element_limit || '2000' }}
-      OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE: ${{ inputs.open_location_spine_context_fallback_batch_size || '5' }}
+      OPEN_LOCATION_SPINE_CONTEXT_FALLBACK_BATCH_SIZE: "5"
       OPEN_LOCATION_SPINE_CONTEXT_REFRESH_MODE: "light"
       OPEN_LOCATION_SPINE_MAX_CONTEXT_FEATURE_TYPES: "2"
       PHASE2_SOURCE_FAMILY: ${{ inputs.phase2_source_family || '' }}

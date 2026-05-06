@@ -164,7 +164,7 @@ class ConstraintCoverageScalerPerformanceContractTests(unittest.TestCase):
             "flush=true",
             "landintel_reporting.v_constraint_coverage_by_layer",
             "landintel_reporting.v_constraint_coverage_by_site_priority",
-            "landintel_reporting.v_constraint_measurement_backlog",
+            "backlog_site_count",
             "backlog_site_layer_pairs",
         ):
             self.assertIn(required_phrase, RUNNER_LOWER)
@@ -175,6 +175,10 @@ class ConstraintCoverageScalerPerformanceContractTests(unittest.TestCase):
         )
         self.assertNotIn(
             "from landintel_reporting.v_constraint_priority_measurement_queue",
+            RUNNER_LOWER,
+        )
+        self.assertNotIn(
+            "from landintel_reporting.v_constraint_measurement_backlog",
             RUNNER_LOWER,
         )
 
@@ -190,16 +194,20 @@ class ConstraintCoverageScalerPerformanceContractTests(unittest.TestCase):
             "constraint_scaler_workflow_proof",
             "landintel_reporting.v_constraint_coverage_by_layer",
             "landintel_reporting.v_constraint_coverage_by_site_priority",
-            "landintel_reporting.v_constraint_measurement_backlog",
             "measured_row_count",
             "commercial_friction_fact_count",
             "target_site_layer_pairs",
             "backlog_site_layer_pairs",
+            "backlog_site_count",
             "limit 20",
         ):
             self.assertIn(required_phrase, PROOF_RUNNER_LOWER)
         self.assertNotIn(
             "from landintel_reporting.v_constraint_priority_measurement_queue",
+            PROOF_RUNNER_LOWER,
+        )
+        self.assertNotIn(
+            "from landintel_reporting.v_constraint_measurement_backlog",
             PROOF_RUNNER_LOWER,
         )
 

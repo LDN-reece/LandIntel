@@ -90,6 +90,13 @@ def _env_csv_set(name: str, default: tuple[str, ...]) -> set[str]:
     return {value.strip() for value in raw_value.split(",") if value.strip()}
 
 
+def _env_csv_list(name: str) -> list[str]:
+    raw_value = os.getenv(name)
+    if not raw_value:
+        return []
+    return [value.strip() for value in raw_value.split(",") if value.strip()]
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     raw_value = str(os.getenv(name) or "").strip().lower()
     if not raw_value:
@@ -503,7 +510,9 @@ def _collect_source_family_counts(
     site_priority_band: str,
     source_family: str | None,
     layer_key: str | None,
+    excluded_layer_keys: list[str] | None = None,
 ) -> dict[str, Any]:
+    excluded_layer_keys_csv = ",".join(excluded_layer_keys or [])
     return database.fetch_one(
         """
         with priority_sites as (
@@ -516,6 +525,10 @@ def _collect_source_family_counts(
             where priority_layers.is_active = true
               and (:source_family = '' or priority_layers.source_family = :source_family)
               and (:layer_key = '' or priority_layers.layer_key = :layer_key)
+              and (
+                  :excluded_layer_keys_csv = ''
+                  or priority_layers.layer_key <> all(string_to_array(:excluded_layer_keys_csv, ','))
+              )
               and exists (
                   select 1
                   from public.constraint_source_features as feature
@@ -564,6 +577,7 @@ def _collect_source_family_counts(
             "site_priority_band": site_priority_band,
             "source_family": source_family or "",
             "layer_key": layer_key or "",
+            "excluded_layer_keys_csv": excluded_layer_keys_csv,
         },
     ) or {}
 
@@ -658,7 +672,9 @@ def _source_family_candidate_pairs(
     source_family: str | None,
     layer_key: str | None,
     batch_size: int,
+    excluded_layer_keys: list[str] | None = None,
 ) -> list[dict[str, Any]]:
+    excluded_layer_keys_csv = ",".join(excluded_layer_keys or [])
     return database.fetch_all(
         """
         with priority_sites as (
@@ -687,6 +703,10 @@ def _source_family_candidate_pairs(
               and priority_layers.constraint_priority_rank <= 8
               and (:source_family = '' or priority_layers.source_family = :source_family)
               and (:layer_key = '' or priority_layers.layer_key = :layer_key)
+              and (
+                  :excluded_layer_keys_csv = ''
+                  or priority_layers.layer_key <> all(string_to_array(:excluded_layer_keys_csv, ','))
+              )
               and exists (
                   select 1
                   from public.constraint_source_features as feature
@@ -747,6 +767,7 @@ def _source_family_candidate_pairs(
             "source_family": source_family or "",
             "layer_key": layer_key or "",
             "batch_size": batch_size,
+            "excluded_layer_keys_csv": excluded_layer_keys_csv,
         },
     )
 
@@ -833,6 +854,7 @@ def run_title_spend_source_family_measurement_proof(database: Database) -> dict[
     )
     source_family = _env_text("CONSTRAINT_MEASURE_SOURCE_FAMILY") or None
     layer_key = _env_text("CONSTRAINT_MEASURE_LAYER_KEY") or None
+    excluded_layer_keys = _env_csv_list("CONSTRAINT_MEASURE_EXCLUDE_LAYER_KEYS")
 
     if site_priority_band not in ALLOWED_SOURCE_FAMILY_SITE_PRIORITY_BANDS:
         raise ValueError(
@@ -851,6 +873,7 @@ def run_title_spend_source_family_measurement_proof(database: Database) -> dict[
         site_priority_band=site_priority_band,
         source_family=source_family,
         layer_key=layer_key,
+        excluded_layer_keys=excluded_layer_keys,
     )
     pairs = _source_family_candidate_pairs(
         database,
@@ -858,6 +881,7 @@ def run_title_spend_source_family_measurement_proof(database: Database) -> dict[
         source_family=source_family,
         layer_key=layer_key,
         batch_size=batch_size,
+        excluded_layer_keys=excluded_layer_keys,
     )
     pairs_by_layer: dict[str, list[str]] = defaultdict(list)
     for pair in pairs:
@@ -885,6 +909,7 @@ def run_title_spend_source_family_measurement_proof(database: Database) -> dict[
         site_priority_band=site_priority_band,
         source_family=source_family,
         layer_key=layer_key,
+        excluded_layer_keys=excluded_layer_keys,
     )
     unique_sites = {str(pair["site_location_id"]) for pair in pairs}
     unique_source_families = sorted({str(pair["source_family"]) for pair in pairs if pair.get("source_family")})
@@ -898,6 +923,7 @@ def run_title_spend_source_family_measurement_proof(database: Database) -> dict[
         "cohort": site_priority_band,
         "constraint_source_family": source_family,
         "constraint_layer_key": layer_key,
+        "excluded_layer_keys": excluded_layer_keys,
         "constraint_source_families_selected": unique_source_families,
         "constraint_priority_families_selected": unique_priority_families,
         "requested_pair_batch_size": requested_batch_size,
@@ -947,6 +973,7 @@ def run_source_family_measurement_drain(database: Database) -> dict[str, Any]:
     )
     source_family = _env_text("CONSTRAINT_MEASURE_SOURCE_FAMILY") or None
     layer_key = _env_text("CONSTRAINT_MEASURE_LAYER_KEY") or None
+    excluded_layer_keys = _env_csv_list("CONSTRAINT_MEASURE_EXCLUDE_LAYER_KEYS")
 
     if site_priority_band not in ALLOWED_SOURCE_FAMILY_SITE_PRIORITY_BANDS:
         raise ValueError(
@@ -965,6 +992,7 @@ def run_source_family_measurement_drain(database: Database) -> dict[str, Any]:
         site_priority_band=site_priority_band,
         source_family=source_family,
         layer_key=layer_key,
+        excluded_layer_keys=excluded_layer_keys,
     )
     batch_results: list[dict[str, Any]] = []
     total_pairs_processed = 0
@@ -1013,6 +1041,7 @@ def run_source_family_measurement_drain(database: Database) -> dict[str, Any]:
         site_priority_band=site_priority_band,
         source_family=source_family,
         layer_key=layer_key,
+        excluded_layer_keys=excluded_layer_keys,
     )
     runtime_seconds = round(time.monotonic() - started_at, 3)
     return {
@@ -1021,6 +1050,7 @@ def run_source_family_measurement_drain(database: Database) -> dict[str, Any]:
         "cohort": site_priority_band,
         "constraint_source_family": source_family,
         "constraint_layer_key": layer_key,
+        "excluded_layer_keys": excluded_layer_keys,
         "max_batches": max_batches,
         "max_runtime_minutes": runtime_minutes,
         "batches_attempted": len(batch_results),

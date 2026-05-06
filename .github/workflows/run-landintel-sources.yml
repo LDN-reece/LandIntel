@@ -151,6 +151,10 @@ on:
         description: Optional exact constraint layer_key filter for targeted measurement
         required: false
         default: ""
+      constraint_measure_exclude_layer_keys:
+        description: Optional comma-separated constraint layer_key values to skip for source-family measurement
+        required: false
+        default: ""
       constraint_measure_authority:
         description: Optional authority_name filter for targeted measurement
         required: false
@@ -318,6 +322,7 @@ jobs:
       CONSTRAINT_MEASURE_MIN_AREA_ACRES: "0"
       CONSTRAINT_MEASURE_SOURCE_FAMILY: ${{ inputs.constraint_measure_source_family || '' }}
       CONSTRAINT_MEASURE_LAYER_KEY: ${{ inputs.constraint_measure_layer_key || '' }}
+      CONSTRAINT_MEASURE_EXCLUDE_LAYER_KEYS: ${{ inputs.constraint_measure_exclude_layer_keys || '' }}
       CONSTRAINT_MEASURE_AUTHORITY: ${{ inputs.constraint_measure_authority || '' }}
       CONSTRAINT_MEASURE_DEBUG_SITE_COUNT: ${{ inputs.constraint_measure_site_batch_size || '25' }}
       CONSTRAINT_MEASURE_DEBUG_FEATURE_PROBE_LIMIT: ${{ inputs.constraint_measure_debug_feature_probe_limit || '50' }}

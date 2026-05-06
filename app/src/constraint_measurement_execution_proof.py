@@ -15,7 +15,8 @@ from src.db import Database
 from src.logging_config import configure_logging
 
 
-MAX_PROOF_PAIR_BATCH_SIZE = 25
+DEFAULT_MAX_PROOF_PAIR_BATCH_SIZE = 25
+ABSOLUTE_MAX_PROOF_PAIR_BATCH_SIZE = 250
 DEFAULT_PROOF_PAIR_BATCH_SIZE = 10
 DEFAULT_SOURCE_FAMILY_SITE_PRIORITY_BAND = "title_spend_candidates"
 ALLOWED_SOURCE_FAMILY_SITE_PRIORITY_BANDS = {
@@ -84,10 +85,18 @@ def _safe_log_extra(payload: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if key not in LOG_RECORD_RESERVED_KEYS}
 
 
-def _bounded_batch_size() -> tuple[int, int]:
+def _max_pair_batch_size() -> int:
+    """Return the configured hard cap, bounded to a safe absolute ceiling."""
+
+    configured_cap = _env_int("CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE", DEFAULT_MAX_PROOF_PAIR_BATCH_SIZE)
+    return min(max(configured_cap, 1), ABSOLUTE_MAX_PROOF_PAIR_BATCH_SIZE)
+
+
+def _bounded_batch_size() -> tuple[int, int, int]:
     requested_batch_size = _env_int("CONSTRAINT_PROOF_PAIR_BATCH_SIZE", DEFAULT_PROOF_PAIR_BATCH_SIZE)
-    batch_size = min(max(requested_batch_size, 1), MAX_PROOF_PAIR_BATCH_SIZE)
-    return requested_batch_size, batch_size
+    max_batch_size = _max_pair_batch_size()
+    batch_size = min(max(requested_batch_size, 1), max_batch_size)
+    return requested_batch_size, batch_size, max_batch_size
 
 
 def _collect_flood_title_spend_counts(database: Database) -> dict[str, Any]:
@@ -397,7 +406,7 @@ def run_flood_title_spend_measurement_proof(database: Database) -> dict[str, Any
     """Run one tiny flood-only title-spend measurement batch through the existing finalizer."""
 
     started_at = time.monotonic()
-    requested_batch_size, batch_size = _bounded_batch_size()
+    requested_batch_size, batch_size, max_batch_size = _bounded_batch_size()
     overlap_delta_pct = _env_float("CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT", 1.0)
     distance_delta_m = _env_float("CONSTRAINT_MATERIAL_DISTANCE_DELTA_M", 25.0)
 
@@ -451,7 +460,8 @@ def run_flood_title_spend_measurement_proof(database: Database) -> dict[str, Any
         "constraint_priority_family": "flood",
         "requested_pair_batch_size": requested_batch_size,
         "effective_pair_batch_size": batch_size,
-        "hard_pair_batch_cap": MAX_PROOF_PAIR_BATCH_SIZE,
+        "hard_pair_batch_cap": max_batch_size,
+        "absolute_pair_batch_cap": ABSOLUTE_MAX_PROOF_PAIR_BATCH_SIZE,
         "candidate_sites_in_cohort": before_counts.get("candidate_sites_in_cohort", 0),
         "flood_layer_count": before_counts.get("flood_layer_count", 0),
         "candidate_site_layer_pairs_selected": len(pairs),
@@ -482,7 +492,7 @@ def run_title_spend_source_family_measurement_proof(database: Database) -> dict[
     """Run a tiny title-spend batch for one explicitly filtered constraint source family."""
 
     started_at = time.monotonic()
-    requested_batch_size, batch_size = _bounded_batch_size()
+    requested_batch_size, batch_size, max_batch_size = _bounded_batch_size()
     overlap_delta_pct = _env_float("CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT", 1.0)
     distance_delta_m = _env_float("CONSTRAINT_MATERIAL_DISTANCE_DELTA_M", 25.0)
     site_priority_band = _env_text(
@@ -577,7 +587,8 @@ def run_title_spend_source_family_measurement_proof(database: Database) -> dict[
         "constraint_priority_families_selected": unique_priority_families,
         "requested_pair_batch_size": requested_batch_size,
         "effective_pair_batch_size": batch_size,
-        "hard_pair_batch_cap": MAX_PROOF_PAIR_BATCH_SIZE,
+        "hard_pair_batch_cap": max_batch_size,
+        "absolute_pair_batch_cap": ABSOLUTE_MAX_PROOF_PAIR_BATCH_SIZE,
         "candidate_sites_in_cohort": before_counts.get("candidate_sites_in_cohort", 0),
         "filtered_layer_count": before_counts.get("filtered_layer_count", 0),
         "candidate_site_layer_pairs_selected": len(pairs),

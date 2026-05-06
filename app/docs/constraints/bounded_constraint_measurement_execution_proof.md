@@ -98,7 +98,11 @@ Default batch:
 
 Hard cap:
 
-`25` site-layer pairs per run.
+Manual proof default: `25` site-layer pairs per run.
+
+Completion workflow cap: `250` site-layer pairs per bounded constraint step.
+
+Absolute runner ceiling: `250` site-layer pairs. A workflow can lower the cap, but cannot raise it above that ceiling.
 
 The batch unit is a site-layer pair, not an all-layer site sweep. If the first queued site has multiple unscanned flood layers, the command may process several flood layers for one site before moving to another site.
 

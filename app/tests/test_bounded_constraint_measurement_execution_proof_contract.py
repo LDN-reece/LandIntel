@@ -16,6 +16,9 @@ WORKFLOW = (REPO_ROOT / ".github" / "workflows" / "run-landintel-sources.yml").r
     encoding="utf-8"
 )
 WORKFLOW_LOWER = WORKFLOW.lower()
+MEASURE_LINK_WORKFLOW = (
+    REPO_ROOT / ".github" / "workflows" / "run-landintel-measure-link-completion.yml"
+).read_text(encoding="utf-8")
 
 
 class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase):
@@ -40,7 +43,9 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
     def test_runner_is_flood_title_spend_bounded(self) -> None:
         self.assertIn("site_priority_band = 'title_spend_candidates'", RUNNER)
         self.assertIn("constraint_priority_family = 'flood'", RUNNER)
-        self.assertIn("MAX_PROOF_PAIR_BATCH_SIZE = 25", RUNNER)
+        self.assertIn("DEFAULT_MAX_PROOF_PAIR_BATCH_SIZE = 25", RUNNER)
+        self.assertIn("ABSOLUTE_MAX_PROOF_PAIR_BATCH_SIZE = 250", RUNNER)
+        self.assertIn("CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE", RUNNER)
         self.assertIn("DEFAULT_PROOF_PAIR_BATCH_SIZE = 10", RUNNER)
         self.assertIn("limit :batch_size", RUNNER_LOWER)
 
@@ -94,6 +99,7 @@ class BoundedConstraintMeasurementExecutionProofContractTests(unittest.TestCase)
         self.assertIn("- constraint-measurement-proof-flood-title-spend", WORKFLOW)
         self.assertIn("- constraint-measurement-proof-title-spend-source-family", WORKFLOW)
         self.assertIn('CONSTRAINT_PROOF_PAIR_BATCH_SIZE: "10"', WORKFLOW)
+        self.assertIn('CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE: "250"', MEASURE_LINK_WORKFLOW)
         self.assertIn("constraint_measurement_execution_proof.py", WORKFLOW)
         self.assertIn(
             "python -m src.constraint_measurement_execution_proof constraint-measurement-proof-flood-title-spend",

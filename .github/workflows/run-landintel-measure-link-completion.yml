@@ -108,6 +108,7 @@ jobs:
       RECONCILE_BATCH_LIMIT: ${{ inputs.reconcile_batch_limit || '500' }}
       RECONCILE_RUNTIME_MINUTES: ${{ inputs.reconcile_runtime_minutes || '8' }}
       CONSTRAINT_PROOF_PAIR_BATCH_SIZE: ${{ inputs.constraint_pair_batch_size || '25' }}
+      CONSTRAINT_PROOF_MAX_PAIR_BATCH_SIZE: "250"
       CONSTRAINT_PROOF_ALLOW_LAYER_ERRORS: "true"
       CONSTRAINT_MATERIAL_OVERLAP_DELTA_PCT: "1"
       CONSTRAINT_MATERIAL_DISTANCE_DELTA_M: "25"
